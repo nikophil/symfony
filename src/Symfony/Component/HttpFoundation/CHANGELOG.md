@@ -5,6 +5,7 @@ CHANGELOG
 ---
 
  * Create migration for session table when pdo handler is used
+ * Add `ParameterBar::getEnum()`
 
 6.2
 ---

@@ -226,4 +226,23 @@ class ParameterBagTest extends TestCase
         $this->assertFalse($bag->getBoolean('string_false'), '->getBoolean() gets the string false as boolean false');
         $this->assertFalse($bag->getBoolean('unknown'), '->getBoolean() returns false if a parameter is not defined');
     }
+
+    public function testGetEnum()
+    {
+        $parameters = ['valid-value' => 1, 'invalid-value' => 2];
+        $bag = new ParameterBag($parameters);
+
+        $this->assertSame(Foo::Bar, $bag->getEnum('valid-value', Foo::class));
+
+        $this->assertNull($bag->getEnum('invalid-value', Foo::class));
+        $this->assertSame(Foo::Bar, $bag->getEnum('invalid-value', Foo::class, Foo::Bar));
+
+        $this->assertNull($bag->getEnum('invalid-key', Foo::class));
+        $this->assertSame(Foo::Bar, $bag->getEnum('invalid-key', Foo::class, Foo::Bar));
+    }
+}
+
+enum Foo: int
+{
+    case Bar = 1;
 }
