@@ -12,16 +12,14 @@
 namespace Symfony\Component\AssetMapper\Compiler;
 
 use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
 use Symfony\Component\AssetMapper\AssetDependency;
 use Symfony\Component\AssetMapper\AssetMapperInterface;
+use Symfony\Component\AssetMapper\Exception\CircularAssetsException;
 use Symfony\Component\AssetMapper\Exception\RuntimeException;
 use Symfony\Component\AssetMapper\MappedAsset;
 
 /**
  * Resolves import paths in JS files.
- *
- * @experimental
  *
  * @author Ryan Weaver <ryan@symfonycasts.com>
  */
@@ -29,16 +27,13 @@ final class JavaScriptImportPathCompiler implements AssetCompilerInterface
 {
     use AssetCompilerPathResolverTrait;
 
-    private readonly LoggerInterface $logger;
-
     // https://regex101.com/r/VFdR4H/1
     private const IMPORT_PATTERN = '/(?:import\s+(?:(?:\*\s+as\s+\w+|[\w\s{},*]+)\s+from\s+)?|\bimport\()\s*[\'"`](\.\/[^\'"`]+|(\.\.\/)+[^\'"`]+)[\'"`]\s*[;\)]?/m';
 
     public function __construct(
         private readonly string $missingImportMode = self::MISSING_IMPORT_WARN,
-        LoggerInterface $logger = null,
+        private readonly ?LoggerInterface $logger = null,
     ) {
-        $this->logger = $logger ?? new NullLogger();
     }
 
     public function compile(string $content, MappedAsset $asset, AssetMapperInterface $assetMapper): string
@@ -57,8 +52,12 @@ final class JavaScriptImportPathCompiler implements AssetCompilerInterface
             if (!$dependentAsset) {
                 $message = sprintf('Unable to find asset "%s" imported from "%s".', $matches[1], $asset->sourcePath);
 
-                if (null !== $assetMapper->getAsset(sprintf('%s.js', $resolvedPath))) {
-                    $message .= sprintf(' Try adding ".js" to the end of the import - i.e. "%s.js".', $matches[1]);
+                try {
+                    if (null !== $assetMapper->getAsset(sprintf('%s.js', $resolvedPath))) {
+                        $message .= sprintf(' Try adding ".js" to the end of the import - i.e. "%s.js".', $matches[1]);
+                    }
+                } catch (CircularAssetsException $e) {
+                    // avoid circular error if there is self-referencing import comments
                 }
 
                 $this->handleMissingImport($message);
@@ -101,7 +100,7 @@ final class JavaScriptImportPathCompiler implements AssetCompilerInterface
     {
         match ($this->missingImportMode) {
             AssetCompilerInterface::MISSING_IMPORT_IGNORE => null,
-            AssetCompilerInterface::MISSING_IMPORT_WARN => $this->logger->warning($message),
+            AssetCompilerInterface::MISSING_IMPORT_WARN => $this->logger?->warning($message),
             AssetCompilerInterface::MISSING_IMPORT_STRICT => throw new RuntimeException($message, 0, $e),
         };
     }

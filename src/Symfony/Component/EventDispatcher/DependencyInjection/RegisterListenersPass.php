@@ -57,20 +57,56 @@ class RegisterListenersPass implements CompilerPassInterface
             return;
         }
 
-        $aliases = [];
-
-        if ($container->hasParameter('event_dispatcher.event_aliases')) {
-            $aliases = $container->getParameter('event_dispatcher.event_aliases');
-        }
+        $listerDefinitions = new ListenerDefinitionsIterator([
+            ...iterator_to_array($this->collectListeners($container)),
+            ...iterator_to_array($this->collectSubscribers($container)),
+        ], $container
+        );
 
         $globalDispatcherDefinition = $container->findDefinition('event_dispatcher');
 
-        foreach ($container->findTaggedServiceIds('kernel.event_listener', true) as $id => $events) {
+        foreach ($listerDefinitions->iterate() as $id => $listenerDefinitions) {
             $noPreload = 0;
 
-            foreach ($events as $event) {
-                $priority = $event['priority'] ?? 0;
+            foreach ($listenerDefinitions as $listenerDefinition) {
+                $dispatcherDefinitions = [];
+                foreach ($listenerDefinition->dispatchers as $dispatcher) {
+                    $dispatcherDefinitions[] = 'event_dispatcher' === $dispatcher ? $globalDispatcherDefinition : $container->findDefinition($dispatcher);
+                }
 
+                foreach ($dispatcherDefinitions as $dispatcherDefinition) {
+                    $dispatcherDefinition->addMethodCall(
+                        'addListener',
+                        [
+                            $listenerDefinition->event,
+                            [new ServiceClosureArgument(new Reference($id)), $listenerDefinition->method],
+                            $listenerDefinition->priority ?? 0,
+                        ]
+                    );
+                }
+
+                if (isset($this->hotPathEvents[$listenerDefinition->event])) {
+                    $container->getDefinition($id)->addTag('container.hot_path');
+                } elseif (isset($this->noPreloadEvents[$listenerDefinition->event])) {
+                    ++$noPreload;
+                }
+            }
+
+            if ($noPreload && \count($listenerDefinitions) === $noPreload) {
+                $container->getDefinition($id)->addTag('container.no_preload');
+            }
+        }
+    }
+
+    /**
+     * @return \Generator<string, list<ListenerDefinition>>
+     */
+    private function collectListeners(ContainerBuilder $container): \Generator
+    {
+        $aliases = $this->getEventsAliases($container);
+
+        foreach ($container->findTaggedServiceIds('kernel.event_listener', true) as $id => $events) {
+            foreach ($events as $event) {
                 if (!isset($event['event'])) {
                     if ($container->getDefinition($id)->hasTag('kernel.event_subscriber')) {
                         continue;
@@ -89,29 +125,37 @@ class RegisterListenersPass implements CompilerPassInterface
                     ], fn ($matches) => strtoupper($matches[0]), $event['event']);
                     $event['method'] = preg_replace('/[^a-z0-9]/i', '', $event['method']);
 
-                    if (null !== ($class = $container->getDefinition($id)->getClass()) && ($r = $container->getReflectionClass($class, false)) && !$r->hasMethod($event['method']) && $r->hasMethod('__invoke')) {
+                    if (null !== ($class = $container->getDefinition($id)->getClass()) && ($r = $container->getReflectionClass($class, false)) && !$r->hasMethod($event['method'])) {
+                        if (!$r->hasMethod('__invoke')) {
+                            throw new InvalidArgumentException(sprintf('None of the "%s" or "__invoke" methods exist for the service "%s". Please define the "method" attribute on "kernel.event_listener" tags.', $event['method'], $id));
+                        }
                         $event['method'] = '__invoke';
                     }
                 }
 
-                $dispatcherDefinition = $globalDispatcherDefinition;
-                if (isset($event['dispatcher'])) {
-                    $dispatcherDefinition = $container->findDefinition($event['dispatcher']);
-                }
+                $event['dispatchers'] = [$event['dispatcher'] ?? 'event_dispatcher'];
+                $event['serviceId'] = $id;
+                unset($event['dispatcher']);
 
-                $dispatcherDefinition->addMethodCall('addListener', [$event['event'], [new ServiceClosureArgument(new Reference($id)), $event['method']], $priority]);
-
-                if (isset($this->hotPathEvents[$event['event']])) {
-                    $container->getDefinition($id)->addTag('container.hot_path');
-                } elseif (isset($this->noPreloadEvents[$event['event']])) {
-                    ++$noPreload;
-                }
-            }
-
-            if ($noPreload && \count($events) === $noPreload) {
-                $container->getDefinition($id)->addTag('container.no_preload');
+                yield new ListenerDefinition(
+                    serviceId: $id,
+                    event: $event['event'],
+                    method: $event['method'],
+                    priority: $event['priority'] ?? 0,
+                    dispatchers: $event['dispatchers'],
+                    before: $event['before'] ?? null,
+                    after: $event['after'] ?? null,
+                );
             }
         }
+    }
+
+    /**
+     * @return \Generator<string, list<array{serviceId: string, event: string, method: string, before?: string|array{0: string, 1: string}, after?: string|array{0: string, 1: string}, priority?: int, dispatchers: list<string>}>>
+     */
+    private function collectSubscribers(ContainerBuilder $container): \Generator
+    {
+        $aliases = $this->getEventsAliases($container);
 
         $extractingDispatcher = new ExtractingEventDispatcher();
 
@@ -129,41 +173,53 @@ class RegisterListenersPass implements CompilerPassInterface
             }
             $class = $r->name;
 
-            $dispatcherDefinitions = [];
+            $dispatchers = [];
             foreach ($tags as $attributes) {
-                if (!isset($attributes['dispatcher']) || isset($dispatcherDefinitions[$attributes['dispatcher']])) {
+                if (!isset($attributes['dispatcher']) || \in_array($attributes['dispatcher'], $dispatchers, true)) {
                     continue;
                 }
 
-                $dispatcherDefinitions[$attributes['dispatcher']] = $container->findDefinition($attributes['dispatcher']);
+                $dispatchers[] = $attributes['dispatcher'];
+            }
+            if (!$dispatchers) {
+                $dispatchers[] = 'event_dispatcher';
             }
 
-            if (!$dispatcherDefinitions) {
-                $dispatcherDefinitions = [$globalDispatcherDefinition];
-            }
+            sort($dispatchers);
 
-            $noPreload = 0;
             ExtractingEventDispatcher::$aliases = $aliases;
             ExtractingEventDispatcher::$subscriber = $class;
             $extractingDispatcher->addSubscriber($extractingDispatcher);
-            foreach ($extractingDispatcher->listeners as $args) {
-                $args[1] = [new ServiceClosureArgument(new Reference($id)), $args[1]];
-                foreach ($dispatcherDefinitions as $dispatcherDefinition) {
-                    $dispatcherDefinition->addMethodCall('addListener', $args);
-                }
 
-                if (isset($this->hotPathEvents[$args[0]])) {
-                    $container->getDefinition($id)->addTag('container.hot_path');
-                } elseif (isset($this->noPreloadEvents[$args[0]])) {
-                    ++$noPreload;
-                }
+            foreach ($extractingDispatcher->listeners as $listener) {
+                yield new ListenerDefinition(
+                    serviceId: $id,
+                    event: $listener[0],
+                    method: $listener[1],
+                    priority: $listener[2],
+                    dispatchers: array_values(array_unique($dispatchers)),
+                    before: null,
+                    after: null,
+                );
             }
-            if ($noPreload && \count($extractingDispatcher->listeners) === $noPreload) {
-                $container->getDefinition($id)->addTag('container.no_preload');
-            }
+
             $extractingDispatcher->listeners = [];
             ExtractingEventDispatcher::$aliases = [];
         }
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function getEventsAliases(ContainerBuilder $container): array
+    {
+        $aliases = [];
+
+        if ($container->hasParameter('event_dispatcher.event_aliases')) {
+            $aliases = $container->getParameter('event_dispatcher.event_aliases') ?? [];
+        }
+
+        return $aliases;
     }
 
     private function getEventFromTypeDeclaration(ContainerBuilder $container, string $id, string $method): string

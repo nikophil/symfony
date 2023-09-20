@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Security\Http\Tests\Authenticator;
 
+use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Session\SessionInterface;
@@ -23,16 +24,16 @@ use Symfony\Component\Security\Http\Authenticator\FormLoginAuthenticator;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\CsrfTokenBadge;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\PasswordUpgradeBadge;
 use Symfony\Component\Security\Http\Authenticator\Passport\Badge\UserBadge;
+use Symfony\Component\Security\Http\Authenticator\Passport\Credentials\PasswordCredentials;
 use Symfony\Component\Security\Http\HttpUtils;
 use Symfony\Component\Security\Http\Tests\Authenticator\Fixtures\PasswordUpgraderProvider;
 
 class FormLoginAuthenticatorTest extends TestCase
 {
-    private $userProvider;
-    private $successHandler;
-    private $failureHandler;
-    /** @var FormLoginAuthenticator */
-    private $authenticator;
+    private InMemoryUserProvider $userProvider;
+    private MockObject&AuthenticationSuccessHandlerInterface $successHandler;
+    private MockObject&AuthenticationFailureHandlerInterface $failureHandler;
+    private FormLoginAuthenticator $authenticator;
 
     protected function setUp(): void
     {
@@ -124,6 +125,44 @@ class FormLoginAuthenticatorTest extends TestCase
 
         $this->setUpAuthenticator(['post_only' => $postOnly]);
         $this->authenticator->authenticate($request);
+    }
+
+    /**
+     * @dataProvider postOnlyDataProvider
+     */
+    public function testHandleNonStringPasswordWithArray(bool $postOnly)
+    {
+        $this->expectException(BadRequestHttpException::class);
+        $this->expectExceptionMessage('The key "_password" must be a string, "array" given.');
+
+        $request = Request::create('/login_check', 'POST', ['_username' => 'foo', '_password' => []]);
+        $request->setSession($this->createSession());
+
+        $this->setUpAuthenticator(['post_only' => $postOnly]);
+        $this->authenticator->authenticate($request);
+    }
+
+    /**
+     * @dataProvider postOnlyDataProvider
+     */
+    public function testHandleNonStringPasswordWithToString(bool $postOnly)
+    {
+        $passwordObject = new class() {
+            public function __toString()
+            {
+                return 's$cr$t';
+            }
+        };
+
+        $request = Request::create('/login_check', 'POST', ['_username' => 'foo', '_password' => $passwordObject]);
+        $request->setSession($this->createSession());
+
+        $this->setUpAuthenticator(['post_only' => $postOnly]);
+        $passport = $this->authenticator->authenticate($request);
+
+        /** @var PasswordCredentials $credentialsBadge */
+        $credentialsBadge = $passport->getBadge(PasswordCredentials::class);
+        $this->assertSame('s$cr$t', $credentialsBadge->getPassword());
     }
 
     public static function postOnlyDataProvider()

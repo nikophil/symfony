@@ -24,6 +24,10 @@ class AsEventListener
         public ?string $method = null,
         public int $priority = 0,
         public ?string $dispatcher = null,
+        /** @param string|array{0: string, 1: string}|null $after */
+        public string|array|null $before = null,
+        /** @param string|array{0: string, 1: string}|null $after */
+        public string|array|null $after = null,
     ) {
     }
 }

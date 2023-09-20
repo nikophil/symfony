@@ -11,7 +11,6 @@
 
 namespace Symfony\Component\Cache\Traits;
 
-use Relay\Relay;
 use Symfony\Component\VarExporter\LazyObjectInterface;
 use Symfony\Component\VarExporter\LazyProxyTrait;
 use Symfony\Contracts\Service\ResetInterface;
@@ -24,7 +23,7 @@ class_exists(\Symfony\Component\VarExporter\Internal\LazyObjectState::class);
 /**
  * @internal
  */
-class RelayProxy extends Relay implements ResetInterface, LazyObjectInterface
+class RelayProxy extends \Relay\Relay implements ResetInterface, LazyObjectInterface
 {
     use LazyProxyTrait {
         resetLazyObject as reset;
@@ -455,6 +454,11 @@ class RelayProxy extends Relay implements ResetInterface, LazyObjectInterface
     public function bitcount($key, $start = 0, $end = -1, $by_bit = false): \Relay\Relay|false|int
     {
         return ($this->lazyObjectState->realInstance ??= ($this->lazyObjectState->initializer)())->bitcount(...\func_get_args());
+    }
+
+    public function bitfield($key, ...$args): \Relay\Relay|array|false
+    {
+        return ($this->lazyObjectState->realInstance ??= ($this->lazyObjectState->initializer)())->bitfield(...\func_get_args());
     }
 
     public function config($operation, $key = null, $value = null): \Relay\Relay|array|bool

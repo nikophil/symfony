@@ -16,6 +16,7 @@ use Doctrine\ORM\Tools\SchemaTool;
 use Doctrine\Persistence\ManagerRegistry;
 use Doctrine\Persistence\ObjectManager;
 use Doctrine\Persistence\ObjectRepository;
+use Doctrine\Persistence\Proxy;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bridge\Doctrine\Security\User\EntityUserProvider;
 use Symfony\Bridge\Doctrine\Security\User\UserLoaderInterface;
@@ -48,7 +49,7 @@ class EntityUserProviderTest extends TestCase
         $this->assertSame($user1, $provider->refreshUser($user1));
     }
 
-    public function testLoadUserByUsername()
+    public function testLoadUserByIdentifier()
     {
         $em = DoctrineTestHelper::createTestEntityManager();
         $this->createSchema($em);
@@ -63,7 +64,7 @@ class EntityUserProviderTest extends TestCase
         $this->assertSame($user, $provider->loadUserByIdentifier('user1'));
     }
 
-    public function testLoadUserByUsernameWithUserLoaderRepositoryAndWithoutProperty()
+    public function testLoadUserByIdentifierWithUserLoaderRepositoryAndWithoutProperty()
     {
         $user = new User(1, 1, 'user1');
 
@@ -85,7 +86,7 @@ class EntityUserProviderTest extends TestCase
         $this->assertSame($user, $provider->loadUserByIdentifier('user1'));
     }
 
-    public function testLoadUserByUsernameWithNonUserLoaderRepositoryAndWithoutProperty()
+    public function testLoadUserByIdentifierWithNonUserLoaderRepositoryAndWithoutProperty()
     {
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('You must either make the "Symfony\Bridge\Doctrine\Tests\Fixtures\User" entity Doctrine Repository ("Doctrine\ORM\EntityRepository") implement "Symfony\Bridge\Doctrine\Security\User\UserLoaderInterface" or set the "property" option in the corresponding entity provider configuration.');
@@ -149,7 +150,7 @@ class EntityUserProviderTest extends TestCase
         $this->assertTrue($provider->supportsClass($user2::class));
     }
 
-    public function testLoadUserByUserNameShouldLoadUserWhenProperInterfaceProvided()
+    public function testLoadUserByIdentifierShouldLoadUserWhenProperInterfaceProvided()
     {
         $repository = $this->createMock(UserLoaderRepository::class);
         $repository->expects($this->once())
@@ -167,7 +168,7 @@ class EntityUserProviderTest extends TestCase
         $provider->loadUserByIdentifier('name');
     }
 
-    public function testLoadUserByUserNameShouldDeclineInvalidInterface()
+    public function testLoadUserByIdentifierShouldDeclineInvalidInterface()
     {
         $this->expectException(\InvalidArgumentException::class);
         $repository = $this->createMock(ObjectRepository::class);
@@ -195,6 +196,27 @@ class EntityUserProviderTest extends TestCase
         );
 
         $provider->upgradePassword($user, 'foobar');
+    }
+
+    public function testRefreshedUserProxyIsLoaded()
+    {
+        $em = DoctrineTestHelper::createTestEntityManager();
+        $this->createSchema($em);
+
+        $user = new User(1, 1, 'user1');
+
+        $em->persist($user);
+        $em->flush();
+        $em->clear();
+
+        // store a proxy in the identity map
+        $em->getReference(User::class, ['id1' => 1, 'id2' => 1]);
+
+        $provider = new EntityUserProvider($this->getManager($em), User::class);
+        $refreshedUser = $provider->refreshUser($user);
+
+        $this->assertInstanceOf(Proxy::class, $refreshedUser);
+        $this->assertTrue($refreshedUser->__isInitialized());
     }
 
     private function getManager($em, $name = null)

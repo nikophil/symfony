@@ -28,7 +28,7 @@ use Symfony\Component\Validator\Mapping\CascadingStrategy;
 use Symfony\Component\Validator\Mapping\ClassMetadata;
 use Symfony\Component\Validator\Mapping\PropertyMetadata;
 use Symfony\Component\Validator\Mapping\TraversalStrategy;
-use Symfony\Component\Validator\Tests\Fixtures\Entity;
+use Symfony\Component\Validator\Tests\Fixtures\NestedAttribute\Entity;
 use Symfony\Component\Validator\Validation;
 
 /**
@@ -39,8 +39,7 @@ class DoctrineLoaderTest extends TestCase
     public function testLoadClassMetadata()
     {
         $validator = Validation::createValidatorBuilder()
-            ->enableAnnotationMapping(true)
-            ->addDefaultDoctrineAnnotationReader()
+            ->enableAttributeMapping()
             ->addLoader(new DoctrineLoader(DoctrineTestHelper::createTestEntityManager(), '{^Symfony\\\\Bridge\\\\Doctrine\\\\Tests\\\\Fixtures\\\\DoctrineLoader}'))
             ->getValidator()
         ;
@@ -143,8 +142,7 @@ class DoctrineLoaderTest extends TestCase
     {
         $validator = Validation::createValidatorBuilder()
             ->addMethodMapping('loadValidatorMetadata')
-            ->enableAnnotationMapping(true)
-            ->addDefaultDoctrineAnnotationReader()
+            ->enableAttributeMapping()
             ->addLoader(new DoctrineLoader(DoctrineTestHelper::createTestEntityManager(), '{^Symfony\\\\Bridge\\\\Doctrine\\\\Tests\\\\Fixtures\\\\DoctrineLoader}'))
             ->getValidator()
         ;
@@ -161,8 +159,7 @@ class DoctrineLoaderTest extends TestCase
     public function testFieldMappingsConfiguration()
     {
         $validator = Validation::createValidatorBuilder()
-            ->enableAnnotationMapping(true)
-            ->addDefaultDoctrineAnnotationReader()
+            ->enableAttributeMapping()
             ->addXmlMappings([__DIR__.'/../Resources/validator/BaseUser.xml'])
             ->addLoader(
                 new DoctrineLoader(
@@ -203,8 +200,7 @@ class DoctrineLoaderTest extends TestCase
     public function testClassNoAutoMapping()
     {
         $validator = Validation::createValidatorBuilder()
-            ->enableAnnotationMapping(true)
-            ->addDefaultDoctrineAnnotationReader()
+            ->enableAttributeMapping()
             ->addLoader(new DoctrineLoader(DoctrineTestHelper::createTestEntityManager(), '{.*}'))
             ->getValidator();
 

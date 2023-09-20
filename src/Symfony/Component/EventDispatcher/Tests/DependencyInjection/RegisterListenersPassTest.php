@@ -200,10 +200,20 @@ class RegisterListenersPassTest extends TestCase
     public function testInvokableEventListener()
     {
         $container = new ContainerBuilder();
-        $container->register('foo', \stdClass::class)->addTag('kernel.event_listener', ['event' => 'foo.bar']);
+        $container->setParameter('event_dispatcher.event_aliases', [AliasedEvent::class => 'aliased_event']);
+
+        $container->register('foo', \get_class(new class() {
+            public function onFooBar()
+            {
+            }
+        }))->addTag('kernel.event_listener', ['event' => 'foo.bar']);
         $container->register('bar', InvokableListenerService::class)->addTag('kernel.event_listener', ['event' => 'foo.bar']);
         $container->register('baz', InvokableListenerService::class)->addTag('kernel.event_listener', ['event' => 'event']);
-        $container->register('zar', \stdClass::class)->addTag('kernel.event_listener', ['event' => 'foo.bar_zar']);
+        $container->register('zar', \get_class(new class() {
+            public function onFooBarZar()
+            {
+            }
+        }))->addTag('kernel.event_listener', ['event' => 'foo.bar_zar']);
         $container->register('event_dispatcher', \stdClass::class);
 
         $registerListenersPass = new RegisterListenersPass();
@@ -245,6 +255,20 @@ class RegisterListenersPassTest extends TestCase
             ],
         ];
         $this->assertEquals($expectedCalls, $definition->getMethodCalls());
+    }
+
+    public function testItThrowsAnExceptionIfTagIsMissingMethodAndClassHasNoValidMethod()
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('None of the "onFooBar" or "__invoke" methods exist for the service "foo". Please define the "method" attribute on "kernel.event_listener" tags.');
+
+        $container = new ContainerBuilder();
+
+        $container->register('foo', \stdClass::class)->addTag('kernel.event_listener', ['event' => 'foo.bar']);
+        $container->register('event_dispatcher', \stdClass::class);
+
+        $registerListenersPass = new RegisterListenersPass();
+        $registerListenersPass->process($container);
     }
 
     public function testTaggedInvokableEventListener()
@@ -479,6 +503,269 @@ class RegisterListenersPassTest extends TestCase
         ];
         $this->assertEquals($expectedCalls, $definition->getMethodCalls());
     }
+
+    public function testBeforeAfterListener()
+    {
+        $container = new ContainerBuilder();
+        $container->register('listener', GenericListener::class)->addTag('kernel.event_listener', ['event' => 'foo', 'priority' => 5]);
+        $container->register('before', InvokableListenerService::class)->addTag('kernel.event_listener', ['event' => 'foo', 'before' => 'listener']);
+//        $container->register('after', InvokableListenerService::class)->addTag('kernel.event_listener', ['event' => 'foo', 'after' => GenericListener::class]);
+        $container->register('before_full_definition', InvokableListenerService::class)->addTag('kernel.event_listener', ['event' => 'foo', 'before' => ['listener', '__invoke']]);
+        $container->register('event_dispatcher');
+
+        $registerListenersPass = new RegisterListenersPass();
+        $registerListenersPass->process($container);
+
+        $definition = $container->getDefinition('event_dispatcher');
+        $expectedCalls = [
+            [
+                'addListener',
+                [
+                    'foo',
+                    [new ServiceClosureArgument(new Reference('listener')), '__invoke'],
+                    5,
+                ],
+            ],
+            [
+                'addListener',
+                [
+                    'foo',
+                    [new ServiceClosureArgument(new Reference('before')), '__invoke'],
+                    6,
+                ],
+            ],
+//            [
+//                'addListener',
+//                [
+//                    'foo',
+//                    [new ServiceClosureArgument(new Reference('after')), '__invoke'],
+//                    4,
+//                ],
+//            ],
+            [
+                'addListener',
+                [
+                    'foo',
+                    [new ServiceClosureArgument(new Reference('before_full_definition')), '__invoke'],
+                    6,
+                ],
+            ],
+        ];
+        $this->assertEquals($expectedCalls, $definition->getMethodCalls());
+    }
+
+    public function testBeforeAfterListenerWithMultipleEvents()
+    {
+        $container = new ContainerBuilder();
+        $container->register('listener', MultipleListeners::class)
+            ->addTag('kernel.event_listener', ['event' => 'foo', 'priority' => 0, 'method' => 'onEvent1'])
+            ->addTag('kernel.event_listener', ['event' => 'bar', 'priority' => 10, 'method' => 'onEvent2'])
+        ;
+        $container->register('before', InvokableListenerService::class)
+            ->addTag('kernel.event_listener', ['event' => 'foo', 'before' => 'listener', 'method' => '__invoke'])
+//            ->addTag('kernel.event_listener', ['event' => 'bar', 'before' => MultipleListeners::class, 'method' => 'onEvent'])
+        ;
+        $container->register('event_dispatcher');
+
+        $registerListenersPass = new RegisterListenersPass();
+        $registerListenersPass->process($container);
+
+        $definition = $container->getDefinition('event_dispatcher');
+        $expectedCalls = [
+            [
+                'addListener',
+                [
+                    'foo',
+                    [new ServiceClosureArgument(new Reference('listener')), 'onEvent1'],
+                    0,
+                ],
+            ],
+            [
+                'addListener',
+                [
+                    'bar',
+                    [new ServiceClosureArgument(new Reference('listener')), 'onEvent2'],
+                    10,
+                ],
+            ],
+            [
+                'addListener',
+                [
+                    'foo',
+                    [new ServiceClosureArgument(new Reference('before')), '__invoke'],
+                    1,
+                ],
+            ],
+//            [
+//                'addListener',
+//                [
+//                    'bar',
+//                    [new ServiceClosureArgument(new Reference('before')), 'onEvent'],
+//                    11,
+//                ],
+//            ],
+        ];
+        $this->assertEquals($expectedCalls, $definition->getMethodCalls());
+    }
+
+    public function testChainedBeforeAfterListener()
+    {
+        $container = new ContainerBuilder();
+
+        $container->register('listener_1', GenericListener::class)->addTag('kernel.event_listener', ['event' => 'foo', 'before' => 'listener_2']);
+        $container->register('listener_2', GenericListener::class)->addTag('kernel.event_listener', ['event' => 'foo', 'before' => 'listener_3']);
+        $container->register('listener_3', GenericListener::class)->addTag('kernel.event_listener', ['event' => 'foo']);
+
+        $container->register('event_dispatcher');
+
+        $registerListenersPass = new RegisterListenersPass();
+        $registerListenersPass->process($container);
+
+        $definition = $container->getDefinition('event_dispatcher');
+        $expectedCalls = [
+            [
+                'addListener',
+                [
+                    'foo',
+                    [new ServiceClosureArgument(new Reference('listener_1')), '__invoke'],
+                    2,
+                ],
+            ],
+            [
+                'addListener',
+                [
+                    'foo',
+                    [new ServiceClosureArgument(new Reference('listener_2')), '__invoke'],
+                    1,
+                ],
+            ],
+            [
+                'addListener',
+                [
+                    'foo',
+                    [new ServiceClosureArgument(new Reference('listener_3')), '__invoke'],
+                    0,
+                ],
+            ],
+        ];
+        $this->assertEquals($expectedCalls, $definition->getMethodCalls());
+    }
+
+    /**
+     * @dataProvider beforeAfterErrorsProvider
+     */
+    public function testBeforeAfterErrors(string $expectedErrorMessage, array $erroneousTagDefinition)
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage($expectedErrorMessage);
+
+        $container = new ContainerBuilder();
+        $container->register('listener', GenericListener::class)->addTag('kernel.event_listener', ['event' => 'foo']);
+        $container->register('error_listener', InvokableListenerService::class)->addTag('kernel.event_listener', $erroneousTagDefinition);
+        $container->register('event_dispatcher');
+
+        $registerListenersPass = new RegisterListenersPass();
+        $registerListenersPass->process($container);
+    }
+
+    public static function beforeAfterErrorsProvider(): iterable
+    {
+        yield [
+            'Invalid before/after definition for service "error_listener": cannot use "after" and "before" at the same time.',
+            ['event' => 'foo', 'before' => 'listener', 'after' => 'listener'],
+        ];
+
+        yield [
+            'Invalid before/after definition for service "error_listener": when declaring as an array, first item must be a service id and second item must be the method.',
+            ['event' => 'foo', 'before' => []],
+        ];
+
+        yield [
+            'Invalid before/after definition for service "error_listener": "stdClass" is not a listener.',
+            ['event' => 'foo', 'before' => 'stdClass'],
+        ];
+
+//        yield [
+//            sprintf('Invalid before/after definition for service "error_listener": given definition "%s" does not listen to the same event.', GenericListener::class),
+//            ['event' => 'bar', 'before' => GenericListener::class],
+//        ];
+//
+//        yield [
+//            sprintf('Invalid before/after definition for service "error_listener": given definition "%s::foo()" is not a listener.', GenericListener::class),
+//            ['event' => 'foo', 'before' => [GenericListener::class, 'foo']],
+//        ];
+
+        yield [
+            'Invalid before/after definition for service "error_listener": "listener" does not listen to the same event.',
+            ['event' => 'bar', 'before' => 'listener'],
+        ];
+
+        yield [
+            'Invalid before/after definition for service "error_listener": method "listener::foo()" does not exist or is not a listener.',
+            ['event' => 'foo', 'before' => ['listener', 'foo']],
+        ];
+
+        yield [
+            'Invalid before/after definition for service "error_listener": "event_dispatcher" is not a listener.',
+            ['event' => 'bar', 'before' => 'event_dispatcher'],
+        ];
+
+        yield [
+            'Invalid before/after definition for service "error_listener": "listener" is not handled by the same dispatchers.',
+            ['event' => 'foo', 'before' => 'listener', 'dispatcher' => 'some_dispatcher'],
+        ];
+    }
+
+    /**
+     * @dataProvider beforeAfterAmbiguousProvider
+     */
+    public function testBeforeAfterAmbiguous(string $expectedErrorMessage, array $ambiguousTagDefinition)
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage($expectedErrorMessage);
+
+        $container = new ContainerBuilder();
+        $container->register('listener', MultipleListeners::class)
+            ->addTag('kernel.event_listener', ['event' => 'foo', 'method' => 'onEvent1'])
+            ->addTag('kernel.event_listener', ['event' => 'foo', 'method' => 'onEvent2'])
+        ;
+
+        $container->register('error_listener', InvokableListenerService::class)->addTag('kernel.event_listener', $ambiguousTagDefinition);
+        $container->register('event_dispatcher');
+
+        $registerListenersPass = new RegisterListenersPass();
+        $registerListenersPass->process($container);
+    }
+
+    public static function beforeAfterAmbiguousProvider(): iterable
+    {
+        yield [
+            'Invalid before/after definition for service "error_listener": "listener" has multiple methods. Please specify the "method" attribute.',
+            ['event' => 'foo', 'before' => 'listener'],
+        ];
+
+//        yield [
+//            sprintf('Invalid before/after definition for service "error_listener": "%s" has multiple methods. Please specify the "method" attribute.', MultipleListeners::class),
+//            ['event' => 'foo', 'after' => MultipleListeners::class],
+//        ];
+    }
+
+    public function testBeforeAfterCircularError()
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid before/after definition for service "listener_1::__invoke": circular reference detected.');
+
+        $container = new ContainerBuilder();
+
+        $container->register('listener_1', GenericListener::class)->addTag('kernel.event_listener', ['event' => 'foo', 'before' => 'listener_2']);
+        $container->register('listener_2', GenericListener::class)->addTag('kernel.event_listener', ['event' => 'foo', 'before' => 'listener_3']);
+        $container->register('listener_3', GenericListener::class)->addTag('kernel.event_listener', ['event' => 'foo', 'before' => 'listener_1']);
+
+        $container->register('event_dispatcher');
+
+        $registerListenersPass = new RegisterListenersPass();
+        $registerListenersPass->process($container);
+    }
 }
 
 class SubscriberService implements EventSubscriberInterface
@@ -531,6 +818,17 @@ final class TypedListener
 final class GenericListener
 {
     public function __invoke(object $event): void
+    {
+    }
+}
+
+final class MultipleListeners
+{
+    public function onEvent1(): void
+    {
+    }
+
+    public function onEvent2(): void
     {
     }
 }

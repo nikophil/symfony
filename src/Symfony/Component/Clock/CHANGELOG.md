@@ -1,6 +1,12 @@
 CHANGELOG
 =========
 
+6.4
+---
+
+ * Throw `DateMalformedStringException`/`DateInvalidTimeZoneException` when appropriate
+ * Add `$modifier` argument to the `now()` helper
+
 6.3
 ---
 

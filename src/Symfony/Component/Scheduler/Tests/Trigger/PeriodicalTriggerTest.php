@@ -23,21 +23,20 @@ class PeriodicalTriggerTest extends TestCase
      */
     public function testConstructor(PeriodicalTrigger $trigger, bool $optimizable = true)
     {
-        $run = new \DateTimeImmutable('2922-02-22 13:34:00+00:00');
+        $run = new \DateTimeImmutable('2922-02-22 12:34:00+00:00');
 
-        $this->assertSame('2922-02-23 13:34:00+00:00', $trigger->getNextRunDate($run)->format('Y-m-d H:i:sP'));
+        $this->assertSame('2922-02-23 13:34:00+01:00', $trigger->getNextRunDate($run)->format('Y-m-d H:i:sP'));
 
         if ($optimizable) {
             // test that we are using the fast algorithm for short period of time
             $p = new \ReflectionProperty($trigger, 'intervalInSeconds');
-            $p->setAccessible(true);
             $this->assertNotSame(0, $p->getValue($trigger));
         }
     }
 
     public static function provideForConstructor(): iterable
     {
-        $from = new \DateTimeImmutable($now = '2022-02-22 13:34:00+00:00');
+        $from = new \DateTimeImmutable($now = '2022-02-22 13:34:00+01:00');
         $until = new \DateTimeImmutable($farFuture = '3000-01-01');
 
         yield [new PeriodicalTrigger(86400, $from, $until)];
@@ -179,7 +178,12 @@ class PeriodicalTriggerTest extends TestCase
         ];
         yield [
             $trigger,
-            new \DateTimeImmutable('2020-02-20T01:59:59.999999+02:00'),
+            new \DateTimeImmutable('2020-02-20T01:40:00+02:00'),
+            new \DateTimeImmutable('2020-02-20T02:00:00+02:00'),
+        ];
+        yield [
+            $trigger,
+            new \DateTimeImmutable('2020-02-20T01:59:00+02:00'),
             new \DateTimeImmutable('2020-02-20T02:00:00+02:00'),
         ];
         yield [

@@ -17,9 +17,6 @@ use Symfony\Component\Scheduler\Trigger\JitterTrigger;
 use Symfony\Component\Scheduler\Trigger\PeriodicalTrigger;
 use Symfony\Component\Scheduler\Trigger\TriggerInterface;
 
-/**
- * @experimental
- */
 final class RecurringMessage
 {
     private string $id;
@@ -43,7 +40,7 @@ final class RecurringMessage
      * @see https://en.wikipedia.org/wiki/ISO_8601#Durations
      * @see https://php.net/datetime.formats.relative
      */
-    public static function every(string|int|\DateInterval $frequency, object $message, string|\DateTimeImmutable $from = new \DateTimeImmutable(), string|\DateTimeImmutable $until = new \DateTimeImmutable('3000-01-01')): self
+    public static function every(string|int|\DateInterval $frequency, object $message, string|\DateTimeImmutable|null $from = null, string|\DateTimeImmutable $until = new \DateTimeImmutable('3000-01-01')): self
     {
         return new self(new PeriodicalTrigger($frequency, $from, $until), $message);
     }

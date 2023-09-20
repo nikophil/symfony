@@ -16,9 +16,8 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Exception\TableNotFoundException;
 use Doctrine\DBAL\Platforms\AbstractPlatform;
-use Doctrine\DBAL\Schema\Schema;
 use Doctrine\DBAL\Schema\DefaultSchemaManagerFactory;
-use Doctrine\ORM\ORMSetup;
+use Doctrine\DBAL\Schema\Schema;
 use Symfony\Component\Lock\Key;
 use Symfony\Component\Lock\PersistingStoreInterface;
 use Symfony\Component\Lock\Store\DoctrineDbalStore;
@@ -34,13 +33,13 @@ class DoctrineDbalStoreTest extends AbstractStoreTestCase
 {
     use ExpiringStoreTestTrait;
 
-    protected static $dbFile;
+    protected static string $dbFile;
 
     public static function setUpBeforeClass(): void
     {
         self::$dbFile = tempnam(sys_get_temp_dir(), 'sf_sqlite_lock');
 
-        $config = class_exists(ORMSetup::class) ? ORMSetup::createConfiguration(true) : new Configuration();
+        $config = new Configuration();
         if (class_exists(DefaultSchemaManagerFactory::class)) {
             $config->setSchemaManagerFactory(new DefaultSchemaManagerFactory());
         }
@@ -54,14 +53,14 @@ class DoctrineDbalStoreTest extends AbstractStoreTestCase
         @unlink(self::$dbFile);
     }
 
-    protected function getClockDelay()
+    protected function getClockDelay(): int
     {
         return 1000000;
     }
 
     public function getStore(): PersistingStoreInterface
     {
-        $config = class_exists(ORMSetup::class) ? ORMSetup::createConfiguration(true) : new Configuration();
+        $config = new Configuration();
         if (class_exists(DefaultSchemaManagerFactory::class)) {
             $config->setSchemaManagerFactory(new DefaultSchemaManagerFactory());
         }
@@ -241,7 +240,7 @@ class DoctrineDbalStoreTest extends AbstractStoreTestCase
     public function testConfigureSchemaDifferentDatabase()
     {
         $conn = $this->createMock(Connection::class);
-        $someFunction = function () { return false; };
+        $someFunction = fn () => false;
         $schema = new Schema();
 
         $dbalStore = new DoctrineDbalStore($conn);
@@ -252,7 +251,7 @@ class DoctrineDbalStoreTest extends AbstractStoreTestCase
     public function testConfigureSchemaSameDatabase()
     {
         $conn = $this->createMock(Connection::class);
-        $someFunction = function () { return true; };
+        $someFunction = fn () => true;
         $schema = new Schema();
 
         $dbalStore = new DoctrineDbalStore($conn);
@@ -267,7 +266,7 @@ class DoctrineDbalStoreTest extends AbstractStoreTestCase
         $schema->createTable('lock_keys');
 
         $dbalStore = new DoctrineDbalStore($conn);
-        $someFunction = function () { return true; };
+        $someFunction = fn () => true;
         $dbalStore->configureSchema($schema, $someFunction);
         $table = $schema->getTable('lock_keys');
         $this->assertEmpty($table->getColumns(), 'The table was not overwritten');

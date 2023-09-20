@@ -11,6 +11,7 @@
 
 namespace Symfony\Bundle\FrameworkBundle\Tests\DependencyInjection;
 
+use Symfony\Component\Config\Definition\Exception\InvalidConfigurationException;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Exception\LogicException;
@@ -31,7 +32,10 @@ class PhpFrameworkExtensionTest extends FrameworkExtensionTestCase
         $this->expectException(\LogicException::class);
         $this->createContainerFromClosure(function ($container) {
             $container->loadFromExtension('framework', [
+                'annotations' => false,
                 'http_method_override' => false,
+                'handle_all_throwables' => true,
+                'php_errors' => ['log' => true],
                 'assets' => [
                     'base_urls' => 'http://cdn.example.com',
                     'base_path' => '/foo',
@@ -45,7 +49,10 @@ class PhpFrameworkExtensionTest extends FrameworkExtensionTestCase
         $this->expectException(\LogicException::class);
         $this->createContainerFromClosure(function ($container) {
             $container->loadFromExtension('framework', [
+                'annotations' => false,
                 'http_method_override' => false,
+                'handle_all_throwables' => true,
+                'php_errors' => ['log' => true],
                 'assets' => [
                     'packages' => [
                         'impossible' => [
@@ -58,13 +65,46 @@ class PhpFrameworkExtensionTest extends FrameworkExtensionTestCase
         });
     }
 
+    public function testWorkflowValidationPlacesIsArray()
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage('The "places" option must be an array in workflow configuration.');
+        $this->createContainerFromClosure(function ($container) {
+            $container->loadFromExtension('framework', [
+                'workflows' => [
+                    'article' => [
+                        'places' => null,
+                    ],
+                ],
+            ]);
+        });
+    }
+
+    public function testWorkflowValidationTransitonsIsArray()
+    {
+        $this->expectException(InvalidConfigurationException::class);
+        $this->expectExceptionMessage('The "transitions" option must be an array in workflow configuration.');
+        $this->createContainerFromClosure(function ($container) {
+            $container->loadFromExtension('framework', [
+                'workflows' => [
+                    'article' => [
+                        'transitions' => null,
+                    ],
+                ],
+            ]);
+        });
+    }
+
     public function testWorkflowValidationStateMachine()
     {
         $this->expectException(InvalidDefinitionException::class);
         $this->expectExceptionMessage('A transition from a place/state must have an unique name. Multiple transitions named "a_to_b" from place/state "a" were found on StateMachine "article".');
         $this->createContainerFromClosure(function ($container) {
             $container->loadFromExtension('framework', [
+                'annotations' => false,
                 'http_method_override' => false,
+                'handle_all_throwables' => true,
+                'php_errors' => ['log' => true],
                 'workflows' => [
                     'article' => [
                         'type' => 'state_machine',
@@ -92,7 +132,10 @@ class PhpFrameworkExtensionTest extends FrameworkExtensionTestCase
     {
         $container = $this->createContainerFromClosure(function ($container) {
             $container->loadFromExtension('framework', [
+                'annotations' => false,
                 'http_method_override' => false,
+                'handle_all_throwables' => true,
+                'php_errors' => ['log' => true],
                 'workflows' => [
                     'workflow_a' => [
                         'type' => 'state_machine',
@@ -150,7 +193,10 @@ class PhpFrameworkExtensionTest extends FrameworkExtensionTestCase
         try {
             $this->createContainerFromClosure(function (ContainerBuilder $container) {
                 $container->loadFromExtension('framework', [
+                    'annotations' => false,
                     'http_method_override' => false,
+                    'handle_all_throwables' => true,
+                    'php_errors' => ['log' => true],
                     'lock' => false,
                     'rate_limiter' => [
                         'with_lock' => ['policy' => 'fixed_window', 'limit' => 10, 'interval' => '1 hour'],
@@ -165,7 +211,10 @@ class PhpFrameworkExtensionTest extends FrameworkExtensionTestCase
 
         $container = $this->createContainerFromClosure(function (ContainerBuilder $container) {
             $container->loadFromExtension('framework', [
+                'annotations' => false,
                 'http_method_override' => false,
+                'handle_all_throwables' => true,
+                'php_errors' => ['log' => true],
                 'lock' => true,
                 'rate_limiter' => [
                     'with_lock' => ['policy' => 'fixed_window', 'limit' => 10, 'interval' => '1 hour'],
@@ -181,7 +230,10 @@ class PhpFrameworkExtensionTest extends FrameworkExtensionTestCase
     {
         $container = $this->createContainerFromClosure(function (ContainerBuilder $container) {
             $container->loadFromExtension('framework', [
+                'annotations' => false,
                 'http_method_override' => false,
+                'handle_all_throwables' => true,
+                'php_errors' => ['log' => true],
                 'rate_limiter' => [
                     'without_lock' => ['policy' => 'fixed_window', 'limit' => 10, 'interval' => '1 hour', 'lock_factory' => null],
                 ],

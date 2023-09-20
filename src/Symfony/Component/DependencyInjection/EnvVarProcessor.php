@@ -56,6 +56,7 @@ class EnvVarProcessor implements EnvVarProcessorInterface
             'require' => 'bool|int|float|string|array',
             'enum' => \BackedEnum::class,
             'shuffle' => 'array',
+            'defined' => 'bool',
         ];
     }
 
@@ -103,6 +104,14 @@ class EnvVarProcessor implements EnvVarProcessorInterface
             return $backedEnumClassName::tryFrom($backedEnumValue) ?? throw new RuntimeException(sprintf('Enum value "%s" is not backed by "%s".', $backedEnumValue, $backedEnumClassName));
         }
 
+        if ('defined' === $prefix) {
+            try {
+                return '' !== ($getEnv($name) ?? '');
+            } catch (EnvNotFoundException) {
+                return false;
+            }
+        }
+
         if ('default' === $prefix) {
             if (false === $i) {
                 throw new RuntimeException(sprintf('Invalid env "default:%s": a fallback parameter should be provided.', $name));
@@ -143,10 +152,16 @@ class EnvVarProcessor implements EnvVarProcessorInterface
             }
         }
 
+        $returnNull = false;
+        if ('' === $prefix) {
+            $returnNull = true;
+            $prefix = 'string';
+        }
+
         if (false !== $i || 'string' !== $prefix) {
             $env = $getEnv($name);
         } elseif ('' === ($env = $_ENV[$name] ?? (str_starts_with($name, 'HTTP_') ? null : ($_SERVER[$name] ?? null)))
-            || false === ($env = $env ?? getenv($name) ?? false) // null is a possible value because of thread safety issues
+            || (false !== $env && false === ($env = $env ?? getenv($name) ?? false)) // null is a possible value because of thread safety issues
         ) {
             foreach ($this->loadedVars as $vars) {
                 if (false !== ($env = ($vars[$name] ?? $env)) && '' !== $env) {
@@ -192,6 +207,10 @@ class EnvVarProcessor implements EnvVarProcessorInterface
         }
 
         if (null === $env) {
+            if ($returnNull) {
+                return null;
+            }
+
             if (!isset($this->getProvidedTypes()[$prefix])) {
                 throw new RuntimeException(sprintf('Unsupported env var prefix "%s".', $prefix));
             }

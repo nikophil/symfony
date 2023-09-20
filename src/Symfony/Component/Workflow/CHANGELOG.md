@@ -1,6 +1,17 @@
 CHANGELOG
 =========
 
+6.4
+---
+
+ * Add `with-metadata` option to the `workflow:dump` command to include places,
+   transitions and workflow's metadata into dumped graph
+ * Add support for storing marking in a property
+ * Add a profiler
+ * Add support for multiline descriptions in PlantUML diagrams
+ * Add PHP attributes to register listeners and guards
+ * Deprecate `GuardEvent::getContext()` method that will be removed in 7.0
+
 6.2
 ---
 

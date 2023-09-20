@@ -1,6 +1,13 @@
 CHANGELOG
 =========
 
+6.4
+---
+
+ * Deprecate `StopWorkerOnSignalsListener` in favor of using the `SignalableCommandInterface`
+ * Add `HandlerDescriptor::getOptions`
+ * Add support for multiple Redis Sentinel hosts
+
 6.3
 ---
 
@@ -15,6 +22,7 @@ CHANGELOG
    `StopWorkerOnSignalsListener` and make it configurable with SIGINT and
    SIGTERM by default
  * Add `RedispatchMessage` and `RedispatchMessageHandler`
+ * Add optional parameter `$isSameDatabase` to `DoctrineTransport::configureSchema()`
 
 6.2
 ---

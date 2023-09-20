@@ -61,9 +61,10 @@ class Connection implements ResetInterface
      * * redeliver_timeout: Timeout before redeliver messages still in handling state (i.e: delivered_at is not null and message is still in table). Default: 3600
      * * auto_setup: Whether the table should be created automatically during send / get. Default: true
      */
-    protected $configuration = [];
-    protected $driverConnection;
-    protected $queueEmptiedAt;
+    protected array $configuration;
+    protected DBALConnection $driverConnection;
+    protected ?float $queueEmptiedAt = null;
+
     private ?SchemaSynchronizer $schemaSynchronizer;
     private bool $autoSetup;
 
@@ -274,7 +275,7 @@ class Connection implements ResetInterface
     {
         $configuration = $this->driverConnection->getConfiguration();
         $assetFilter = $configuration->getSchemaAssetsFilter();
-        $configuration->setSchemaAssetsFilter(static function () { return true; });
+        $configuration->setSchemaAssetsFilter(static fn () => true);
         $this->updateSchema();
         $configuration->setSchemaAssetsFilter($assetFilter);
         $this->autoSetup = false;
@@ -402,11 +403,7 @@ class Connection implements ResetInterface
     protected function executeStatement(string $sql, array $parameters = [], array $types = []): int|string
     {
         try {
-            if (method_exists($this->driverConnection, 'executeStatement')) {
-                $stmt = $this->driverConnection->executeStatement($sql, $parameters, $types);
-            } else {
-                $stmt = $this->driverConnection->executeUpdate($sql, $parameters, $types);
-            }
+            $stmt = $this->driverConnection->executeStatement($sql, $parameters, $types);
         } catch (TableNotFoundException $e) {
             if ($this->driverConnection->isTransactionActive()) {
                 throw $e;
@@ -416,11 +413,7 @@ class Connection implements ResetInterface
             if ($this->autoSetup) {
                 $this->setup();
             }
-            if (method_exists($this->driverConnection, 'executeStatement')) {
-                $stmt = $this->driverConnection->executeStatement($sql, $parameters, $types);
-            } else {
-                $stmt = $this->driverConnection->executeUpdate($sql, $parameters, $types);
-            }
+            $stmt = $this->driverConnection->executeStatement($sql, $parameters, $types);
         }
 
         return $stmt;
@@ -480,13 +473,38 @@ class Connection implements ResetInterface
         $comparator = $this->createComparator($schemaManager);
         $schemaDiff = $this->compareSchemas($comparator, method_exists($schemaManager, 'introspectSchema') ? $schemaManager->introspectSchema() : $schemaManager->createSchema(), $this->getSchema());
         $platform = $this->driverConnection->getDatabasePlatform();
-        $queries = method_exists($platform, 'getAlterSchemaSQL') ? $platform->getAlterSchemaSQL($schemaDiff) : $schemaDiff->toSaveSql($platform);
 
-        foreach ($queries as $sql) {
-            if (method_exists($this->driverConnection, 'executeStatement')) {
+        if (!method_exists(SchemaDiff::class, 'getCreatedSchemas')) {
+            foreach ($schemaDiff->toSaveSql($platform) as $sql) {
                 $this->driverConnection->executeStatement($sql);
-            } else {
-                $this->driverConnection->exec($sql);
+            }
+
+            return;
+        }
+
+        if ($platform->supportsSchemas()) {
+            foreach ($schemaDiff->getCreatedSchemas() as $schema) {
+                $this->driverConnection->executeStatement($platform->getCreateSchemaSQL($schema));
+            }
+        }
+
+        if ($platform->supportsSequences()) {
+            foreach ($schemaDiff->getAlteredSequences() as $sequence) {
+                $this->driverConnection->executeStatement($platform->getAlterSequenceSQL($sequence));
+            }
+
+            foreach ($schemaDiff->getCreatedSequences() as $sequence) {
+                $this->driverConnection->executeStatement($platform->getCreateSequenceSQL($sequence));
+            }
+        }
+
+        foreach ($platform->getCreateTablesSQL($schemaDiff->getCreatedTables()) as $sql) {
+            $this->driverConnection->executeStatement($sql);
+        }
+
+        foreach ($schemaDiff->getAlteredTables() as $tableDiff) {
+            foreach ($platform->getAlterTableSQL($tableDiff) as $sql) {
+                $this->driverConnection->executeStatement($sql);
             }
         }
     }

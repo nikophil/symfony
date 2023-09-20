@@ -34,7 +34,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install system dependencies
         run: |
@@ -84,7 +84,11 @@ jobs:
         run: |
           [ -f src/Symfony/Component/Intl/Resources/data/locales/en.php ]
           [ ! -f src/Symfony/Component/Intl/Resources/data/locales/en.php.gz ]
+          [ -f src/Symfony/Component/Intl/Resources/data/transliterator/emoji/emoji-en.php ]
+          [ ! -f src/Symfony/Component/Intl/Resources/data/transliterator/emoji/emoji-en.php.gz ]
           src/Symfony/Component/Intl/Resources/bin/compress
           [ ! -f src/Symfony/Component/Intl/Resources/data/locales/en.php ]
           [ -f src/Symfony/Component/Intl/Resources/data/locales/en.php.gz ]
+          [ ! -f src/Symfony/Component/Intl/Resources/data/transliterator/emoji/emoji-en.php ]
+          [ -f src/Symfony/Component/Intl/Resources/data/transliterator/emoji/emoji-en.php.gz ]
           ./phpunit src/Symfony/Component/Intl

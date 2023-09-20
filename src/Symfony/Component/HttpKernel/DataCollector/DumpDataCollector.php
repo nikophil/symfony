@@ -113,18 +113,16 @@ class DumpDataCollector extends DataCollector implements DataDumperInterface
         if (!$this->requestStack
             || !$response->headers->has('X-Debug-Token')
             || $response->isRedirection()
-            || ($response->headers->has('Content-Type') && !str_contains($response->headers->get('Content-Type'), 'html'))
+            || ($response->headers->has('Content-Type') && !str_contains($response->headers->get('Content-Type') ?? '', 'html'))
             || 'html' !== $request->getRequestFormat()
             || false === strripos($response->getContent(), '</body>')
         ) {
-            if ($response->headers->has('Content-Type') && str_contains($response->headers->get('Content-Type'), 'html')) {
+            if ($response->headers->has('Content-Type') && str_contains($response->headers->get('Content-Type') ?? '', 'html')) {
                 $dumper = new HtmlDumper('php://output', $this->charset);
                 $dumper->setDisplayOptions(['fileLinkFormat' => $this->fileLinkFormat]);
             } else {
                 $dumper = new CliDumper('php://output', $this->charset);
-                if (method_exists($dumper, 'setDisplayOptions')) {
-                    $dumper->setDisplayOptions(['fileLinkFormat' => $this->fileLinkFormat]);
-                }
+                $dumper->setDisplayOptions(['fileLinkFormat' => $this->fileLinkFormat]);
             }
 
             foreach ($this->data as $dump) {
@@ -136,7 +134,7 @@ class DumpDataCollector extends DataCollector implements DataDumperInterface
     public function reset(): void
     {
         $this->stopwatch?->reset();
-        $this->data = [];
+        parent::reset();
         $this->dataCount = 0;
         $this->isCollected = true;
         $this->clonesCount = 0;
@@ -167,7 +165,7 @@ class DumpDataCollector extends DataCollector implements DataDumperInterface
     /**
      * @internal
      */
-    public function __wakeup()
+    public function __wakeup(): void
     {
         parent::__wakeup();
 
@@ -238,9 +236,7 @@ class DumpDataCollector extends DataCollector implements DataDumperInterface
                 $dumper->setDisplayOptions(['fileLinkFormat' => $this->fileLinkFormat]);
             } else {
                 $dumper = new CliDumper('php://output', $this->charset);
-                if (method_exists($dumper, 'setDisplayOptions')) {
-                    $dumper->setDisplayOptions(['fileLinkFormat' => $this->fileLinkFormat]);
-                }
+                $dumper->setDisplayOptions(['fileLinkFormat' => $this->fileLinkFormat]);
             }
 
             foreach ($this->data as $i => $dump) {

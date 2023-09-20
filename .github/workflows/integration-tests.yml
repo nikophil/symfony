@@ -107,7 +107,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install system dependencies
         run: |
@@ -172,7 +172,7 @@ jobs:
         env:
           REDIS_HOST: 'localhost:16379'
           REDIS_CLUSTER_HOSTS: 'localhost:7000 localhost:7001 localhost:7002 localhost:7003 localhost:7004 localhost:7005'
-          REDIS_SENTINEL_HOSTS: 'localhost:26379 localhost:26379 localhost:26379'
+          REDIS_SENTINEL_HOSTS: 'unreachable-host:26379 localhost:26379 localhost:26379'
           REDIS_SENTINEL_SERVICE: redis_sentinel
           MESSENGER_REDIS_DSN: redis://127.0.0.1:7006/messages
           MESSENGER_AMQP_DSN: amqp://localhost/%2f/messages
@@ -190,7 +190,7 @@ jobs:
       #    sudo rm -rf .phpunit
       #    [ -d .phpunit.bak ] && mv .phpunit.bak .phpunit
 
-      - uses: marceloprado/has-changed-path@v1
+      - uses: marceloprado/has-changed-path@v1.0.1
         id: changed-translation-files
         with:
           paths: src/**/Resources/translations/*.xlf
