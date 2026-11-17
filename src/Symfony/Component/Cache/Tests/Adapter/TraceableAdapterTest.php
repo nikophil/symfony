@@ -11,16 +11,15 @@
 
 namespace Symfony\Component\Cache\Tests\Adapter;
 
+use PHPUnit\Framework\Attributes\Group;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 use Symfony\Component\Cache\Adapter\TraceableAdapter;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class TraceableAdapterTest extends AdapterTestCase
 {
-    protected $skippedTests = [
+    protected array $skippedTests = [
         'testPrune' => 'TraceableAdapter just proxies',
     ];
 

@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Mailer\Bridge\Sendgrid\Tests\Webhook;
 
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Bridge\PhpUnit\ClockMock;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Mailer\Bridge\Sendgrid\RemoteEvent\SendgridPayloadConverter;
@@ -19,9 +20,7 @@ use Symfony\Component\Webhook\Client\RequestParserInterface;
 use Symfony\Component\Webhook\Exception\RejectWebhookException;
 use Symfony\Component\Webhook\Test\AbstractRequestParserTestCase;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class SendgridStaleTimestampRequestParserTest extends AbstractRequestParserTestCase
 {
     public function testRejectSignedRequestFromTheFuture()

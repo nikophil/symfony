@@ -12,6 +12,7 @@
 namespace Symfony\Bridge\Monolog\Processor;
 
 use Monolog\LogRecord;
+use Monolog\ResettableInterface;
 use Symfony\Component\Console\ConsoleEvents;
 use Symfony\Component\Console\Event\ConsoleEvent;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
@@ -21,45 +22,33 @@ use Symfony\Contracts\Service\ResetInterface;
  * Adds the current console command information to the log entry.
  *
  * @author Piotr Stankowski <git@trakos.pl>
- *
- * @final since Symfony 6.1
  */
-class ConsoleCommandProcessor implements EventSubscriberInterface, ResetInterface
+final class ConsoleCommandProcessor implements EventSubscriberInterface, ResetInterface, ResettableInterface
 {
-    use CompatibilityProcessor;
-
     private array $commandDataStack = [];
-    private bool $includeArguments;
-    private bool $includeOptions;
 
-    public function __construct(bool $includeArguments = true, bool $includeOptions = false)
-    {
-        $this->includeArguments = $includeArguments;
-        $this->includeOptions = $includeOptions;
+    public function __construct(
+        private bool $includeArguments = true,
+        private bool $includeOptions = false,
+    ) {
     }
 
-    private function doInvoke(array|LogRecord $record): array|LogRecord
+    public function __invoke(LogRecord $record): LogRecord
     {
-        if ($this->commandDataStack && !isset($record['extra']['command'])) {
-            $record['extra']['command'] = $this->commandDataStack[array_key_last($this->commandDataStack)];
+        if ($this->commandDataStack && !isset($record->extra['command'])) {
+            $record->extra['command'] = $this->commandDataStack[array_key_last($this->commandDataStack)];
         }
 
         return $record;
     }
 
-    /**
-     * @return void
-     */
-    public function reset()
+    public function reset(): void
     {
         // the command data is set on ConsoleEvents::COMMAND and removed on ConsoleEvents::TERMINATE,
         // it must outlive any reset happening while a command is still running
     }
 
-    /**
-     * @return void
-     */
-    public function addCommandData(ConsoleEvent $event)
+    public function addCommandData(ConsoleEvent $event): void
     {
         $commandData = [
             'name' => $event->getCommand()->getName(),

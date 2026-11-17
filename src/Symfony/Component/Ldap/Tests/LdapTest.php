@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Ldap\Tests;
 
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Ldap\Adapter\AdapterInterface;
 use Symfony\Component\Ldap\Adapter\ConnectionInterface;
@@ -65,9 +66,7 @@ class LdapTest extends TestCase
         $ldap->query('foo', 'bar', ['baz']);
     }
 
-    /**
-     * @requires extension ldap
-     */
+    #[RequiresPhpExtension('ldap')]
     public function testLdapCreate()
     {
         $ldap = Ldap::create('ext_ldap');
@@ -119,7 +118,7 @@ class LdapTest extends TestCase
 
     public function testResetWithAdapterWithoutResetMethod()
     {
-        $adapter = $this->createMock(AdapterInterface::class);
+        $adapter = $this->createStub(AdapterInterface::class);
 
         $ldap = new Ldap($adapter);
         $ldap->reset();

@@ -11,7 +11,11 @@
 
 namespace Symfony\Component\DependencyInjection\Tests\Compiler;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 use PHPUnit\Framework\TestCase;
+use Symfony\Bridge\PhpUnit\ExpectDeprecationTrait;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\Compiler\ResolveClassPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -21,9 +25,9 @@ use Symfony\Component\DependencyInjection\Tests\Fixtures\CaseSensitiveClass;
 
 class ResolveClassPassTest extends TestCase
 {
-    /**
-     * @dataProvider provideValidClassId
-     */
+    use ExpectDeprecationTrait;
+
+    #[DataProvider('provideValidClassId')]
     public function testResolveClassFromId($serviceId)
     {
         $container = new ContainerBuilder();
@@ -36,13 +40,10 @@ class ResolveClassPassTest extends TestCase
 
     public static function provideValidClassId()
     {
-        yield ['Acme\UnknownClass'];
         yield [CaseSensitiveClass::class];
     }
 
-    /**
-     * @dataProvider provideInvalidClassId
-     */
+    #[DataProvider('provideInvalidClassId')]
     public function testWontResolveClassFromId($serviceId)
     {
         $container = new ContainerBuilder();
@@ -63,7 +64,7 @@ class ResolveClassPassTest extends TestCase
     public function testNonFqcnChildDefinition()
     {
         $container = new ContainerBuilder();
-        $parent = $container->register('App\Foo', null);
+        $parent = $container->register('App\Foo.parent', 'App\Foo');
         $child = $container->setDefinition('App\Foo.child', new ChildDefinition('App\Foo'));
 
         (new ResolveClassPass())->process($container);
@@ -75,7 +76,7 @@ class ResolveClassPassTest extends TestCase
     public function testClassFoundChildDefinition()
     {
         $container = new ContainerBuilder();
-        $parent = $container->register('App\Foo', null);
+        $parent = $container->register('foo.parent', 'App\Foo');
         $child = $container->setDefinition(self::class, new ChildDefinition('App\Foo'));
 
         (new ResolveClassPass())->process($container);
@@ -87,9 +88,9 @@ class ResolveClassPassTest extends TestCase
     public function testAmbiguousChildDefinition()
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('Service definition "App\Foo\Child" has a parent but no class, and its name looks like an FQCN. Either the class is missing or you want to inherit it from the parent service. To resolve this ambiguity, please rename this service to a non-FQCN (e.g. using dots), or create the missing class.');
+        $this->expectExceptionMessage('Service definition "App\Foo\Child" has a parent but no class, and its name looks like a FQCN. Either the class is missing or you want to inherit it from the parent service. To resolve this ambiguity, please rename this service to a non-FQCN (e.g. using dots), or create the missing class.');
         $container = new ContainerBuilder();
-        $container->register('App\Foo', null);
+        $container->register('app.foo', 'App\Foo');
         $container->setDefinition('App\Foo\Child', new ChildDefinition('App\Foo'));
 
         (new ResolveClassPass())->process($container);
@@ -139,5 +140,42 @@ class ResolveClassPassTest extends TestCase
 
         // The class should not be set because the definition has errors
         $this->assertNull($def->getClass());
+    }
+
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testInvalidClassNameDefinition()
+    {
+        // $this->expectException(InvalidArgumentException::class);
+        // $this->expectExceptionMessage('Service id "Acme\UnknownClass" looks like a FQCN but no corresponding class or interface exists. To resolve this ambiguity, please rename this service to a non-FQCN (e.g. using dots), or create the missing class or interface.');
+        $this->expectUserDeprecationMessage('Since symfony/dependency-injection 7.4: Service id "Acme\UnknownClass" looks like a FQCN but no corresponding class or interface exists. To resolve this ambiguity, please rename this service to a non-FQCN (e.g. using dots), or create the missing class or interface.');
+        $container = new ContainerBuilder();
+        $container->register('Acme\UnknownClass');
+
+        (new ResolveClassPass())->process($container);
+    }
+
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testInvalidClassWhoseImplementedInterfaceIsMissingDefinition()
+    {
+        $this->expectUserDeprecationMessage('Since symfony/dependency-injection 7.4: Service id "Acme\ClassImplementsUnavailableInterface" looks like a FQCN but no corresponding class or interface exists. To resolve this ambiguity, please rename this service to a non-FQCN (e.g. using dots), or create the missing class or interface.');
+
+        $autoloader = static function (string $class) {
+            if ('Acme\ClassImplementsUnavailableInterface' === $class) {
+                new class implements UnavailableInterface {};
+            }
+        };
+
+        spl_autoload_register($autoloader);
+
+        try {
+            $container = new ContainerBuilder();
+            $container->register('Acme\ClassImplementsUnavailableInterface');
+
+            (new ResolveClassPass())->process($container);
+        } finally {
+            spl_autoload_unregister($autoloader);
+        }
     }
 }

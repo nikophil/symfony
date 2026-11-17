@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\DependencyInjection\Tests\Compiler;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Alias;
 use Symfony\Component\DependencyInjection\Compiler\DecoratorServicePass;
@@ -197,7 +198,7 @@ class DecoratorServicePassTest extends TestCase
 
         $this->process($container);
 
-        $this->assertEmpty($container->getDefinition('baz.inner')->getTags());
+        $this->assertSame([], $container->getDefinition('baz.inner')->getTags());
         $this->assertEquals(['bar' => ['attr' => 'baz'], 'foobar' => ['attr' => 'bar'], 'container.decorator' => [['id' => 'foo', 'inner' => 'baz.inner']]], $container->getDefinition('baz')->getTags());
     }
 
@@ -220,13 +221,11 @@ class DecoratorServicePassTest extends TestCase
 
         $this->process($container);
 
-        $this->assertEmpty($container->getDefinition('deco1')->getTags());
+        $this->assertSame([], $container->getDefinition('deco1')->getTags());
         $this->assertEquals(['bar' => ['attr' => 'baz'], 'container.decorator' => [['id' => 'foo', 'inner' => 'deco1.inner']]], $container->getDefinition('deco2')->getTags());
     }
 
-    /**
-     * @dataProvider provideDecoratorsOfDecorators
-     */
+    #[DataProvider('provideDecoratorsOfDecorators')]
     public function testProcessMovesTagsToTheOutermostDecoratorOfTheService(array $decorators, string $expectedOutermostDecorator)
     {
         $container = new ContainerBuilder();

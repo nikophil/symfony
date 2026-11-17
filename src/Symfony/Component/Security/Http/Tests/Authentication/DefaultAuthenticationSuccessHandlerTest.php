@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Security\Http\Tests\Authentication;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -24,9 +25,7 @@ use Symfony\Component\Security\Http\HttpUtils;
 
 class DefaultAuthenticationSuccessHandlerTest extends TestCase
 {
-    /**
-     * @dataProvider getRequestRedirections
-     */
+    #[DataProvider('getRequestRedirections')]
     public function testRequestRedirections(Request $request, $options, $redirectedUrl)
     {
         $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
@@ -203,10 +202,8 @@ class DefaultAuthenticationSuccessHandlerTest extends TestCase
     {
         $options = ['target_path_parameter' => '_my_target_path'];
 
-        $request = $this->createMock(Request::class);
-        $request->expects($this->once())
-            ->method('get')->with('_my_target_path')
-            ->willReturn('https://localhost/some-path');
+        $request = Request::create('/');
+        $request->attributes->set('_my_target_path', 'https://localhost/some-path');
 
         $handler = new DefaultAuthenticationSuccessHandler(new HttpUtils($this->createStub(UrlGeneratorInterface::class)), $options);
         $response = $handler->onAuthenticationSuccess($request, new NullToken());

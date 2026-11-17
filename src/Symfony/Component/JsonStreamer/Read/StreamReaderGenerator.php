@@ -1,0 +1,188 @@
+<?php
+
+/*
+ * This file is part of the Symfony package.
+ *
+ * (c) Fabien Potencier <fabien@symfony.com>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace Symfony\Component\JsonStreamer\Read;
+
+use Symfony\Component\Config\ConfigCacheFactoryInterface;
+use Symfony\Component\JsonStreamer\DataModel\Read\BackedEnumNode;
+use Symfony\Component\JsonStreamer\DataModel\Read\CollectionNode;
+use Symfony\Component\JsonStreamer\DataModel\Read\CompositeNode;
+use Symfony\Component\JsonStreamer\DataModel\Read\DataModelNodeInterface;
+use Symfony\Component\JsonStreamer\DataModel\Read\DateTimeNode;
+use Symfony\Component\JsonStreamer\DataModel\Read\ObjectNode;
+use Symfony\Component\JsonStreamer\DataModel\Read\ScalarNode;
+use Symfony\Component\JsonStreamer\Exception\InvalidArgumentException;
+use Symfony\Component\JsonStreamer\Exception\RuntimeException;
+use Symfony\Component\JsonStreamer\Exception\UnsupportedException;
+use Symfony\Component\JsonStreamer\Mapping\PropertyMetadataLoaderInterface;
+use Symfony\Component\JsonStreamer\StreamerDumper;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\BackedEnumType;
+use Symfony\Component\TypeInfo\Type\BuiltinType;
+use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\EnumType;
+use Symfony\Component\TypeInfo\Type\GenericType;
+use Symfony\Component\TypeInfo\Type\ObjectType;
+use Symfony\Component\TypeInfo\Type\UnionType;
+
+/**
+ * Generates and writes stream readers PHP files.
+ *
+ * @author Mathias Arlaud <mathias.arlaud@gmail.com>
+ *
+ * @internal
+ */
+final class StreamReaderGenerator
+{
+    private const MAX_GENERIC_DEPTH = 512;
+    private const MAX_GENERIC_TYPE_LENGTH = 65536;
+
+    private StreamerDumper $dumper;
+    private ?PhpGenerator $phpGenerator = null;
+
+    public function __construct(
+        private PropertyMetadataLoaderInterface $propertyMetadataLoader,
+        private string $streamReadersDir,
+        ?ConfigCacheFactoryInterface $cacheFactory = null,
+    ) {
+        $this->dumper = new StreamerDumper($propertyMetadataLoader, $streamReadersDir, $cacheFactory);
+    }
+
+    /**
+     * Generates and writes a stream reader PHP file and return its path.
+     *
+     * @param array<string, mixed> $options
+     */
+    public function generate(Type $type, bool $decodeFromStream, array $options = []): string
+    {
+        $path = \sprintf('%s%s%s.json%s.php', $this->streamReadersDir, \DIRECTORY_SEPARATOR, hash('xxh128', (string) $type), $decodeFromStream ? '.stream' : '');
+        $generateContent = function () use ($type, $decodeFromStream, $options): string {
+            $this->phpGenerator ??= new PhpGenerator();
+
+            return $this->phpGenerator->generate($this->createDataModel($type, $options), $decodeFromStream, $options);
+        };
+
+        $this->dumper->dump($type, $path, $generateContent);
+
+        return $path;
+    }
+
+    /**
+     * @param array<string, mixed> $options
+     * @param array<string, mixed> $context
+     */
+    private function createDataModel(Type $type, array $options = [], array &$context = []): DataModelNodeInterface
+    {
+        $context['original_type'] ??= $type;
+
+        if ($type instanceof UnionType) {
+            $nodes = [];
+            foreach ($type->getTypes() as $t) {
+                $nodes[] = $this->createDataModel($t, $options, $context);
+            }
+
+            return new CompositeNode($nodes);
+        }
+
+        if ($type instanceof BuiltinType) {
+            return new ScalarNode($type);
+        }
+
+        if ($type instanceof BackedEnumType) {
+            return new BackedEnumNode($type);
+        }
+
+        $genericType = null;
+
+        if ($type instanceof GenericType) {
+            $genericType = $type;
+            $type = $type->getWrappedType();
+        }
+
+        if ($type instanceof ObjectType && is_a($type->getClassName(), \DateTimeInterface::class, true)) {
+            if (is_a($type->getClassName(), \DateTime::class, true)) {
+                throw new InvalidArgumentException('The "DateTime" class is not supported. Use "DateTimeImmutable" instead.');
+            }
+
+            return new DateTimeNode($type);
+        }
+
+        if ($type instanceof ObjectType && !$type instanceof EnumType) {
+            $typeString = (string) ($genericType ?? $type);
+            $className = $type->getClassName();
+
+            if ($context['generated_classes'][$typeString] ??= false) {
+                return ObjectNode::createMock($genericType ?? $type);
+            }
+
+            $propertiesNodes = [];
+            $context['generated_classes'][$typeString] = true;
+
+            $propertiesMetadata = $this->propertyMetadataLoader->load($className, $options, $genericType ? ['original_type' => $genericType] + $context : $context);
+
+            if ($genericType) {
+                $context['generic_depths'][$className] ??= 0;
+
+                // a class that contains itself with growing generic types would be expanded forever
+                if (++$context['generic_depths'][$className] > self::MAX_GENERIC_DEPTH || \strlen($typeString) > self::MAX_GENERIC_TYPE_LENGTH) {
+                    throw new UnsupportedException(\sprintf('"%s" contains itself with generic types that keep growing, which is not supported.', $className));
+                }
+            }
+
+            foreach ($propertiesMetadata as $streamedName => $propertyMetadata) {
+                if (!$propertyMetadata->getName()) {
+                    continue;
+                }
+
+                $propertiesNodes[$streamedName] = [
+                    'name' => $propertyMetadata->getName(),
+                    'value' => $this->createDataModel($propertyMetadata->getType(), $options, $context),
+                    'accessor' => static function (string $accessor) use ($propertyMetadata): string {
+                        foreach ($propertyMetadata->getValueTransformers() as $valueTransformer) {
+                            if (\is_string($valueTransformer)) {
+                                $accessor = '$valueTransformers->get('.var_export($valueTransformer, true).")->transform($accessor, \$options)";
+
+                                continue;
+                            }
+
+                            try {
+                                $functionReflection = new \ReflectionFunction($valueTransformer);
+                            } catch (\ReflectionException $e) {
+                                throw new RuntimeException($e->getMessage(), $e->getCode(), $e);
+                            }
+
+                            $functionName = !$functionReflection->getClosureCalledClass()
+                                ? $functionReflection->getName()
+                                : \sprintf('%s::%s', $functionReflection->getClosureCalledClass()->getName(), $functionReflection->getName());
+                            $arguments = $functionReflection->isUserDefined() ? "$accessor, \$options" : $accessor;
+
+                            $accessor = "$functionName($arguments)";
+                        }
+
+                        return $accessor;
+                    },
+                ];
+            }
+
+            if ($genericType) {
+                --$context['generic_depths'][$className];
+            }
+
+            return new ObjectNode($genericType ?? $type, $propertiesNodes);
+        }
+
+        if ($type instanceof CollectionType) {
+            return new CollectionNode($type, $this->createDataModel($type->getCollectionValueType(), $options, $context));
+        }
+
+        throw new UnsupportedException(\sprintf('"%s" type is not supported.', (string) $type));
+    }
+}

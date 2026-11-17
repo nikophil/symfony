@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Messenger\Tests\Command;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Tester\CommandCompletionTester;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -72,9 +73,7 @@ class SetupTransportsCommandTest extends TestCase
         $tester->execute(['transport' => 'amqp']);
     }
 
-    /**
-     * @dataProvider provideCompletionSuggestions
-     */
+    #[DataProvider('provideCompletionSuggestions')]
     public function testComplete(array $input, array $expectedSuggestions)
     {
         $command = new SetupTransportsCommand(new Container(), ['amqp', 'other_transport']);

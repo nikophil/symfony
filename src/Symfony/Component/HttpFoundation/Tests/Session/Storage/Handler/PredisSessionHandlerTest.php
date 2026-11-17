@@ -11,13 +11,12 @@
 
 namespace Symfony\Component\HttpFoundation\Tests\Session\Storage\Handler;
 
+use PHPUnit\Framework\Attributes\Group;
 use Predis\Client;
 use Symfony\Component\HttpFoundation\Session\Storage\Handler\RedisSessionHandler;
 use Symfony\Component\HttpFoundation\Session\Storage\Handler\SessionHandlerFactory;
 
-/**
- * @group integration
- */
+#[Group('integration')]
 class PredisSessionHandlerTest extends AbstractRedisSessionHandlerTestCase
 {
     protected function createRedisClient(string $host): Client

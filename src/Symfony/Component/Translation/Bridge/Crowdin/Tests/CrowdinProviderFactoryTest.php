@@ -17,10 +17,13 @@ use Symfony\Component\Translation\Bridge\Crowdin\CrowdinProviderFactory;
 use Symfony\Component\Translation\Dumper\XliffFileDumper;
 use Symfony\Component\Translation\Loader\ArrayLoader;
 use Symfony\Component\Translation\Provider\ProviderFactoryInterface;
-use Symfony\Component\Translation\Test\ProviderFactoryTestCase;
+use Symfony\Component\Translation\Test\AbstractProviderFactoryTestCase;
+use Symfony\Component\Translation\Test\IncompleteDsnTestTrait;
 
-class CrowdinProviderFactoryTest extends ProviderFactoryTestCase
+class CrowdinProviderFactoryTest extends AbstractProviderFactoryTestCase
 {
+    use IncompleteDsnTestTrait;
+
     public static function supportsProvider(): iterable
     {
         yield [true, 'crowdin://PROJECT_ID:API_TOKEN@default'];
@@ -52,6 +55,6 @@ class CrowdinProviderFactoryTest extends ProviderFactoryTestCase
 
     public function createFactory(): ProviderFactoryInterface
     {
-        return new CrowdinProviderFactory(new MockHttpClient(), new NullLogger(), $this->getDefaultLocale(), new ArrayLoader(), new XliffFileDumper());
+        return new CrowdinProviderFactory(new MockHttpClient(), new NullLogger(), 'en', new ArrayLoader(), new XliffFileDumper());
     }
 }

@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Serializer\Tests\CacheWarmer;
 
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\HttpKernel\CacheWarmer\CacheWarmerInterface;
@@ -19,6 +21,8 @@ use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactory;
 use Symfony\Component\Serializer\Mapping\Factory\ClassMetadataFactoryCompiler;
 use Symfony\Component\Serializer\Mapping\Loader\AttributeLoader;
 
+#[IgnoreDeprecations]
+#[Group('legacy')]
 final class CompiledClassMetadataCacheWarmerTest extends TestCase
 {
     public function testItImplementsCacheWarmerInterface()

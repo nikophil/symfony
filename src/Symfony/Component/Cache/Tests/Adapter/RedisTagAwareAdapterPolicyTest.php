@@ -11,12 +11,11 @@
 
 namespace Symfony\Component\Cache\Tests\Adapter;
 
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Cache\Adapter\RedisTagAwareAdapter;
 
-/**
- * @requires extension redis
- */
+#[RequiresPhpExtension('redis')]
 class RedisTagAwareAdapterPolicyTest extends TestCase
 {
     public function testElastiCacheServerlessValkey()

@@ -42,7 +42,7 @@ class LazyFirewallContextTest extends TestCase
         $kernel = $this->createStub(HttpKernelInterface::class);
         $event = new RequestEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST);
 
-        $context($event);
+        $context->authenticate($event);
 
         $this->assertFalse($event->hasResponse(), 'No response should be set for a lazy firewall on a public route.');
     }

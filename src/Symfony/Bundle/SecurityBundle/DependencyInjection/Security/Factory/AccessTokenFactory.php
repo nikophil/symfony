@@ -46,39 +46,27 @@ final class AccessTokenFactory extends AbstractFactory implements StatelessAuthe
         $builder = $node->children();
         $builder
             ->scalarNode('realm')->defaultNull()->end()
-            ->arrayNode('token_extractors')
-                ->fixXmlConfig('token_extractors')
-                ->beforeNormalization()
-                    ->ifString()
-                    ->then(static fn ($v) => [$v])
-                ->end()
+            ->arrayNode('token_extractors', 'token_extractor')
+                ->acceptAndWrap(['string'])
                 ->cannotBeEmpty()
-                ->defaultValue([
-                    'security.access_token_extractor.header',
-                ])
+                ->defaultValue(['security.access_token_extractor.header'])
                 ->scalarPrototype()->end()
             ->end()
         ;
 
         $tokenHandlerNodeBuilder = $builder
             ->arrayNode('token_handler')
-                ->example([
-                    'id' => 'App\Security\CustomTokenHandler',
-                ])
+                ->example(['id' => 'App\Security\CustomTokenHandler'])
+                ->acceptAndWrap(['string'], 'id')
 
-                ->beforeNormalization()
-                    ->ifString()
-                    ->then(static fn ($v) => ['id' => $v])
-                ->end()
-
-                ->beforeNormalization()
+                ->validate()
                     ->ifTrue(static fn ($v) => \is_array($v) && 1 < \count($v))
                     ->then(static fn () => throw new InvalidConfigurationException('You cannot configure multiple token handlers.'))
                 ->end()
 
                 // "isRequired" must be set otherwise the following custom validation is not called
                 ->isRequired()
-                ->beforeNormalization()
+                ->validate()
                     ->ifTrue(static fn ($v) => \is_array($v) && !$v)
                     ->then(static fn () => throw new InvalidConfigurationException('You must set a token handler.'))
                 ->end()

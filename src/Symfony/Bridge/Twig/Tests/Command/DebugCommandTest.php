@@ -11,6 +11,7 @@
 
 namespace Symfony\Bridge\Twig\Tests\Command;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bridge\Twig\Command\DebugCommand;
 use Symfony\Component\Console\Application;
@@ -72,9 +73,7 @@ class DebugCommandTest extends TestCase
         $this->createCommandTester()->execute(['name' => '@foo']);
     }
 
-    /**
-     * @dataProvider getDebugTemplateNameTestData
-     */
+    #[DataProvider('getDebugTemplateNameTestData')]
     public function testDebugTemplateName(array $input, string $output, array $paths)
     {
         $tester = $this->createCommandTester($paths);
@@ -276,6 +275,72 @@ class DebugCommandTest extends TestCase
         $this->assertSame($globals, $display['globals']);
     }
 
+    public function testPathsJsonWithDecoratedOutput()
+    {
+        $tester = $this->createCommandTester(['templates' => 'custom<info>']);
+        $tester->execute(['name' => '@custom<info>/test.html.twig', '--format' => 'json'], ['decorated' => true]);
+        $display = $tester->getDisplay();
+        $data = json_decode($display, true);
+        $this->assertIsArray($data);
+        $this->assertSame(['@custom<info>' => ['templates']], $data['loader_paths']);
+    }
+
+    public function testPathsTextWithMarkup()
+    {
+        $tester = $this->createCommandTester(['templates' => 'custom<info>']);
+        $tester->execute(['name' => '@custom<info>/test.html.twig'], ['decorated' => false]);
+        $display = $tester->getDisplay();
+        $this->assertStringContainsString('Template name "@custom<info>/test.html.twig" not found', $display);
+        $this->assertStringContainsString('@custom<info>   templates'.\DIRECTORY_SEPARATOR, $display);
+    }
+
+    public function testPathsTextWithMarkupInAnUnknownNamespace()
+    {
+        $tester = $this->createCommandTester(['templates' => 'custom']);
+        $tester->execute(['name' => '@unknown<info>/test.html.twig'], ['decorated' => false]);
+
+        $this->assertStringContainsString('No template paths configured for "@unknown<info>" namespace', $tester->getDisplay());
+    }
+
+    public function testPathsTextWithMarkupInTheMatchedAndOverriddenFiles()
+    {
+        $dir = sys_get_temp_dir().'/sf-twig-debug-command-test';
+        @mkdir($dir);
+        $dir = realpath($dir);
+
+        try {
+            @mkdir($dir.'/a<info>');
+            @mkdir($dir.'/b<info>');
+
+            if (!is_dir($dir.'/a<info>') || !is_dir($dir.'/b<info>')) {
+                $this->markTestSkipped('The filesystem does not support "<" and ">" in file names.');
+            }
+            touch($dir.'/a<info>/page.html.twig');
+            touch($dir.'/b<info>/page.html.twig');
+
+            $tester = new CommandTester(new DebugCommand(new Environment(new FilesystemLoader(['a<info>', 'b<info>'], $dir)), $dir));
+            $tester->execute(['name' => 'page.html.twig'], ['decorated' => false]);
+            $display = $tester->getDisplay();
+
+            $this->assertStringContainsString('[OK] a<info>/page.html.twig', $display);
+            $this->assertStringContainsString('* b<info>/page.html.twig', $display);
+        } finally {
+            @unlink($dir.'/a<info>/page.html.twig');
+            @unlink($dir.'/b<info>/page.html.twig');
+            @rmdir($dir.'/a<info>');
+            @rmdir($dir.'/b<info>');
+            @rmdir($dir);
+        }
+    }
+
+    public function testPathsJsonWithInvalidUtf8()
+    {
+        $tester = $this->createCommandTester(['templates' => "custom\xFF"]);
+        $tester->execute(['name' => "@custom\xFF/test.html.twig", '--format' => 'json'], ['decorated' => false]);
+
+        $this->assertSame(["@custom\u{FFFD}" => ['templates']], json_decode($tester->getDisplay(), true, 512, \JSON_THROW_ON_ERROR)['loader_paths']);
+    }
+
     public function testWithFilter()
     {
         $tester = $this->createCommandTester();
@@ -288,9 +353,7 @@ class DebugCommandTest extends TestCase
         $this->assertNotSame($display1, $display2);
     }
 
-    /**
-     * @dataProvider provideCompletionSuggestions
-     */
+    #[DataProvider('provideCompletionSuggestions')]
     public function testComplete(array $input, array $expectedSuggestions)
     {
         $projectDir = \dirname(__DIR__).\DIRECTORY_SEPARATOR.'Fixtures';
@@ -298,7 +361,12 @@ class DebugCommandTest extends TestCase
         $environment = new Environment($loader);
 
         $application = new Application();
-        $application->add(new DebugCommand($environment, $projectDir, [], null, null));
+        $command = new DebugCommand($environment, $projectDir, [], null, null);
+        if (method_exists($application, 'addCommand')) {
+            $application->addCommand($command);
+        } else {
+            $application->add($command);
+        }
 
         $tester = new CommandCompletionTester($application->find('debug:twig'));
         $suggestions = $tester->complete($input, 2);
@@ -308,7 +376,7 @@ class DebugCommandTest extends TestCase
     public static function provideCompletionSuggestions(): iterable
     {
         yield 'name' => [['email'], []];
-        yield 'option --format' => [['--format', ''], ['text', 'json']];
+        yield 'option --format' => [['--format', ''], ['txt', 'json']];
     }
 
     private function createCommandTester(array $paths = [], array $bundleMetadata = [], ?string $defaultPath = null, bool $useChainLoader = false, array $globals = []): CommandTester
@@ -333,7 +401,12 @@ class DebugCommandTest extends TestCase
         }
 
         $application = new Application();
-        $application->add(new DebugCommand($environment, $projectDir, $bundleMetadata, $defaultPath, null));
+        $command = new DebugCommand($environment, $projectDir, $bundleMetadata, $defaultPath, null);
+        if (method_exists($application, 'addCommand')) {
+            $application->addCommand($command);
+        } else {
+            $application->add($command);
+        }
         $command = $application->find('debug:twig');
 
         return new CommandTester($command);

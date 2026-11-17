@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Mailer\Tests\Transport\Smtp;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Mailer\Envelope;
 use Symfony\Component\Mailer\Event\MessageEvent;
@@ -28,9 +30,7 @@ use Symfony\Component\Mime\Part\File;
 use Symfony\Component\Mime\RawMessage;
 use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class SmtpTransportTest extends TestCase
 {
     private const CLOCK_TICK_MICROSECONDS = 1;
@@ -297,9 +297,7 @@ class SmtpTransportTest extends TestCase
         $this->assertContains("RCPT TO:<recipient2@example.org>\r\n", $stream->getCommands());
     }
 
-    /**
-     * @dataProvider provideLocalDomainsWithControlCharacters
-     */
+    #[DataProvider('provideLocalDomainsWithControlCharacters')]
     public function testSetLocalDomainRejectsControlCharacters(string $domain)
     {
         $transport = new SmtpTransport(new DummyStream());
@@ -324,8 +322,9 @@ class SmtpTransportTest extends TestCase
     public function testMessageIdFromServerIsEmbeddedInSentMessageEvent()
     {
         $calls = 0;
-        $eventDispatcher = $this->createStub(EventDispatcherInterface::class);
+        $eventDispatcher = $this->createMock(EventDispatcherInterface::class);
         $eventDispatcher
+            ->expects($this->exactly(2))
             ->method('dispatch')
             ->with($this->callback(static function ($event) use (&$calls): bool {
                 ++$calls;

@@ -203,7 +203,7 @@ class TraceableEventDispatcherTest extends TestCase
     {
         $tdispatcher = new TraceableEventDispatcher(new EventDispatcher(), new Stopwatch());
         $events = $tdispatcher->getOrphanedEvents();
-        $this->assertEmpty($events);
+        $this->assertSame([], $events);
     }
 
     public function testItReturnsOrphanedEventsAfterDispatch()
@@ -221,7 +221,7 @@ class TraceableEventDispatcherTest extends TestCase
         $tdispatcher->addListener('foo', static function () {});
         $tdispatcher->dispatch(new Event(), 'foo');
         $events = $tdispatcher->getOrphanedEvents();
-        $this->assertEmpty($events);
+        $this->assertSame([], $events);
     }
 
     public function testLogger()

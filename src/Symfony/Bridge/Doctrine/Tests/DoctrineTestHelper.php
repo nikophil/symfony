@@ -66,16 +66,11 @@ final class DoctrineTestHelper
             $config->setProxyNamespace('SymfonyTests\Doctrine');
         }
         $config->setMetadataDriverImpl(new AttributeDriver([__DIR__.'/../Tests/Fixtures' => 'Symfony\Bridge\Doctrine\Tests\Fixtures'], true));
-        if (class_exists(DefaultSchemaManagerFactory::class)) {
-            $config->setSchemaManagerFactory(new DefaultSchemaManagerFactory());
-        }
+        $config->setSchemaManagerFactory(new DefaultSchemaManagerFactory());
         if (method_exists($config, 'setUseSchemaEditorApi') && method_exists(Schema::class, 'edit')) {
             $config->setUseSchemaEditorApi(true);
         }
-
-        if (!class_exists(\Doctrine\Persistence\Mapping\Driver\AnnotationDriver::class)) { // doctrine/persistence >= 3.0
-            $config->setLazyGhostObjectEnabled(true);
-        }
+        $config->setLazyGhostObjectEnabled(true);
 
         return $config;
     }

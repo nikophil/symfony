@@ -105,14 +105,15 @@ class DispatchAfterCurrentBusMiddlewareTest extends TestCase
             $secondEvent,
         ];
 
-        $matcher = $this->exactly(3);
-        $handlingMiddleware->expects($matcher)
+        $handlingMiddleware->expects($this->exactly(3))
             ->method('handle')
             ->with($this->callback(static function (Envelope $envelope) use (&$series) {
                 return $envelope->getMessage() === array_shift($series);
             }))
-            ->willReturnCallback(static function ($envelope, StackInterface $stack) use ($matcher) {
-                if (2 === $matcher->getInvocationCount()) {
+            ->willReturnCallback(static function ($envelope, StackInterface $stack) {
+                static $call = 0;
+
+                if (2 === ++$call) {
                     throw new \RuntimeException('Some exception while handling first event');
                 }
 
@@ -174,14 +175,15 @@ class DispatchAfterCurrentBusMiddlewareTest extends TestCase
             // Note: $eventL3a should not be handled.
         ];
 
-        $matcher = $this->exactly(7);
-        $handlingMiddleware->expects($matcher)
+        $handlingMiddleware->expects($this->exactly(7))
             ->method('handle')
             ->with($this->callback(static function (Envelope $envelope) use (&$series) {
                 return $envelope->getMessage() === array_shift($series);
             }))
-            ->willReturnCallback(static function ($envelope, StackInterface $stack) use ($eventBus, $eventL2a, $eventL2b, $eventL3a, $eventL3b, $matcher) {
-                switch ($matcher->getInvocationCount()) {
+            ->willReturnCallback(static function ($envelope, StackInterface $stack) use ($eventBus, $eventL2a, $eventL2b, $eventL3a, $eventL3b) {
+                static $call = 0;
+
+                switch (++$call) {
                     case 1:
                     case 2:
                     case 4:
@@ -230,8 +232,9 @@ class DispatchAfterCurrentBusMiddlewareTest extends TestCase
             $eventHandlingMiddleware,
         ]);
 
-        $fakePutMessageOnQueue = $this->createStub(MiddlewareInterface::class);
+        $fakePutMessageOnQueue = $this->createMock(MiddlewareInterface::class);
         $fakePutMessageOnQueue
+            ->expects($this->once())
             ->method('handle')
             ->with($this->callback(static function ($envelope) use ($messageBusAfterQueue) {
                 // Fake putting the message on the queue
@@ -272,9 +275,10 @@ class DispatchAfterCurrentBusMiddlewareTest extends TestCase
         $event = new DummyEvent('First event');
 
         $middleware = new DispatchAfterCurrentBusMiddleware();
-        $handlingMiddleware = $this->createStub(MiddlewareInterface::class);
+        $handlingMiddleware = $this->createMock(MiddlewareInterface::class);
 
         $handlingMiddleware
+            ->expects($this->once())
             ->method('handle')
             ->with($this->expectHandledMessage($event))
             ->willReturnCallback($this->handleMessageCallback());
@@ -398,11 +402,9 @@ class DispatchAfterCurrentBusMiddlewareTest extends TestCase
 
 class DummyEvent
 {
-    private string $message;
-
-    public function __construct(string $message)
-    {
-        $this->message = $message;
+    public function __construct(
+        private string $message,
+    ) {
     }
 
     public function getMessage(): string
@@ -413,13 +415,10 @@ class DummyEvent
 
 class DispatchingMiddleware implements MiddlewareInterface
 {
-    private MessageBusInterface $bus;
-    private array $messages;
-
-    public function __construct(MessageBusInterface $bus, array $messages)
-    {
-        $this->bus = $bus;
-        $this->messages = $messages;
+    public function __construct(
+        private MessageBusInterface $bus,
+        private array $messages,
+    ) {
     }
 
     public function handle(Envelope $envelope, StackInterface $stack): Envelope

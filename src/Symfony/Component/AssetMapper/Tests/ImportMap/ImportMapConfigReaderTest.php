@@ -11,6 +11,9 @@
 
 namespace Symfony\Component\AssetMapper\Tests\ImportMap;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\AssetMapper\ImportMap\ImportMapConfigReader;
 use Symfony\Component\AssetMapper\ImportMap\ImportMapEntries;
@@ -104,9 +107,7 @@ class ImportMapConfigReaderTest extends TestCase
         $this->assertSame($originalImportMapData, $newImportMapData);
     }
 
-    /**
-     * @dataProvider getPathToFilesystemPathTests
-     */
+    #[DataProvider('getPathToFilesystemPathTests')]
     public function testConvertPathToFilesystemPath(string $path, string $expectedPath)
     {
         $configReader = new ImportMapConfigReader(realpath(__DIR__.'/../Fixtures/importmap.php'), new RemotePackageStorage(sys_get_temp_dir()));
@@ -128,9 +129,7 @@ class ImportMapConfigReaderTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider getFilesystemPathToPathTests
-     */
+    #[DataProvider('getFilesystemPathToPathTests')]
     public function testConvertFilesystemPathToPath(string $path, ?string $expectedPath)
     {
         $configReader = new ImportMapConfigReader(__DIR__.'/../Fixtures/importmap.php', new RemotePackageStorage(sys_get_temp_dir()));
@@ -156,5 +155,13 @@ class ImportMapConfigReaderTest extends TestCase
         $entry = $configReader->findRootImportMapEntry('file2');
         $this->assertSame('file2', $entry->importName);
         $this->assertSame('file2.js', $entry->path);
+    }
+
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testDeprecatedMethodTriggerDeprecation()
+    {
+        $this->expectUserDeprecationMessage('Since symfony/asset-mapper 7.1: The method "Symfony\Component\AssetMapper\ImportMap\ImportMapConfigReader::splitPackageNameAndFilePath()" is deprecated and will be removed in 8.0. Use ImportMapEntry::splitPackageNameAndFilePath() instead.');
+        ImportMapConfigReader::splitPackageNameAndFilePath('foo');
     }
 }

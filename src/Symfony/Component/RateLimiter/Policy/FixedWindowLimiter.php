@@ -27,11 +27,15 @@ final class FixedWindowLimiter implements LimiterInterface
 {
     use ResetLimiterTrait;
 
-    private int $limit;
     private int $interval;
 
-    public function __construct(string $id, int $limit, \DateInterval $interval, StorageInterface $storage, ?LockInterface $lock = null)
-    {
+    public function __construct(
+        string $id,
+        private int $limit,
+        \DateInterval $interval,
+        StorageInterface $storage,
+        ?LockInterface $lock = null,
+    ) {
         if ($limit < 1) {
             throw new \InvalidArgumentException(\sprintf('Cannot set the limit of "%s" to 0, as that would never accept any hit.', __CLASS__));
         }
@@ -44,7 +48,6 @@ final class FixedWindowLimiter implements LimiterInterface
         $this->storage = $storage;
         $this->lock = $lock;
         $this->id = $id;
-        $this->limit = $limit;
     }
 
     public function reserve(int $tokens = 1, ?float $maxTime = null): Reservation

@@ -14,10 +14,15 @@ namespace Symfony\Component\Messenger\Command;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Completion\CompletionInput;
+use Symfony\Component\Console\Completion\CompletionSuggestions;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\Messenger\Exception\InvalidArgumentException;
 use Symfony\Component\Messenger\Transport\Receiver\MessageCountAwareInterface;
 
 /**
@@ -26,24 +31,18 @@ use Symfony\Component\Messenger\Transport\Receiver\MessageCountAwareInterface;
 #[AsCommand(name: 'messenger:stats', description: 'Show the message count for one or more transports')]
 class StatsCommand extends Command
 {
-    private ContainerInterface $transportLocator;
-    private array $transportNames;
-
-    public function __construct(ContainerInterface $transportLocator, array $transportNames = [])
-    {
-        $this->transportLocator = $transportLocator;
-        $this->transportNames = $transportNames;
-
+    public function __construct(
+        private ContainerInterface $transportLocator,
+        private array $transportNames = [],
+    ) {
         parent::__construct();
     }
 
-    /**
-     * @return void
-     */
-    protected function configure()
+    protected function configure(): void
     {
         $this
             ->addArgument('transport_names', InputArgument::IS_ARRAY | InputArgument::OPTIONAL, 'List of transports\' names')
+            ->addOption('format', '', InputOption::VALUE_REQUIRED, \sprintf('The output format ("%s")', implode('", "', $this->getAvailableFormatOptions())), 'txt')
             ->setHelp(<<<EOF
                 The <info>%command.name%</info> command counts the messages for all the transports:
 
@@ -52,6 +51,11 @@ class StatsCommand extends Command
                 Or specific transports only:
 
                     <info>php %command.full_name% <transportNames></info>
+
+                The <info>--format</info> option specifies the format of the command output:
+
+                  <info>php %command.full_name% --format=json</info>
+
                 EOF
             )
         ;
@@ -62,6 +66,16 @@ class StatsCommand extends Command
         $io = new SymfonyStyle($input, $output);
         $errorIo = $io->getErrorStyle();
 
+        $format = $input->getOption('format');
+        if ('text' === $format) {
+            trigger_deprecation('symfony/messenger', '7.2', 'The "text" format is deprecated, use "txt" instead.');
+
+            $format = 'txt';
+        }
+        if (!\in_array($format, $this->getAvailableFormatOptions(), true)) {
+            throw new InvalidArgumentException('Invalid output format.');
+        }
+
         $transportNames = $this->transportNames;
         if ($input->getArgument('transport_names')) {
             $transportNames = $input->getArgument('transport_names');
@@ -71,7 +85,9 @@ class StatsCommand extends Command
         $uncountableTransports = [];
         foreach ($transportNames as $transportName) {
             if (!$this->transportLocator->has($transportName)) {
-                $errorIo->warning(\sprintf('The "%s" transport does not exist.', $transportName));
+                if ($this->formatSupportsWarnings($format)) {
+                    $errorIo->warning(\sprintf('The "%s" transport does not exist.', $transportName));
+                }
 
                 continue;
             }
@@ -84,12 +100,56 @@ class StatsCommand extends Command
             $outputTable[] = [$transportName, $transport->getMessageCount()];
         }
 
-        $io->table(['Transport', 'Count'], $outputTable);
+        match ($format) {
+            'txt' => $this->outputText($io, $errorIo, $outputTable, $uncountableTransports),
+            'json' => $this->outputJson($io, $outputTable, $uncountableTransports),
+        };
+
+        return 0;
+    }
+
+    private function outputText(SymfonyStyle $io, SymfonyStyle $errorIo, array $outputTable, array $uncountableTransports): void
+    {
+        $rows = array_map(static fn (array $row): array => [OutputFormatter::escape($row[0]), $row[1]], $outputTable);
+        $io->table(['Transport', 'Count'], $rows);
 
         if ($uncountableTransports) {
             $errorIo->note(\sprintf('Unable to get message count for the following transports: "%s".', implode('", "', $uncountableTransports)));
         }
+    }
 
-        return 0;
+    private function outputJson(SymfonyStyle $io, array $outputTable, array $uncountableTransports): void
+    {
+        $output = ['transports' => []];
+        foreach ($outputTable as [$transportName, $count]) {
+            $output['transports'][$transportName] = ['count' => $count];
+        }
+
+        if ($uncountableTransports) {
+            $output['uncountable_transports'] = $uncountableTransports;
+        }
+
+        $io->writeln(json_encode($output, \JSON_PRETTY_PRINT | \JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
+    }
+
+    private function formatSupportsWarnings(string $format): bool
+    {
+        return match ($format) {
+            'txt' => true,
+            'json' => false,
+        };
+    }
+
+    public function complete(CompletionInput $input, CompletionSuggestions $suggestions): void
+    {
+        if ($input->mustSuggestOptionValuesFor('format')) {
+            $suggestions->suggestValues($this->getAvailableFormatOptions());
+        }
+    }
+
+    /** @return string[] */
+    private function getAvailableFormatOptions(): array
+    {
+        return ['txt', 'json'];
     }
 }

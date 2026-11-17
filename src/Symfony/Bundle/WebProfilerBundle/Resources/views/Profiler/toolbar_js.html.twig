@@ -1,18 +1,20 @@
-<div class="sf-toolbar sf-display-none" role="region" aria-label="Symfony Web Debug Toolbar" data-frankenphp-hot-reload-preserve>
+<!-- START of Symfony Web Debug Toolbar -->
+{# The stylesheet is loaded before the toolbar markup, and the empty script below makes
+   the parser wait for it, so the toolbar is never painted unstyled. #}
+<link rel="stylesheet"{% if csp_style_nonce %} nonce="{{ csp_style_nonce }}"{% endif %} href="{{ url('_wdt_stylesheet') }}" />
+<script{% if csp_script_nonce is defined and csp_script_nonce %} nonce="{{ csp_script_nonce }}"{% endif %}> </script>
+
+<div class="sf-toolbar sf-toolbar-opened" role="region" aria-label="Symfony Web Debug Toolbar" data-frankenphp-hot-reload-preserve>
     <div id="sfwdt{{ token }}">
         {{ include('@WebProfiler/Profiler/toolbar.html.twig', {
             templates: {
-                'request': '@WebProfiler/Profiler/cancel.html.twig'
+                request: '@WebProfiler/Profiler/cancel.html.twig',
             },
             profile: null,
             profiler_url: url('_profiler', {token: token}),
             profiler_markup_version: 3,
         }) }}
     </div>
-
-    <style{% if csp_style_nonce %} nonce="{{ csp_style_nonce }}"{% endif %}>
-        {{ include('@WebProfiler/Profiler/toolbar.css.twig') }}
-    </style>
 
     {# CAUTION: the contents of this file are processed by Twig before loading
                 them as JavaScript source code. Always use '/*' comments instead
@@ -52,6 +54,9 @@
                 }
 
                 var request = function(url, onSuccess, onError, payload, options, tries) {
+                    url = new URL(url);
+                    url.searchParams.set('XDEBUG_IGNORE', '1');
+                    url = url.toString();
                     var xhr = window.XMLHttpRequest ? new XMLHttpRequest() : new ActiveXObject('Microsoft.XMLHTTP');
                     options = options || {};
                     options.retry = options.retry || false;
@@ -163,7 +168,7 @@
                     }
 
                     if (requestStack.length) {
-                        ajaxToolbarPanel.style.display = 'block';
+                        ajaxToolbarPanel.style.display = '';
                     } else {
                         ajaxToolbarPanel.style.display = 'none';
                     }
@@ -319,6 +324,75 @@
                 };
 
                 {% if excluded_ajax_paths is defined %}
+                if (window.EventSource) {
+                    var oldEventSource = window.EventSource;
+                    function patchedEventSource(url, options) {
+                        var es = new oldEventSource(url, options);
+                        if (!url.toString().match(new RegExp({{ excluded_ajax_paths|json_encode|raw }}))) {
+                            var stackElement = {
+                                error: false,
+                                url: url,
+                                method: 'GET',
+                                type: 'event-stream',
+                                start: new Date()
+                            };
+
+                            var idx = requestStack.push(stackElement) - 1;
+                            var finished = false;
+                            /* The "Clear" link empties the list, after which idx points to another request or to none */
+                            var finish = function () {
+                                finished = true;
+                                if (stackElement === requestStack[idx]) {
+                                    finishAjaxRequest(idx);
+                                }
+                            };
+                            startAjaxRequest(idx);
+                            addEventListener(es, 'error', function () {
+                                stackElement.error = true;
+                                finish();
+                            });
+                            addEventListener(es, 'open', function () {
+                                stackElement.statusCode = 200;
+                                stackElement.toolbarReplaceFinished = false;
+                                stackElement.toolbarReplace = true;
+                            });
+                            addEventListener(es, 'symfony:debug:started', function (event) {
+                                if (!isSameOrigin(es.url)) {
+                                    return;
+                                }
+
+                                var items = event.data.split('\n');
+                                stackElement.profile = items[0];
+                                stackElement.profilerUrl = items[1];
+                            });
+                            addEventListener(es, 'symfony:debug:error', function (event) {
+                                stackElement.error = true;
+                                stackElement.statusCode = event.data;
+                                finish();
+                            });
+                            addEventListener(es, 'symfony:debug:finished', function () {
+                                stackElement.duration = new Date() - stackElement.start;
+                                stackElement.toolbarReplaceFinished = false;
+                                stackElement.toolbarReplace = true;
+                                finish();
+                            });
+                            /* close() dispatches no event: wrap it to mark the request as finished, unless an event already did */
+                            var originalClose = es.close.bind(es);
+                            es.close = function () {
+                                originalClose();
+
+                                if (!finished) {
+                                    stackElement.duration = new Date() - stackElement.start;
+                                    finish();
+                                }
+                            };
+                        }
+
+                        return es;
+                    };
+                    Object.defineProperties(patchedEventSource, Object.getOwnPropertyDescriptors(oldEventSource));
+                    window.EventSource = patchedEventSource;
+                }
                 if (window.fetch && window.fetch.polyfill === undefined) {
                     var oldFetch = window.fetch;
                     window.fetch = function () {
@@ -480,60 +554,37 @@
 
                     showToolbar: function(token) {
                         var sfwdt = this.getSfwdt(token);
-                        removeClass(sfwdt.parentNode, 'sf-display-none');
+                        var toggleButton = document.querySelector(`#sfToolbarToggleButton-${token}`);
 
-                        if (getPreference('toolbar/displayState') == 'none') {
-                            document.getElementById('sfToolbarMainContent-' + token).style.display = 'none';
-                            document.getElementById('sfToolbarClearer-' + token).style.display = 'none';
-                            document.getElementById('sfMiniToolbar-' + token).style.display = 'block';
+                        if ('closed' === getPreference('toolbar/displayState')) {
+                            addClass(sfwdt.parentNode, 'sf-toolbar-closed');
+                            removeClass(sfwdt.parentNode, 'sf-toolbar-opened');
+                            if (toggleButton) { toggleButton.setAttribute('aria-expanded', 'false'); }
                         } else {
-                            document.getElementById('sfToolbarMainContent-' + token).style.display = 'block';
-                            document.getElementById('sfToolbarClearer-' + token).style.display = 'block';
-                            document.getElementById('sfMiniToolbar-' + token).style.display = 'none';
+                            addClass(sfwdt.parentNode, 'sf-toolbar-opened');
+                            removeClass(sfwdt.parentNode, 'sf-toolbar-closed');
+                            if (toggleButton) { toggleButton.setAttribute('aria-expanded', 'true'); }
                         }
                     },
 
                     hideToolbar: function(token) {
                         var sfwdt = this.getSfwdt(token);
-                        addClass(sfwdt.parentNode, 'sf-display-none');
+                        var toggleButton = document.querySelector(`#sfToolbarToggleButton-${token}`);
+                        addClass(sfwdt.parentNode, 'sf-toolbar-closed');
+                        removeClass(sfwdt.parentNode, 'sf-toolbar-opened');
+                        if (toggleButton) { toggleButton.setAttribute('aria-expanded', 'false'); }
                     },
 
                     initToolbar: function(token) {
                         this.showToolbar(token);
 
-                        var hideButton = document.getElementById('sfToolbarHideButton-' + token);
-                        var hideButtonSvg = hideButton.querySelector('svg');
-                        hideButtonSvg.setAttribute('aria-hidden', 'true');
-                        hideButtonSvg.setAttribute('focusable', 'false');
-                        addEventListener(hideButton, 'click', function (event) {
+                        var toggleButton = document.querySelector(`#sfToolbarToggleButton-${token}`);
+                        addEventListener(toggleButton, 'click', function (event) {
                             event.preventDefault();
 
-                            var p = this.parentNode;
-                            p.style.display = 'none';
-                            (p.previousElementSibling || p.previousSibling).style.display = 'none';
-                            document.getElementById('sfMiniToolbar-' + token).style.display = 'block';
-                            setPreference('toolbar/displayState', 'none');
-                        });
-
-                        var showButton = document.getElementById('sfToolbarMiniToggler-' + token);
-                        var showButtonSvg = showButton.querySelector('svg');
-                        showButtonSvg.setAttribute('aria-hidden', 'true');
-                        showButtonSvg.setAttribute('focusable', 'false');
-                        addEventListener(showButton, 'click', function (event) {
-                            event.preventDefault();
-
-                            var elem = this.parentNode;
-                            if (elem.style.display == 'none') {
-                                document.getElementById('sfToolbarMainContent-' + token).style.display = 'none';
-                                document.getElementById('sfToolbarClearer-' + token).style.display = 'none';
-                                elem.style.display = 'block';
-                            } else {
-                                document.getElementById('sfToolbarMainContent-' + token).style.display = 'block';
-                                document.getElementById('sfToolbarClearer-' + token).style.display = 'block';
-                                elem.style.display = 'none'
-                            }
-
-                            setPreference('toolbar/displayState', 'block');
+                            const newState = 'closed' === getPreference('toolbar/displayState') ? 'opened' : 'closed';
+                            setPreference('toolbar/displayState', newState);
+                            'opened' === newState ? Sfjs.showToolbar(token) : Sfjs.hideToolbar(token);
                         });
                     },
 
@@ -574,7 +625,7 @@
                                 An error occurred while loading the web debug toolbar. <a>Open the web profiler.</a>\
                             </div>\
                         ';
-                            sfwdt.querySelector('.sf-toolbarreset > a').setAttribute('href', '{{ url("_profiler_home")|escape('js') }}' + encodeURIComponent(newToken));
+                            sfwdt.querySelector('.sf-toolbarreset > a').setAttribute('href', '{{ url('_profiler_home')|escape('js') }}' + encodeURIComponent(newToken));
                             sfwdt.parentElement.setAttribute('class', 'sf-toolbar sf-error-toolbar');
                         };
 
@@ -586,7 +637,7 @@
 
                         this.load(
                             'sfwdt' + token,
-                            '{{ url("_wdt", { "token": "xxxxxx" })|escape('js') }}'.replace(/xxxxxx/, encodeURIComponent(newToken)),
+                            '{{ url('_wdt', {token: 'xxxxxx'})|escape('js') }}'.replace(/xxxxxx/, encodeURIComponent(newToken)),
                             function(xhr, el) {
                                 var toolbarContent = document.getElementById('sfToolbarMainContent-' + newToken);
 
@@ -699,3 +750,4 @@
         Sfjs.loadToolbar('{{ token }}');
     /*]]>*/</script>
 </div>
+<!-- END of Symfony Web Debug Toolbar -->

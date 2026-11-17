@@ -11,17 +11,16 @@
 
 namespace Symfony\Component\Semaphore\Tests\Store;
 
+use PHPUnit\Framework\Attributes\Group;
 use Predis\Command\CommandInterface;
 use Predis\Connection\Parameters;
 use Predis\Connection\StreamConnection;
 use Predis\Response\ServerException;
-use Symfony\Component\Semaphore\Exception\RuntimeException;
+use Symfony\Component\Semaphore\Exception\SemaphoreStorageException;
 use Symfony\Component\Semaphore\Key;
 use Symfony\Component\Semaphore\Store\RedisStore;
 
-/**
- * @group integration
- */
+#[Group('integration')]
 class PredisStoreWithoutExceptionsTest extends AbstractRedisStoreTestCase
 {
     public static function setUpBeforeClass(): void
@@ -49,7 +48,7 @@ class PredisStoreWithoutExceptionsTest extends AbstractRedisStoreTestCase
         $redis->hset('{'.$resource.'}:time', 'field', 'value');
 
         try {
-            $this->expectException(RuntimeException::class);
+            $this->expectException(SemaphoreStorageException::class);
             $this->expectExceptionMessage('WRONGTYPE');
             $this->getStore()->save(new Key($resource, 1), 10);
         } finally {
@@ -64,7 +63,7 @@ class PredisStoreWithoutExceptionsTest extends AbstractRedisStoreTestCase
         $redis->hset('{'.$resource.'}:weight', 'field', 'value');
 
         try {
-            $this->expectException(RuntimeException::class);
+            $this->expectException(SemaphoreStorageException::class);
             $this->expectExceptionMessage('WRONGTYPE');
             $this->getStore()->exists(new Key($resource, 1));
         } finally {
@@ -83,7 +82,7 @@ class PredisStoreWithoutExceptionsTest extends AbstractRedisStoreTestCase
         };
         $store = new RedisStore(new \Predis\Client($connection, ['exceptions' => false]));
 
-        $this->expectException(RuntimeException::class);
+        $this->expectException(SemaphoreStorageException::class);
         $this->expectExceptionMessage('READONLY');
         $store->save(new Key(__METHOD__, 1), 10);
     }

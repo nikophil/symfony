@@ -11,12 +11,14 @@
 
 namespace Symfony\Component\Messenger\Tests\Transport\Serialization;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Constraint\Constraint;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\MessageDecodingFailedException;
 use Symfony\Component\Messenger\Exception\RecoverableMessageHandlingException;
 use Symfony\Component\Messenger\Stamp\BusNameStamp;
+use Symfony\Component\Messenger\Stamp\DeduplicateStamp;
 use Symfony\Component\Messenger\Stamp\ErrorDetailsStamp;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\NonSendableStampInterface;
@@ -61,6 +63,7 @@ class SerializerTest extends TestCase
         $envelope = (new Envelope(new DummyMessage('Hello')))
             ->with(new SerializerStamp([ObjectNormalizer::GROUPS => ['foo']]))
             ->with(new ValidationStamp(['foo', 'bar']))
+            ->with(new DeduplicateStamp('someKey', 42, true))
             ->with(new SerializedMessageStamp('{"message":"Hello"}'))
         ;
 
@@ -206,6 +209,16 @@ class SerializerTest extends TestCase
         $this->assertSame('application/json', $encoded['headers']['Content-Type']);
     }
 
+    public function testGetMessageType()
+    {
+        $serializer = new Serializer();
+
+        $this->assertSame(DummyMessage::class, $serializer->getMessageType($serializer->encode(new Envelope(new DummyMessage('Hello')))));
+        $this->assertNull($serializer->getMessageType(['body' => '{}']));
+        $this->assertNull($serializer->getMessageType(['body' => '{}', 'headers' => []]));
+        $this->assertNull($serializer->getMessageType(['body' => '{}', 'headers' => ['type' => [DummyMessage::class]]]));
+    }
+
     public function testUsesTheCustomFormatAndContext()
     {
         $message = new DummyMessage('Foo');
@@ -336,9 +349,7 @@ class SerializerTest extends TestCase
         ]);
     }
 
-    /**
-     * @dataProvider getMissingKeyTests
-     */
+    #[DataProvider('getMissingKeyTests')]
     public function testDecodingFailsWithMissingKeys(array $data, string $expectedMessage)
     {
         $this->expectException(MessageDecodingFailedException::class);

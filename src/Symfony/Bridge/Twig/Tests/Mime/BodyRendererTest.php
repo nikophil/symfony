@@ -11,6 +11,7 @@
 
 namespace Symfony\Bridge\Twig\Tests\Mime;
 
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bridge\Twig\Mime\BodyRenderer;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
@@ -138,9 +139,7 @@ class BodyRendererTest extends TestCase
         $this->assertEquals('Text', $email->getTextBody());
     }
 
-    /**
-     * @requires extension intl
-     */
+    #[RequiresPhpExtension('intl')]
     public function testRenderWithLocale()
     {
         $localeSwitcher = new LocaleSwitcher('en', []);

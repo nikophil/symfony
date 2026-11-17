@@ -11,12 +11,11 @@
 
 namespace Symfony\Bundle\FrameworkBundle\Tests\Functional;
 
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Bundle\FrameworkBundle\Tests\Functional\Bundle\TestBundle\MimeType\CustomMimeTypeGuesser;
 use Symfony\Component\Mime\MimeTypes;
 
-/**
- * @group functional
- */
+#[Group('functional')]
 class MimeTypeGuesserBootTest extends AbstractWebTestCase
 {
     /**

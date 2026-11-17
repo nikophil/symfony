@@ -11,17 +11,18 @@
 
 namespace Symfony\Component\Cache\Tests\Adapter;
 
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\TestWith;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\Exception\InvalidArgumentException;
 use Symfony\Component\Cache\Tests\Fixtures\TestEnum;
+use Symfony\Component\Clock\MockClock;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class ArrayAdapterTest extends AdapterTestCase
 {
-    protected $skippedTests = [
+    protected array $skippedTests = [
         'testGetMetadata' => 'ArrayAdapter does not keep metadata.',
         'testDeferredSaveWithoutCommit' => 'Assumes a shared cache which ArrayAdapter is not.',
         'testSaveWithoutExpire' => 'Assumes a shared cache which ArrayAdapter is not.',
@@ -119,5 +120,37 @@ class ArrayAdapterTest extends AdapterTestCase
         $cache->save($item);
 
         $this->assertSame(TestEnum::Foo, $cache->getItem('foo')->get());
+    }
+
+    public function testClockAware()
+    {
+        $clock = new MockClock();
+        $cache = new ArrayAdapter(10, false, 0, 0, $clock);
+
+        $cache->save($cache->getItem('foo'));
+        $this->assertTrue($cache->hasItem('foo'));
+
+        $clock->modify('+11 seconds');
+
+        $this->assertFalse($cache->hasItem('foo'));
+    }
+
+    #[TestWith(['2000-01-01 00:00:00'])]
+    #[TestWith(['2037-01-01 00:00:00'])]
+    public function testExpiresAfterFollowsTheClock(string $now)
+    {
+        $clock = new MockClock($now);
+        $cache = new ArrayAdapter(0, false, 0, 0, $clock);
+
+        $cache->save($cache->getItem('foo')->expiresAfter(10));
+        $cache->save(iterator_to_array($cache->getItems(['bar']))['bar']->expiresAfter(new \DateInterval('PT10S')));
+
+        $this->assertTrue($cache->hasItem('foo'));
+        $this->assertTrue($cache->hasItem('bar'));
+
+        $clock->sleep(11);
+
+        $this->assertFalse($cache->hasItem('foo'));
+        $this->assertFalse($cache->hasItem('bar'));
     }
 }

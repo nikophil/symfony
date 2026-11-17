@@ -11,6 +11,10 @@
 
 namespace Symfony\Component\Routing\Tests\Loader;
 
+use Opis\JsonSchema\Errors\ErrorFormatter;
+use Opis\JsonSchema\Validator;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresMethod;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Config\FileLocator;
 use Symfony\Component\Config\FileLocatorInterface;
@@ -18,11 +22,16 @@ use Symfony\Component\Config\Loader\LoaderResolver;
 use Symfony\Component\Config\Resource\FileResource;
 use Symfony\Component\Config\Resource\GlobResource;
 use Symfony\Component\Routing\Loader\AttributeClassLoader;
+use Symfony\Component\Routing\Loader\DirectoryLoader;
+use Symfony\Component\Routing\Loader\PhpFileLoader;
 use Symfony\Component\Routing\Loader\Psr4DirectoryLoader;
 use Symfony\Component\Routing\Loader\YamlFileLoader;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\RouteCollection;
 use Symfony\Component\Routing\Tests\Fixtures\Psr4Controllers\MyController;
+use Symfony\Component\Routing\Tests\Fixtures\TraceableAttributeClassLoader;
+use Symfony\Component\Yaml\Tag\TaggedValue;
+use Symfony\Component\Yaml\Yaml;
 
 class YamlFileLoaderTest extends TestCase
 {
@@ -48,13 +57,13 @@ class YamlFileLoaderTest extends TestCase
         $this->assertEquals([new FileResource(realpath(__DIR__.'/../Fixtures/empty.yml'))], $collection->getResources());
     }
 
-    /**
-     * @dataProvider getPathsToInvalidFiles
-     */
-    public function testLoadThrowsExceptionWithInvalidFile($filePath)
+    #[DataProvider('getPathsToInvalidFiles')]
+    public function testLoadThrowsExceptionWithInvalidFile(string $filePath)
     {
-        $this->expectException(\InvalidArgumentException::class);
         $loader = new YamlFileLoader(new FileLocator([__DIR__.'/../Fixtures']));
+
+        $this->expectException(\InvalidArgumentException::class);
+
         $loader->load($filePath);
     }
 
@@ -109,7 +118,7 @@ class YamlFileLoaderTest extends TestCase
         $routes = $routeCollection->all();
 
         $this->assertCount(2, $routes, 'Two routes are loaded');
-        $this->assertContainsOnly('Symfony\Component\Routing\Route', $routes);
+        $this->assertContainsOnlyInstancesOf(Route::class, $routes);
 
         foreach ($routes as $route) {
             $this->assertSame('/{foo}/blog/{slug}', $route->getPath());
@@ -153,15 +162,15 @@ class YamlFileLoaderTest extends TestCase
 
     public function testOverrideControllerInDefaults()
     {
+        $loader = new YamlFileLoader(new FileLocator([__DIR__.'/../Fixtures/controller']));
+
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessageMatches('/The routing file "[^"]*" must not specify both the "controller" key and the defaults key "_controller" for "app_blog"/');
-        $loader = new YamlFileLoader(new FileLocator([__DIR__.'/../Fixtures/controller']));
+
         $loader->load('override_defaults.yml');
     }
 
-    /**
-     * @dataProvider provideFilesImportingRoutesWithControllers
-     */
+    #[DataProvider('provideFilesImportingRoutesWithControllers')]
     public function testImportRouteWithController($file)
     {
         $loader = new YamlFileLoader(new FileLocator([__DIR__.'/../Fixtures/controller']));
@@ -185,9 +194,11 @@ class YamlFileLoaderTest extends TestCase
 
     public function testImportWithOverriddenController()
     {
+        $loader = new YamlFileLoader(new FileLocator([__DIR__.'/../Fixtures/controller']));
+
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessageMatches('/The routing file "[^"]*" must not specify both the "controller" key and the defaults key "_controller" for "_static"/');
-        $loader = new YamlFileLoader(new FileLocator([__DIR__.'/../Fixtures/controller']));
+
         $loader->load('import_override_defaults.yml');
     }
 
@@ -400,10 +411,11 @@ class YamlFileLoaderTest extends TestCase
 
     public function testRequirementsWithoutPlaceholderName()
     {
+        $loader = new YamlFileLoader(new FileLocator([__DIR__.'/../Fixtures']));
+
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('A placeholder name must be a string (0 given). Did you forget to specify the placeholder key for the requirement "\\d+" of route "foo"');
 
-        $loader = new YamlFileLoader(new FileLocator([__DIR__.'/../Fixtures']));
         $loader->load('requirements_without_placeholder_name.yml');
     }
 
@@ -482,7 +494,7 @@ class YamlFileLoaderTest extends TestCase
         new LoaderResolver([
             $loader = new YamlFileLoader(new FileLocator(\dirname(__DIR__).'/Fixtures/localized')),
             new class extends AttributeClassLoader {
-                protected function configureRoute(Route $route, \ReflectionClass $class, \ReflectionMethod $method, object $annot): void
+                protected function configureRoute(Route $route, \ReflectionClass $class, \ReflectionMethod $method, object $attr): void
                 {
                     $route->setDefault('_controller', $class->getName().'::'.$method->getName());
                 }
@@ -519,9 +531,7 @@ class YamlFileLoaderTest extends TestCase
         $this->assertSame(1, $routes->getPriority('also_important'));
     }
 
-    /**
-     * @dataProvider providePsr4ConfigFiles
-     */
+    #[DataProvider('providePsr4ConfigFiles')]
     public function testImportAttributesWithPsr4Prefix(string $configFile)
     {
         $locator = new FileLocator(\dirname(__DIR__).'/Fixtures');
@@ -529,7 +539,7 @@ class YamlFileLoaderTest extends TestCase
             $loader = new YamlFileLoader($locator),
             new Psr4DirectoryLoader($locator),
             new class extends AttributeClassLoader {
-                protected function configureRoute(Route $route, \ReflectionClass $class, \ReflectionMethod $method, object $annot): void
+                protected function configureRoute(Route $route, \ReflectionClass $class, \ReflectionMethod $method, object $attr): void
                 {
                     $route->setDefault('_controller', $class->getName().'::'.$method->getName());
                 }
@@ -554,7 +564,7 @@ class YamlFileLoaderTest extends TestCase
         new LoaderResolver([
             $loader = new YamlFileLoader(new FileLocator(\dirname(__DIR__).'/Fixtures')),
             new class extends AttributeClassLoader {
-                protected function configureRoute(Route $route, \ReflectionClass $class, \ReflectionMethod $method, object $annot): void
+                protected function configureRoute(Route $route, \ReflectionClass $class, \ReflectionMethod $method, object $attr): void
                 {
                     $route->setDefault('_controller', $class->getName().'::'.$method->getName());
                 }
@@ -564,5 +574,70 @@ class YamlFileLoaderTest extends TestCase
         $route = $loader->load('class-attributes.yaml')->get('my_route');
         $this->assertSame('/my-prefix/my/route', $route->getPath());
         $this->assertSame(MyController::class.'::__invoke', $route->getDefault('_controller'));
+    }
+
+    #[RequiresMethod(Validator::class, 'validate')]
+    public function testSchemaAcceptsTheFilesTheLoaderAccepts()
+    {
+        $validator = new Validator(null, 100, false);
+        $schema = json_decode(file_get_contents(\dirname(__DIR__, 2).'/Loader/schema/routing.schema.json'));
+        $fixturesPath = \dirname(__DIR__).'/Fixtures';
+        $failures = [];
+
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($fixturesPath, \FilesystemIterator::SKIP_DOTS)) as $file) {
+            if (!\in_array($file->getExtension(), ['yml', 'yaml'], true)) {
+                continue;
+            }
+
+            $locator = new FileLocator($file->getPath());
+            new LoaderResolver([
+                $loader = new YamlFileLoader($locator, 'some-env'),
+                new PhpFileLoader($locator),
+                new DirectoryLoader($locator),
+                new Psr4DirectoryLoader($locator),
+                new TraceableAttributeClassLoader(),
+            ]);
+
+            set_error_handler(static fn (int $type, string $message) => throw new \ErrorException($message, 0, $type));
+            try {
+                $loader->load($file->getFilename());
+            } catch (\Exception) {
+                continue;
+            } finally {
+                restore_error_handler();
+            }
+
+            if (null === $data = Yaml::parseFile($file->getPathname(), Yaml::PARSE_CONSTANT | Yaml::PARSE_CUSTOM_TAGS | Yaml::PARSE_OBJECT_FOR_MAP)) {
+                continue;
+            }
+
+            $result = $validator->validate(self::toJsonData($data), $schema);
+
+            if (!$result->isValid()) {
+                $failures[substr($file->getPathname(), \strlen($fixturesPath) + 1)] = (new ErrorFormatter())->format($result->error(), false);
+            }
+        }
+
+        $this->assertSame([], $failures);
+    }
+
+    #[RequiresMethod(Validator::class, 'validate')]
+    public function testSchemaRejectsTheDeprecatedKeyOnRouteDefinitions()
+    {
+        $schema = json_decode(file_get_contents(\dirname(__DIR__, 2).'/Loader/schema/routing.schema.json'));
+        $data = (object) ['blog_show' => (object) ['path' => '/blog/{slug}', 'deprecated' => (object) ['package' => 'acme/blog', 'version' => '1.2']]];
+
+        $this->assertFalse((new Validator())->validate($data, $schema)->isValid());
+    }
+
+    private static function toJsonData(mixed $value): mixed
+    {
+        return match (true) {
+            $value instanceof TaggedValue => self::toJsonData($value->getValue()),
+            $value instanceof \UnitEnum => $value->name,
+            $value instanceof \stdClass => (object) array_map(self::toJsonData(...), (array) $value),
+            \is_array($value) => array_map(self::toJsonData(...), $value),
+            default => $value,
+        };
     }
 }

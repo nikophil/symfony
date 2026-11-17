@@ -25,18 +25,15 @@ use Symfony\Contracts\Service\ResetInterface;
  */
 class LogoutUrlGenerator implements ResetInterface
 {
-    private ?RequestStack $requestStack;
-    private ?UrlGeneratorInterface $router;
-    private ?TokenStorageInterface $tokenStorage;
     private array $listeners = [];
     private ?string $currentFirewallName = null;
     private ?string $currentFirewallContext = null;
 
-    public function __construct(?RequestStack $requestStack = null, ?UrlGeneratorInterface $router = null, ?TokenStorageInterface $tokenStorage = null)
-    {
-        $this->requestStack = $requestStack;
-        $this->router = $router;
-        $this->tokenStorage = $tokenStorage;
+    public function __construct(
+        private ?RequestStack $requestStack = null,
+        private ?UrlGeneratorInterface $router = null,
+        private ?TokenStorageInterface $tokenStorage = null,
+    ) {
     }
 
     /**
@@ -47,10 +44,8 @@ class LogoutUrlGenerator implements ResetInterface
      * @param string|null $csrfTokenId   The ID of the CSRF token
      * @param string|null $csrfParameter The CSRF token parameter name
      * @param string|null $context       The listener context
-     *
-     * @return void
      */
-    public function registerListener(string $key, string $logoutPath, ?string $csrfTokenId, ?string $csrfParameter, ?CsrfTokenManagerInterface $csrfTokenManager = null, ?string $context = null)
+    public function registerListener(string $key, string $logoutPath, ?string $csrfTokenId, ?string $csrfParameter, ?CsrfTokenManagerInterface $csrfTokenManager = null, ?string $context = null): void
     {
         $this->listeners[$key] = [$logoutPath, $csrfTokenId, $csrfParameter, $csrfTokenManager, $context];
     }
@@ -71,10 +66,7 @@ class LogoutUrlGenerator implements ResetInterface
         return $this->generateLogoutUrl($key, UrlGeneratorInterface::ABSOLUTE_URL);
     }
 
-    /**
-     * @return void
-     */
-    public function setCurrentFirewall(?string $key, ?string $context = null)
+    public function setCurrentFirewall(?string $key, ?string $context = null): void
     {
         $this->currentFirewallName = $key;
         $this->currentFirewallContext = $context;

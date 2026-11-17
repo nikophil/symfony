@@ -1,0 +1,48 @@
+{
+    "name": "symfony/json-path",
+    "type": "library",
+    "description": "Eases JSON navigation using the JSONPath syntax as described in RFC 9535",
+    "keywords": [],
+    "homepage": "https://symfony.com",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Alexandre Daubois",
+            "email": "alex.daubois@gmail.com"
+        },
+        {
+            "name": "Symfony Community",
+            "homepage": "https://symfony.com/contributors"
+        }
+    ],
+    "repositories": [
+        {
+            "type": "package",
+            "package": {
+                "name": "jsonpath-standard/jsonpath-compliance-test-suite",
+                "version": "2026.09.17",
+                "source": {
+                    "type": "git",
+                    "url": "https://github.com/jsonpath-standard/jsonpath-compliance-test-suite.git",
+                    "reference": "9d1a415a53f5dfb291bc874823892e49174e38eb"
+                }
+            }
+        }
+    ],
+    "require": {
+        "php": ">=8.2",
+        "symfony/polyfill-ctype": "^1.8",
+        "symfony/polyfill-mbstring": "~1.0"
+    },
+    "require-dev": {
+        "symfony/json-streamer": "^7.3|^8.0",
+        "jsonpath-standard/jsonpath-compliance-test-suite": "*"
+    },
+    "autoload": {
+        "psr-4": { "Symfony\\Component\\JsonPath\\": "" },
+        "exclude-from-classmap": [
+            "/Tests/"
+        ]
+    },
+    "minimum-stability": "dev"
+}

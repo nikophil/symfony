@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Notifier\Bridge\SimpleTextin\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Notifier\Bridge\SimpleTextin\SimpleTextinTransport;
@@ -40,9 +41,7 @@ final class SimpleTextinTransportTest extends TransportTestCase
         yield [new SmsMessage('0611223344', 'Hello!')];
     }
 
-    /**
-     * @dataProvider invalidFromProvider
-     */
+    #[DataProvider('invalidFromProvider')]
     public function testInvalidArgumentExceptionIsThrownIfFromIsInvalid(string $from)
     {
         $transport = $this->createTransport(null, $from);
@@ -53,9 +52,7 @@ final class SimpleTextinTransportTest extends TransportTestCase
         $transport->send(new SmsMessage('+33612345678', 'Hello!'));
     }
 
-    /**
-     * @dataProvider validFromProvider
-     */
+    #[DataProvider('validFromProvider')]
     public function testNoInvalidArgumentExceptionIsThrownIfFromIsValid(string $from)
     {
         $message = new SmsMessage('+33612345678', 'Hello!');

@@ -29,7 +29,9 @@ class RouterTest extends TestCase
 
     protected function setUp(): void
     {
-        $this->cacheDir = sys_get_temp_dir().\DIRECTORY_SEPARATOR.uniqid('router_', true);
+        $this->cacheDir = tempnam(sys_get_temp_dir(), 'sf_router_');
+        unlink($this->cacheDir);
+        mkdir($this->cacheDir);
     }
 
     protected function tearDown(): void

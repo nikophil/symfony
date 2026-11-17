@@ -12,6 +12,8 @@
 namespace Symfony\Component\HttpClient\Tests;
 
 use Nyholm\Psr7\Factory\Psr17Factory;
+use PHPUnit\Framework\Attributes\RequiresFunction;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\CurlHttpClient;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -20,25 +22,26 @@ use Symfony\Component\HttpClient\Psr18Client;
 use Symfony\Component\HttpClient\Psr18NetworkException;
 use Symfony\Component\HttpClient\Psr18RequestException;
 use Symfony\Component\HttpClient\Response\MockResponse;
+use Symfony\Component\HttpClient\Tests\Fixtures\UnknownSizeStream;
 use Symfony\Component\HttpClient\TraceableHttpClient;
 use Symfony\Contracts\HttpClient\Test\TestHttpServer;
 
 class Psr18ClientTest extends TestCase
 {
+    use TestServerPortTrait;
+
     public static function setUpBeforeClass(): void
     {
         TestHttpServer::start();
     }
 
-    /**
-     * @requires function ob_gzhandler
-     */
+    #[RequiresFunction('ob_gzhandler')]
     public function testSendRequest()
     {
         $factory = new Psr17Factory();
         $client = new Psr18Client(new NativeHttpClient(), $factory, $factory);
 
-        $response = $client->sendRequest($factory->createRequest('GET', 'http://localhost:8057'));
+        $response = $client->sendRequest($factory->createRequest('GET', 'http://localhost:'.self::port()));
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('application/json', $response->getHeaderLine('content-type'));
@@ -48,15 +51,13 @@ class Psr18ClientTest extends TestCase
         $this->assertSame('HTTP/1.1', $body['SERVER_PROTOCOL']);
     }
 
-    /**
-     * @requires extension curl
-     */
+    #[RequiresPhpExtension('curl')]
     public function testSendRequestWithTraceableClient()
     {
         $factory = new Psr17Factory();
         $client = new Psr18Client(new TraceableHttpClient(new CurlHttpClient()), $factory, $factory);
 
-        $response = $client->sendRequest($factory->createRequest('GET', 'http://localhost:8057'));
+        $response = $client->sendRequest($factory->createRequest('GET', 'http://localhost:'.self::port()));
 
         $this->assertSame(200, $response->getStatusCode());
 
@@ -70,7 +71,7 @@ class Psr18ClientTest extends TestCase
         $factory = new Psr17Factory();
         $client = new Psr18Client(new NativeHttpClient(), $factory, $factory);
 
-        $request = $factory->createRequest('POST', 'http://localhost:8057/post')
+        $request = $factory->createRequest('POST', 'http://localhost:'.self::port().'/post')
             ->withBody($factory->createStream('foo=0123456789'));
 
         $response = $client->sendRequest($request);
@@ -79,13 +80,53 @@ class Psr18ClientTest extends TestCase
         $this->assertSame(['foo' => '0123456789', 'REQUEST_METHOD' => 'POST'], $body);
     }
 
+    public function testRequestWithEmptyUnknownSizeBodyDoesNotPassAStreamingBody()
+    {
+        $factory = new Psr17Factory();
+        $body = new UnknownSizeStream('', seekable: false);
+        $body->getContents();
+        $client = new Psr18Client(new MockHttpClient(function (string $method, string $url, array $options): MockResponse {
+            $this->assertSame('TRACE', $method);
+            $this->assertSame('', $options['body']);
+
+            return new MockResponse();
+        }), $factory, $factory);
+
+        $client->sendRequest($factory->createRequest('TRACE', 'http://localhost')->withBody($body));
+    }
+
+    public function testRequestWithConsumedSeekableUnknownSizeBodyIsRestreamed()
+    {
+        $factory = new Psr17Factory();
+        $body = new UnknownSizeStream('IMPORTANT-PAYLOAD');
+        $body->getContents();
+        $this->assertTrue($body->eof());
+        $client = new Psr18Client(new MockHttpClient(static function (string $method, string $url, array $options) use (&$sentBody): MockResponse {
+            $sentBody = $options['body'];
+
+            if (!\is_string($sentBody)) {
+                $received = '';
+                while ('' !== $chunk = $sentBody()) {
+                    $received .= $chunk;
+                }
+                $sentBody = $received;
+            }
+
+            return new MockResponse();
+        }), $factory, $factory);
+
+        $client->sendRequest($factory->createRequest('POST', 'http://localhost')->withBody($body));
+
+        $this->assertSame('IMPORTANT-PAYLOAD', $sentBody);
+    }
+
     public function testNetworkException()
     {
         $factory = new Psr17Factory();
         $client = new Psr18Client(new NativeHttpClient(), $factory, $factory);
 
         $this->expectException(Psr18NetworkException::class);
-        $client->sendRequest($factory->createRequest('GET', 'http://localhost:8058'));
+        $client->sendRequest($factory->createRequest('GET', 'http://localhost:'.self::port(8058)));
     }
 
     public function testRequestException()
@@ -94,7 +135,7 @@ class Psr18ClientTest extends TestCase
         $client = new Psr18Client(new NativeHttpClient(), $factory, $factory);
 
         $this->expectException(Psr18RequestException::class);
-        $client->sendRequest($factory->createRequest('BAD.METHOD', 'http://localhost:8057'));
+        $client->sendRequest($factory->createRequest('BAD.METHOD', 'http://localhost:'.self::port()));
     }
 
     public function test404()
@@ -102,7 +143,7 @@ class Psr18ClientTest extends TestCase
         $factory = new Psr17Factory();
         $client = new Psr18Client(new NativeHttpClient());
 
-        $response = $client->sendRequest($factory->createRequest('GET', 'http://localhost:8057/404'));
+        $response = $client->sendRequest($factory->createRequest('GET', 'http://localhost:'.self::port().'/404'));
         $this->assertSame(404, $response->getStatusCode());
     }
 
@@ -117,7 +158,7 @@ class Psr18ClientTest extends TestCase
         $this->assertArrayHasKey(' x-xss-protection', $response->getHeaders());
 
         $client = new Psr18Client(new MockHttpClient($response));
-        $request = $client->createRequest('POST', 'http://localhost:8057/post')
+        $request = $client->createRequest('POST', 'http://localhost:'.self::port().'/post')
             ->withBody($client->createStream('foo=0123456789'));
 
         $resultResponse = $client->sendRequest($request);
@@ -132,10 +173,39 @@ class Psr18ClientTest extends TestCase
         $response = new MockResponse('body', ['response_headers' => $responseHeaders]);
 
         $client = new Psr18Client(new MockHttpClient($response));
-        $request = $client->createRequest('POST', 'http://localhost:8057/post')
+        $request = $client->createRequest('POST', 'http://localhost:'.self::port().'/post')
             ->withBody($client->createStream('foo=0123456789'));
 
         $resultResponse = $client->sendRequest($request);
         $this->assertSame('Very Early Hints', $resultResponse->getReasonPhrase());
+    }
+
+    public function testAutoUpgradeHttpVersion()
+    {
+        $clientWithoutOption = new Psr18Client(new MockHttpClient(static fn (string $method, string $url, array $options) => new MockResponse(json_encode([
+            'SERVER_PROTOCOL' => 'HTTP/'.$options['http_version'] ?? '',
+        ]), [
+            'response_headers' => [
+                'Content-Type' => 'application/json',
+            ],
+        ])));
+        $clientWithOptionFalse = $clientWithoutOption->withOptions(['auto_upgrade_http_version' => false]);
+
+        foreach (['1.0', '1.1', '2.0', '3.0'] as $httpVersion) {
+            $request = $clientWithoutOption->createRequest('GET', 'http://localhost:'.self::port())
+                ->withProtocolVersion($httpVersion);
+
+            $responseWithoutOption = $clientWithoutOption->sendRequest($request);
+            $bodyWithoutOption = json_decode((string) $responseWithoutOption->getBody(), true);
+            if ('1.0' === $httpVersion) {
+                $this->assertSame('HTTP/1.0', $bodyWithoutOption['SERVER_PROTOCOL']);
+            } else {
+                $this->assertSame('HTTP/', $bodyWithoutOption['SERVER_PROTOCOL']);
+            }
+
+            $responseWithOptionFalse = $clientWithOptionFalse->sendRequest($request);
+            $bodyWithOptionFalse = json_decode((string) $responseWithOptionFalse->getBody(), true);
+            $this->assertSame('HTTP/'.$httpVersion, $bodyWithOptionFalse['SERVER_PROTOCOL']);
+        }
     }
 }

@@ -11,17 +11,20 @@
 
 namespace Symfony\Component\Cache\Tests\Messenger;
 
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Psr\Cache\CacheItemInterface;
 use Psr\Log\AbstractLogger;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Cache\Adapter\AdapterInterface;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 use Symfony\Component\Cache\CacheItem;
 use Symfony\Component\Cache\Messenger\EarlyExpirationDispatcher;
 use Symfony\Component\Cache\Messenger\EarlyExpirationHandler;
 use Symfony\Component\Cache\Messenger\EarlyExpirationMessage;
 use Symfony\Component\Cache\Messenger\EarlyExpirationResult;
+use Symfony\Component\Cache\Tests\Fixtures\EarlyExpirationComputation;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ReverseContainer;
 use Symfony\Component\DependencyInjection\ServiceLocator;
@@ -140,9 +143,31 @@ class EarlyExpirationDispatcherTest extends TestCase
         $this->assertSame($expected, $logger->records);
     }
 
-    /**
-     * @group time-sensitive
-     */
+    public function testUnreversiblePoolIsComputedOnline()
+    {
+        $pool = new ArrayAdapter();
+        $pool->save($pool->getItem('foo')->set(234));
+        $computation = new EarlyExpirationComputation();
+        $container = new Container();
+        $container->set('computation_service', $computation);
+        $reverseContainer = new ReverseContainer($container, new ServiceLocator([]));
+        $bus = $this->createMock(MessageBusInterface::class);
+        $bus->expects($this->never())->method('dispatch');
+        $dispatcher = new EarlyExpirationDispatcher($bus, $reverseContainer);
+        $logger = new TestLogger();
+        $save = true;
+
+        $this->assertSame(1, $dispatcher($computation, $pool->getItem('foo'), $save, $pool, static function () {}, $logger));
+        $this->assertTrue($save);
+        $this->assertSame(1, $computation->calls);
+        $this->assertSame([[
+            'level' => 'info',
+            'message' => 'Computing item "{key}" online: callback or pool cannot be reversed',
+            'context' => ['key' => 'foo'],
+        ]], $logger->records);
+    }
+
+    #[Group('time-sensitive')]
     public function testSynchronousEarlyExpirationReturnsNullAndSkipsDuplicates()
     {
         $pool = new class extends FilesystemAdapter {

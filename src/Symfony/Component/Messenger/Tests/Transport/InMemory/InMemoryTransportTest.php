@@ -31,15 +31,9 @@ class InMemoryTransportTest extends TestCase
 
     private InMemoryTransport $transport;
 
-    private InMemoryTransport $serializeTransport;
-
-    private SerializerInterface $serializer;
-
     protected function setUp(): void
     {
-        $this->serializer = $this->createStub(SerializerInterface::class);
         $this->transport = new InMemoryTransport();
-        $this->serializeTransport = new InMemoryTransport($this->serializer);
     }
 
     public function testSend()
@@ -53,7 +47,8 @@ class InMemoryTransportTest extends TestCase
     {
         $envelope = new Envelope(new \stdClass());
         $envelopeDecoded = Envelope::wrap(new DummyMessage('Hello.'));
-        $this->serializer
+        $serializer = $this->createStub(SerializerInterface::class);
+        $serializer
             ->method('encode')
             ->willReturnCallback(function (Envelope $encodedEnvelope) use ($envelope) {
                 $this->assertEquals($envelope->with(new TransportMessageIdStamp(1)), $encodedEnvelope);
@@ -61,14 +56,15 @@ class InMemoryTransportTest extends TestCase
                 return ['foo' => 'ba'];
             })
         ;
-        $this->serializer
+        $serializer
             ->method('decode')
             ->willReturnMap([
                 [['foo' => 'ba'], $envelopeDecoded],
             ])
         ;
-        $this->serializeTransport->send($envelope);
-        $this->assertSame([$envelopeDecoded], $this->serializeTransport->getSent());
+        $serializeTransport = new InMemoryTransport($serializer);
+        $serializeTransport->send($envelope);
+        $this->assertSame([$envelopeDecoded], $serializeTransport->getSent());
     }
 
     public function testQueue()
@@ -139,7 +135,8 @@ class InMemoryTransportTest extends TestCase
     {
         $envelope = new Envelope(new \stdClass());
         $envelopeDecoded = Envelope::wrap(new DummyMessage('Hello.'));
-        $this->serializer
+        $serializer = $this->createStub(SerializerInterface::class);
+        $serializer
             ->method('encode')
             ->willReturnCallback(function (Envelope $encodedEnvelope) use ($envelope) {
                 $this->assertEquals($envelope->with(new TransportMessageIdStamp(1)), $encodedEnvelope);
@@ -147,14 +144,15 @@ class InMemoryTransportTest extends TestCase
                 return ['foo' => 'ba'];
             })
         ;
-        $this->serializer
+        $serializer
             ->method('decode')
             ->willReturnMap([
                 [['foo' => 'ba'], $envelopeDecoded],
             ])
         ;
-        $this->serializeTransport->send($envelope);
-        $this->assertSame([$envelopeDecoded], $this->serializeTransport->get());
+        $serializeTransport = new InMemoryTransport($serializer);
+        $serializeTransport->send($envelope);
+        $this->assertSame([$envelopeDecoded], $serializeTransport->get());
     }
 
     public function testAcknowledgeSameMessageWithDifferentStamps()
@@ -182,7 +180,8 @@ class InMemoryTransportTest extends TestCase
     {
         $envelope = new Envelope(new \stdClass());
         $envelopeDecoded = Envelope::wrap(new DummyMessage('Hello.'));
-        $this->serializer
+        $serializer = $this->createStub(SerializerInterface::class);
+        $serializer
             ->method('encode')
             ->willReturnCallback(function (Envelope $encodedEnvelope) use ($envelope) {
                 $this->assertEquals($envelope->with(new TransportMessageIdStamp(1)), $encodedEnvelope);
@@ -190,14 +189,15 @@ class InMemoryTransportTest extends TestCase
                 return ['foo' => 'ba'];
             })
         ;
-        $this->serializer
+        $serializer
             ->method('decode')
             ->willReturnMap([
                 [['foo' => 'ba'], $envelopeDecoded],
             ])
         ;
-        $this->serializeTransport->ack($envelope->with(new TransportMessageIdStamp(1)));
-        $this->assertSame([$envelopeDecoded], $this->serializeTransport->getAcknowledged());
+        $serializeTransport = new InMemoryTransport($serializer);
+        $serializeTransport->ack($envelope->with(new TransportMessageIdStamp(1)));
+        $this->assertSame([$envelopeDecoded], $serializeTransport->getAcknowledged());
     }
 
     public function testReject()
@@ -212,7 +212,8 @@ class InMemoryTransportTest extends TestCase
     {
         $envelope = new Envelope(new \stdClass());
         $envelopeDecoded = Envelope::wrap(new DummyMessage('Hello.'));
-        $this->serializer
+        $serializer = $this->createStub(SerializerInterface::class);
+        $serializer
             ->method('encode')
             ->willReturnCallback(function (Envelope $encodedEnvelope) use ($envelope) {
                 $this->assertEquals($envelope->with(new TransportMessageIdStamp(1)), $encodedEnvelope);
@@ -220,14 +221,15 @@ class InMemoryTransportTest extends TestCase
                 return ['foo' => 'ba'];
             })
         ;
-        $this->serializer
+        $serializer
             ->method('decode')
             ->willReturnMap([
                 [['foo' => 'ba'], $envelopeDecoded],
             ])
         ;
-        $this->serializeTransport->reject($envelope->with(new TransportMessageIdStamp(1)));
-        $this->assertSame([$envelopeDecoded], $this->serializeTransport->getRejected());
+        $serializeTransport = new InMemoryTransport($serializer);
+        $serializeTransport->reject($envelope->with(new TransportMessageIdStamp(1)));
+        $this->assertSame([$envelopeDecoded], $serializeTransport->getRejected());
     }
 
     public function testReset()
@@ -239,9 +241,9 @@ class InMemoryTransportTest extends TestCase
 
         $this->transport->reset();
 
-        $this->assertEmpty($this->transport->get(), 'Should be empty after reset');
-        $this->assertEmpty($this->transport->getAcknowledged(), 'Should be empty after reset');
-        $this->assertEmpty($this->transport->getRejected(), 'Should be empty after reset');
-        $this->assertEmpty($this->transport->getSent(), 'Should be empty after reset');
+        $this->assertSame([], $this->transport->get(), 'Should be empty after reset');
+        $this->assertSame([], $this->transport->getAcknowledged(), 'Should be empty after reset');
+        $this->assertSame([], $this->transport->getRejected(), 'Should be empty after reset');
+        $this->assertSame([], $this->transport->getSent(), 'Should be empty after reset');
     }
 }

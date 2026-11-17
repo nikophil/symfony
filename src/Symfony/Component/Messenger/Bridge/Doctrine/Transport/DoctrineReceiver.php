@@ -18,6 +18,7 @@ use Symfony\Component\Messenger\Exception\LogicException;
 use Symfony\Component\Messenger\Exception\MessageDecodingFailedException;
 use Symfony\Component\Messenger\Exception\TransportException;
 use Symfony\Component\Messenger\Stamp\TransportMessageIdStamp;
+use Symfony\Component\Messenger\Transport\Receiver\KeepaliveReceiverInterface;
 use Symfony\Component\Messenger\Transport\Receiver\ListableReceiverInterface;
 use Symfony\Component\Messenger\Transport\Receiver\MessageCountAwareInterface;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
@@ -26,21 +27,27 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 /**
  * @author Vincent Touzet <vincent.touzet@gmail.com>
  */
-class DoctrineReceiver implements ListableReceiverInterface, MessageCountAwareInterface
+class DoctrineReceiver implements ListableReceiverInterface, MessageCountAwareInterface, KeepaliveReceiverInterface
 {
     private const MAX_RETRIES = 3;
     private int $retryingSafetyCounter = 0;
-    private Connection $connection;
     private SerializerInterface $serializer;
 
-    public function __construct(Connection $connection, ?SerializerInterface $serializer = null)
-    {
-        $this->connection = $connection;
+    public function __construct(
+        private Connection $connection,
+        ?SerializerInterface $serializer = null,
+    ) {
         $this->serializer = $serializer ?? new PhpSerializer();
     }
 
     public function get(): iterable
     {
+        // Signals that reach the process while the driver waits on the database are dropped by
+        // the engine when that wait ends by throwing, which is what a lock timeout does. Holding
+        // them here and dispatching them once the call is over keeps the keepalive alarm armed,
+        // since it is rescheduled by its own handler, and keeps workers stoppable.
+        $asyncSignals = \function_exists('pcntl_async_signals') && \function_exists('pcntl_signal_dispatch') && pcntl_async_signals(false);
+
         try {
             $doctrineEnvelope = $this->connection->get();
             $this->retryingSafetyCounter = 0; // reset counter
@@ -56,6 +63,11 @@ class DoctrineReceiver implements ListableReceiverInterface, MessageCountAwareIn
             return [];
         } catch (DBALException $exception) {
             throw new TransportException($exception->getMessage(), 0, $exception);
+        } finally {
+            if ($asyncSignals) {
+                pcntl_async_signals(true);
+                pcntl_signal_dispatch();
+            }
         }
 
         if (null === $doctrineEnvelope) {
@@ -70,6 +82,11 @@ class DoctrineReceiver implements ListableReceiverInterface, MessageCountAwareIn
         $this->withRetryableExceptionRetry(function () use ($envelope) {
             $this->connection->ack($this->findDoctrineReceivedStamp($envelope)->getId());
         });
+    }
+
+    public function keepalive(Envelope $envelope, ?int $seconds = null): void
+    {
+        $this->connection->keepalive($this->findDoctrineReceivedStamp($envelope)->getId(), $seconds);
     }
 
     public function reject(Envelope $envelope): void

@@ -9,16 +9,16 @@
  * file that was distributed with this source code.
  */
 
-namespace Symfony\Component\String;
+namespace Symfony\Component\String\Tests\Slugger;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\String\Slugger\AsciiSlugger;
 
 class AsciiSluggerTest extends TestCase
 {
-    /**
-     * @dataProvider provideSlugTests
-     */
+    #[DataProvider('provideSlugTests')]
     public function testSlug(string $expected, string $string, string $separator = '-', ?string $locale = null)
     {
         $slugger = new AsciiSlugger();
@@ -92,9 +92,7 @@ class AsciiSluggerTest extends TestCase
         $this->assertSame($expected, (string) $slugger->slug('љђ', '-', 'sr-Cyrl-RS'));
     }
 
-    /**
-     * @requires extension intl
-     */
+    #[RequiresPhpExtension('intl')]
     public function testHyphenatedLocaleUsesParentEmojiTransliterator()
     {
         $slugger = (new AsciiSlugger())->withEmoji();
@@ -109,11 +107,8 @@ class AsciiSluggerTest extends TestCase
         $this->assertSame('foo-at-bar', (string) $slugger->slug('foo@bar', '-', 'ar-TN'));
     }
 
-    /**
-     * @dataProvider provideSlugEmojiTests
-     *
-     * @requires extension intl
-     */
+    #[RequiresPhpExtension('intl')]
+    #[DataProvider('provideSlugEmojiTests')]
     public function testSlugEmoji(string $expected, string $string, ?string $locale, string|bool $emoji = true)
     {
         $slugger = new AsciiSlugger();
@@ -169,9 +164,7 @@ class AsciiSluggerTest extends TestCase
         ];
     }
 
-    /**
-     * @requires extension intl
-     */
+    #[RequiresPhpExtension('intl')]
     public function testSlugEmojiWithSetLocale()
     {
         if (!setlocale(\LC_ALL, 'C.UTF-8')) {

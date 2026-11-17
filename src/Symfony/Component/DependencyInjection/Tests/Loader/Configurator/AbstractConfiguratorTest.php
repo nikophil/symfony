@@ -56,4 +56,33 @@ class AbstractConfiguratorTest extends TestCase
 
         $this->assertInstanceOf(Reference::class, $result);
     }
+
+    public function testProcessClosure()
+    {
+        $this->assertSame(
+            [\DateTime::class, 'createFromFormat'],
+            AbstractConfigurator::processValue(\DateTime::createFromFormat(...)),
+        );
+
+        $this->assertSame(
+            'date_create',
+            AbstractConfigurator::processValue(date_create(...)),
+        );
+    }
+
+    public function testProcessNonStaticNamedClosure()
+    {
+        self::expectException(InvalidArgumentException::class);
+        self::expectExceptionMessage('The method "DateTime::format(...)" is not static');
+
+        AbstractConfigurator::processValue((new \DateTime())->format(...));
+    }
+
+    public function testProcessAnonymousClosure()
+    {
+        self::expectException(InvalidArgumentException::class);
+        self::expectExceptionMessage('Anonymous closure not supported. The closure must be created from a static method or a global function.');
+
+        AbstractConfigurator::processValue(static fn () => new \DateTime());
+    }
 }

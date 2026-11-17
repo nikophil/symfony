@@ -11,6 +11,8 @@
 
 namespace Symfony\Bundle\FrameworkBundle\Tests\Functional;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Command\DebugAutowiringCommand;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
@@ -21,9 +23,7 @@ use Symfony\Component\Console\Tester\CommandCompletionTester;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Routing\RouterInterface;
 
-/**
- * @group functional
- */
+#[Group('functional')]
 class DebugAutowiringCommandTest extends AbstractWebTestCase
 {
     public function testBasicFunctionality()
@@ -144,13 +144,11 @@ class DebugAutowiringCommandTest extends AbstractWebTestCase
         $this->assertStringContainsString('Symfony\Bundle\FrameworkBundle\Tests\Fixtures\MissingServiceInterface - alias:missing_service', $tester->getDisplay());
     }
 
-    /**
-     * @dataProvider provideCompletionSuggestions
-     */
+    #[DataProvider('provideCompletionSuggestions')]
     public function testComplete(array $input, array $expectedSuggestions)
     {
         $kernel = static::bootKernel(['test_case' => 'ContainerDebug', 'root_config' => 'config.yml']);
-        $command = (new Application($kernel))->add(new DebugAutowiringCommand());
+        $command = (new Application($kernel))->addCommand(new DebugAutowiringCommand());
 
         $tester = new CommandCompletionTester($command);
 

@@ -12,6 +12,8 @@
 namespace Symfony\Component\Cache\Tests;
 
 use Cache\IntegrationTests\SimpleCacheTest;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Psr\Cache\CacheItemPoolInterface;
 use Psr\SimpleCache\CacheInterface;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
@@ -21,15 +23,11 @@ use Symfony\Component\Cache\PruneableInterface;
 use Symfony\Component\Cache\Psr16Cache;
 use Symfony\Component\Cache\Tests\Fixtures\ExternalAdapter;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class Psr16CacheTest extends SimpleCacheTest
 {
     protected function setUp(): void
     {
-        parent::setUp();
-
         if (\array_key_exists('testPrune', $this->skippedTests)) {
             return;
         }
@@ -203,9 +201,7 @@ class Psr16CacheTest extends SimpleCacheTest
         $this->assertSame(['foo' => 'foo-val', 'bar' => 'bar-val'], $cache->getMultiple(['foo', 'bar']));
     }
 
-    /**
-     * @dataProvider providePools
-     */
+    #[DataProvider('providePools')]
     public function testGetMultipleWithNumericStringKeys(CacheItemPoolInterface $pool)
     {
         $cache = new Psr16Cache($pool);
@@ -219,9 +215,7 @@ class Psr16CacheTest extends SimpleCacheTest
         $this->assertSame([['123', 'foo-val'], ['456', null]], $values);
     }
 
-    /**
-     * @dataProvider providePools
-     */
+    #[DataProvider('providePools')]
     public function testGetMultipleReturnsUsableKeys(CacheItemPoolInterface $pool)
     {
         $cache = new Psr16Cache($pool);

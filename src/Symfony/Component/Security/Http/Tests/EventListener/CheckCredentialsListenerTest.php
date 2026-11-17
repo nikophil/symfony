@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Security\Http\Tests\EventListener;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactory;
 use Symfony\Component\PasswordHasher\PasswordHasherInterface;
@@ -35,13 +36,11 @@ class CheckCredentialsListenerTest extends TestCase
         $this->user = new InMemoryUser('wouter', 'password-hash');
     }
 
-    /**
-     * @dataProvider providePasswords
-     */
-    public function testPasswordAuthenticated($password, $passwordValid, $result)
+    #[DataProvider('providePasswords')]
+    public function testPasswordAuthenticated(string $password, bool $passwordValid, bool $result)
     {
-        $hasher = $this->createStub(PasswordHasherInterface::class);
-        $hasher->method('verify')->with('password-hash', $password)->willReturn($passwordValid);
+        $hasher = $this->createMock(PasswordHasherInterface::class);
+        $hasher->expects($this->once())->method('verify')->with('password-hash', $password)->willReturn($passwordValid);
 
         $hasherFactory = new PasswordHasherFactory([
             InMemoryUser::class => $hasher,
@@ -68,20 +67,19 @@ class CheckCredentialsListenerTest extends TestCase
 
     public function testEmptyPassword()
     {
-        $this->expectException(BadCredentialsException::class);
-        $this->expectExceptionMessage('The presented password cannot be empty.');
-
         $hasherFactory = $this->createMock(PasswordHasherFactory::class);
         $hasherFactory->expects($this->never())->method('getPasswordHasher');
 
         $event = $this->createEvent(new Passport(new UserBadge('wouter', fn () => $this->user), new PasswordCredentials('')));
+
+        $this->expectException(BadCredentialsException::class);
+        $this->expectExceptionMessage('The presented password cannot be empty.');
+
         (new CheckCredentialsListener($hasherFactory))->checkPassport($event);
     }
 
-    /**
-     * @dataProvider provideCustomAuthenticatedResults
-     */
-    public function testCustomAuthenticated($result)
+    #[DataProvider('provideCustomAuthenticatedResults')]
+    public function testCustomAuthenticated(bool $result)
     {
         $hasherFactory = $this->createMock(PasswordHasherFactory::class);
         $hasherFactory->expects($this->never())->method('getPasswordHasher');
@@ -115,8 +113,8 @@ class CheckCredentialsListenerTest extends TestCase
 
     public function testAddsPasswordUpgradeBadge()
     {
-        $hasher = $this->createStub(PasswordHasherInterface::class);
-        $hasher->method('verify')->with('password-hash', 'ThePa$$word')->willReturn(true);
+        $hasher = $this->createMock(PasswordHasherInterface::class);
+        $hasher->expects($this->once())->method('verify')->with('password-hash', 'ThePa$$word')->willReturn(true);
 
         $hasherFactory = new PasswordHasherFactory([
             InMemoryUser::class => $hasher,
@@ -131,8 +129,8 @@ class CheckCredentialsListenerTest extends TestCase
 
     public function testAddsNoPasswordUpgradeBadgeIfItAlreadyExists()
     {
-        $hasher = $this->createStub(PasswordHasherInterface::class);
-        $hasher->method('verify')->with('password-hash', 'ThePa$$word')->willReturn(true);
+        $hasher = $this->createMock(PasswordHasherInterface::class);
+        $hasher->expects($this->never())->method('verify');
 
         $hasherFactory = new PasswordHasherFactory([
             InMemoryUser::class => $hasher,
@@ -150,8 +148,8 @@ class CheckCredentialsListenerTest extends TestCase
 
     public function testAddsNoPasswordUpgradeBadgeIfPasswordIsInvalid()
     {
-        $hasher = $this->createStub(PasswordHasherInterface::class);
-        $hasher->method('verify')->with('password-hash', 'ThePa$$word')->willReturn(false);
+        $hasher = $this->createMock(PasswordHasherInterface::class);
+        $hasher->expects($this->never())->method('verify');
 
         $hasherFactory = new PasswordHasherFactory([
             InMemoryUser::class => $hasher,

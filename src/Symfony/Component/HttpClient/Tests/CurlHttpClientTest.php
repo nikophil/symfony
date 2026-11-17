@@ -11,6 +11,10 @@
 
 namespace Symfony\Component\HttpClient\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
+use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\HttpClient\CurlHttpClient;
 use Symfony\Component\HttpClient\Exception\ClientException;
 use Symfony\Component\HttpClient\Exception\InvalidArgumentException;
@@ -19,11 +23,8 @@ use Symfony\Component\HttpClient\Internal\CurlClientState;
 use Symfony\Component\Process\Process;
 use Symfony\Contracts\HttpClient\Test\TestHttpServer;
 
-/**
- * @requires extension curl
- *
- * @group dns-sensitive
- */
+#[RequiresPhpExtension('curl')]
+#[Group('dns-sensitive')]
 class CurlHttpClientTest extends HttpClientTestCase
 {
     private const HTTPS_PROXY_ERROR = 'Cannot use an "https://" proxy: the installed curl does not support HTTPS proxies and could connect to it in cleartext; curl 7.52 or higher is required.';
@@ -50,10 +51,29 @@ class CurlHttpClientTest extends HttpClientTestCase
 
         foreach ([1, 2] as $attempt) {
             rewind($h);
-            $response = $client->request('POST', 'http://localhost:8057/post', ['body' => $h]);
+            $response = $client->request('POST', 'http://localhost:'.self::port().'/post', ['body' => $h]);
 
             $this->assertSame(['foo' => '0123456789', 'REQUEST_METHOD' => 'POST'], $response->toArray(), "Request #{$attempt}");
         }
+    }
+
+    #[TestWith([''])]
+    #[TestWith(['skipped '])]
+    public function testRedirect307SendsTheResourceBodyAgain(string $skipped)
+    {
+        if (!\defined('CURLOPT_SEEKFUNCTION')) {
+            $this->markTestSkipped('CURLOPT_SEEKFUNCTION is not available.');
+        }
+
+        $client = $this->getHttpClient(__FUNCTION__);
+
+        $h = fopen('php://temp', 'w+');
+        fwrite($h, $skipped.'foo=0123456789');
+        fseek($h, \strlen($skipped));
+
+        $response = $client->request('POST', 'http://localhost:'.self::port().'/307', ['body' => $h]);
+
+        $this->assertSame(['foo' => '0123456789', 'REQUEST_METHOD' => 'POST'], $response->toArray());
     }
 
     public function testTimeoutIsNotAFatalError()
@@ -67,7 +87,7 @@ class CurlHttpClientTest extends HttpClientTestCase
 
     public function testCancelFromOnProgressInStreamWritesNothingToStdout()
     {
-        $process = new Process([\PHP_BINARY, __DIR__.'/Fixtures/cancel_from_on_progress_in_stream.php']);
+        $process = new Process([\PHP_BINARY, __DIR__.'/Fixtures/cancel_from_on_progress_in_stream.php', self::port()]);
         $process->mustRun();
 
         self::assertSame('Response has been canceled.', $process->getOutput());
@@ -107,7 +127,7 @@ class CurlHttpClientTest extends HttpClientTestCase
         self::assertFalse(isset($state->handle));
         self::assertFalse(isset($state->share));
 
-        $client->request('GET', 'http://127.0.0.1:8057/json')->getStatusCode();
+        $client->request('GET', 'http://127.0.0.1:'.self::port().'/json')->getStatusCode();
 
         self::assertInstanceOf(\CurlMultiHandle::class, $state->handle);
         self::assertInstanceOf(\CurlShareHandle::class, $state->share);
@@ -117,7 +137,7 @@ class CurlHttpClientTest extends HttpClientTestCase
     {
         $client = $this->getHttpClient(__FUNCTION__);
 
-        $response = $client->request('GET', 'http://127.0.0.1:8057/json');
+        $response = $client->request('GET', 'http://127.0.0.1:'.self::port().'/json');
 
         $client->reset();
 
@@ -130,7 +150,7 @@ class CurlHttpClientTest extends HttpClientTestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Cannot set "CURLOPT_REFERER" with "extra.curl", use option "headers" instead.');
 
-        $httpClient->request('GET', 'http://localhost:8057/', [
+        $httpClient->request('GET', 'http://localhost:'.self::port().'/', [
             'extra' => [
                 'curl' => [
                     \CURLOPT_REFERER => 'Banana',
@@ -145,7 +165,7 @@ class CurlHttpClientTest extends HttpClientTestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Cannot set "CURLOPT_COOKIE" with "extra.curl", use option "headers" instead.');
 
-        $httpClient->request('GET', 'http://localhost:8057/', [
+        $httpClient->request('GET', 'http://localhost:'.self::port().'/', [
             'extra' => [
                 'curl' => [
                     \CURLOPT_COOKIE => 'foo=bar',
@@ -160,7 +180,7 @@ class CurlHttpClientTest extends HttpClientTestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Cannot set "CURLOPT_UNRESTRICTED_AUTH" with "extra.curl".');
 
-        $httpClient->request('GET', 'http://localhost:8057/', [
+        $httpClient->request('GET', 'http://localhost:'.self::port().'/', [
             'extra' => [
                 'curl' => [
                     \CURLOPT_UNRESTRICTED_AUTH => true,
@@ -175,7 +195,7 @@ class CurlHttpClientTest extends HttpClientTestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('The HTTP method cannot be overridden using "extra.curl".');
 
-        $httpClient->request('POST', 'http://localhost:8057/', [
+        $httpClient->request('POST', 'http://localhost:'.self::port().'/', [
             'extra' => [
                 'curl' => [
                     \CURLOPT_HTTPGET => true,
@@ -190,7 +210,7 @@ class CurlHttpClientTest extends HttpClientTestCase
         $this->expectException(InvalidArgumentException::class);
         $this->expectExceptionMessage('Cannot set "CURLOPT_PRIVATE" with "extra.curl".');
 
-        $httpClient->request('POST', 'http://localhost:8057/', [
+        $httpClient->request('POST', 'http://localhost:'.self::port().'/', [
             'extra' => [
                 'curl' => [
                     \CURLOPT_PRIVATE => 'overridden private',
@@ -207,7 +227,7 @@ class CurlHttpClientTest extends HttpClientTestCase
             $this->expectException(TransportException::class);
             $this->expectExceptionMessage(self::HTTPS_PROXY_ERROR);
 
-            $client->request('GET', 'http://127.0.0.1:8057/', ['proxy' => 'https://127.0.0.1:8057']);
+            $client->request('GET', 'http://127.0.0.1:'.self::port().'/', ['proxy' => 'https://127.0.0.1:'.self::port()]);
         });
     }
 
@@ -215,11 +235,11 @@ class CurlHttpClientTest extends HttpClientTestCase
     {
         $client = $this->getHttpClient(__FUNCTION__);
 
-        $this->withProxyEnvironment(['https_proxy' => 'https://127.0.0.1:8057'], [], false, function () use ($client) {
+        $this->withProxyEnvironment(['https_proxy' => 'https://127.0.0.1:'.self::port()], [], false, function () use ($client) {
             $this->expectException(TransportException::class);
             $this->expectExceptionMessage(self::HTTPS_PROXY_ERROR);
 
-            $client->request('GET', 'https://127.0.0.1:8057/');
+            $client->request('GET', 'https://127.0.0.1:'.self::port().'/');
         });
     }
 
@@ -229,7 +249,7 @@ class CurlHttpClientTest extends HttpClientTestCase
 
         // Only curl reads the process environment, and it must not do so behind our back
         $this->withProxyEnvironment([], ['http_proxy' => 'http://127.0.0.1:9'], true, function () use ($client) {
-            $response = $client->request('GET', 'http://127.0.0.1:8057/');
+            $response = $client->request('GET', 'http://127.0.0.1:'.self::port().'/');
 
             $this->assertSame(200, $response->getStatusCode());
         });
@@ -239,8 +259,8 @@ class CurlHttpClientTest extends HttpClientTestCase
     {
         $client = $this->getHttpClient(__FUNCTION__);
 
-        $this->withProxyEnvironment(['https_proxy' => 'https://127.0.0.1:8057'], [], false, function () use ($client) {
-            $response = $client->request('GET', 'http://127.0.0.1:8057/302?location=https://127.0.0.1:8057/');
+        $this->withProxyEnvironment(['https_proxy' => 'https://127.0.0.1:'.self::port()], [], false, function () use ($client) {
+            $response = $client->request('GET', 'http://127.0.0.1:'.self::port().'/302?location=https://127.0.0.1:'.self::port().'/');
 
             $this->expectException(TransportException::class);
             $this->expectExceptionMessage(self::HTTPS_PROXY_ERROR);
@@ -254,8 +274,8 @@ class CurlHttpClientTest extends HttpClientTestCase
         $client = $this->getHttpClient(__FUNCTION__);
 
         $this->withProxyEnvironment([], [], false, function () use ($client) {
-            $response = $client->request('GET', 'http://127.0.0.1:8057/', [
-                'proxy' => 'https://127.0.0.1:8057',
+            $response = $client->request('GET', 'http://127.0.0.1:'.self::port().'/', [
+                'proxy' => 'https://127.0.0.1:'.self::port(),
                 'no_proxy' => '127.0.0.1',
             ]);
 
@@ -268,17 +288,53 @@ class CurlHttpClientTest extends HttpClientTestCase
         $client = $this->getHttpClient(__FUNCTION__);
 
         $this->withProxyEnvironment([], [], true, function () use ($client) {
-            $response = $client->request('GET', 'http://127.0.0.1:8057/', ['proxy' => 'https://127.0.0.1:8057']);
+            $response = $client->request('GET', 'http://127.0.0.1:'.self::port().'/', ['proxy' => 'https://127.0.0.1:'.self::port()]);
             $response->cancel();
 
             $this->addToAssertionCount(1);
         });
     }
 
+    #[DataProvider('provideHttp3Requests')]
+    public function testHttp3IsRequestedWhenItCanBeUsed(?string $httpVersion, string $url, array $options, bool $http3)
+    {
+        if (!\defined('CURL_HTTP_VERSION_3ONLY') || \CURL_VERSION_HTTP3 & curl_version()['features']) {
+            $this->markTestSkipped('This test needs curl 7.88 or higher without HTTP/3 support.');
+        }
+
+        $client = $this->getHttpClient(__FUNCTION__);
+
+        $this->withProxyEnvironment([], [], true, function () use ($client, $httpVersion, $url, $options, $http3) {
+            // The installed curl rejects HTTP/3, so requesting it fails before any connection is made
+            CurlClientState::$curlVersion['features'] |= \CURL_VERSION_HTTP3;
+
+            if ($http3) {
+                $this->expectException(TransportException::class);
+                $this->expectExceptionMessage('Curl option "CURLOPT_HTTP_VERSION" is not supported.');
+            }
+
+            $client->request('GET', $url, ['http_version' => $httpVersion] + $options)->cancel();
+
+            $this->addToAssertionCount(1);
+        });
+    }
+
+    public static function provideHttp3Requests(): iterable
+    {
+        yield [null, 'https://127.0.0.1:'.self::port().'/', [], false];
+        yield ['3.0', 'https://127.0.0.1:'.self::port().'/', [], true];
+        yield [null, 'http://127.0.0.1:'.self::port().'/', [], false];
+        yield ['3.0', 'http://127.0.0.1:'.self::port().'/', [], false];
+        yield ['2.0', 'https://127.0.0.1:'.self::port().'/', [], false];
+        yield ['1.1', 'https://127.0.0.1:'.self::port().'/', [], false];
+        yield [null, 'https://127.0.0.1:'.self::port().'/', ['proxy' => 'http://127.0.0.1:'.self::port()], false];
+        yield ['3.0', 'https://127.0.0.1:'.self::port().'/', ['proxy' => 'http://127.0.0.1:'.self::port()], false];
+    }
+
     public function testKeepAuthorizationHeaderOnRedirectToSameHostWithConfiguredHostToIpAddressMapping()
     {
         $httpClient = $this->getHttpClient(__FUNCTION__);
-        $response = $httpClient->request('POST', 'http://127.0.0.1:8057/301', [
+        $response = $httpClient->request('POST', 'http://127.0.0.1:'.self::port().'/301', [
             'headers' => [
                 'Authorization' => 'Basic Zm9vOmJhcg==',
             ],
@@ -289,6 +345,37 @@ class CurlHttpClientTest extends HttpClientTestCase
 
         $this->assertSame(200, $response->getStatusCode());
         $this->assertSame('/302', $response->toArray()['REQUEST_URI'] ?? null);
+    }
+
+    public function testRedirect307DoesNotWaitFor100Continue()
+    {
+        $client = $this->getHttpClient(__FUNCTION__);
+
+        $response = $client->request('POST', 'http://localhost:'.self::port().'/307', ['body' => ['foo' => str_repeat('a', 2 << 20)]]);
+
+        $this->assertSame(2 << 20, \strlen($response->toArray()['foo']));
+        $this->assertStringNotContainsStringIgnoringCase('Expect: 100-continue', $response->getInfo('debug'));
+    }
+
+    public function testRedirect307DoesNotSendAChunkedBodyWithAContentLength()
+    {
+        if (!\defined('CURLOPT_SEEKFUNCTION')) {
+            $this->markTestSkipped('CURLOPT_SEEKFUNCTION is not available.');
+        }
+
+        $client = $this->getHttpClient(__FUNCTION__);
+
+        $h = fopen('php://temp', 'w+');
+        fwrite($h, 'foo=0123456789');
+        rewind($h);
+
+        $response = $client->request('POST', 'http://localhost:'.self::port().'/307', [
+            'body' => $h,
+            'headers' => ['Content-Length' => 14],
+        ]);
+
+        $this->assertSame(['foo' => '0123456789', 'REQUEST_METHOD' => 'POST'], $response->toArray());
+        $this->assertStringNotContainsStringIgnoringCase('Transfer-Encoding: chunked', $response->getInfo('debug'));
     }
 
     public function testNtlmRequiresFreshConnectionStateIsEmptyByDefault()
@@ -305,13 +392,13 @@ class CurlHttpClientTest extends HttpClientTestCase
     {
         $client = $this->getHttpClient(__FUNCTION__);
 
-        $client->request('GET', 'http://127.0.0.1:8057/')->getContent();
+        $client->request('GET', 'http://127.0.0.1:'.self::port().'/')->getContent();
 
         $r = new \ReflectionProperty($client, 'multi');
         $state = $r->getValue($client);
-        $state->ntlmRequiresFreshConnection['http://127.0.0.1:8057'] = true;
+        $state->ntlmRequiresFreshConnection['http://127.0.0.1:'.self::port()] = true;
 
-        $response = $client->request('GET', 'http://127.0.0.1:8057/', [
+        $response = $client->request('GET', 'http://127.0.0.1:'.self::port().'/', [
             'auth_ntlm' => 'user:pass',
         ]);
         $response->getStatusCode();
@@ -322,10 +409,10 @@ class CurlHttpClientTest extends HttpClientTestCase
     public function testAuthNtlmWinsOverUserinfo()
     {
         $client = $this->getHttpClient(__FUNCTION__);
-        $response = $client->request('GET', 'http://foo:bar@127.0.0.1:8057/', ['auth_ntlm' => 'user:pass']);
+        $response = $client->request('GET', 'http://foo:bar@127.0.0.1:'.self::port().'/', ['auth_ntlm' => 'user:pass']);
 
         $this->assertMatchesRegularExpression('/^NTLM [^ ,]++$/', $response->toArray()['HTTP_AUTHORIZATION']);
-        $this->assertSame('http://127.0.0.1:8057/', $response->getInfo('url'));
+        $this->assertSame('http://127.0.0.1:'.self::port().'/', $response->getInfo('url'));
     }
 
     public function testNtlmStateNotMutatedByNonNtlmRequest()
@@ -335,7 +422,7 @@ class CurlHttpClientTest extends HttpClientTestCase
         // inverted condition guard) — which would silently mark every origin as needing a
         // fresh NTLM connection.
         $client = $this->getHttpClient(__FUNCTION__);
-        $client->request('GET', 'http://127.0.0.1:8057/json')->getContent();
+        $client->request('GET', 'http://127.0.0.1:'.self::port().'/json')->getContent();
 
         $r = new \ReflectionProperty($client, 'multi');
         $state = $r->getValue($client);
@@ -349,7 +436,7 @@ class CurlHttpClientTest extends HttpClientTestCase
         // the legitimate first leg of libcurl's in-request handshake — not the cross-request
         // de-auth case. Detection must NOT fire, and the origin must NOT be marked.
         $client = $this->getHttpClient(__FUNCTION__);
-        $client->request('GET', 'http://127.0.0.1:8057/custom?'.http_build_query([
+        $client->request('GET', 'http://127.0.0.1:'.self::port().'/custom?'.http_build_query([
             'status' => 401,
             'headers' => ['WWW-Authenticate: NTLM TlRMTVNTUAACAAAAAwADADgAAAAGgokCB7m5ksVjjAsAAAAAAAAAAHYAdgA7AAAACgB8TwAAAA9QUkQ=', 'Content-Length: 0'],
         ]), [
@@ -371,7 +458,7 @@ class CurlHttpClientTest extends HttpClientTestCase
         $logger = new TestLogger();
         $client->setLogger($logger);
 
-        $client->request('GET', 'http://127.0.0.1:8057/json')->getContent();
+        $client->request('GET', 'http://127.0.0.1:'.self::port().'/json')->getContent();
 
         $ntlmLogs = array_filter($logger->logs, static fn ($msg) => str_contains($msg, 'NTLM'));
         self::assertSame([], $ntlmLogs);
@@ -382,9 +469,9 @@ class CurlHttpClientTest extends HttpClientTestCase
         $client = $this->getHttpClient(__FUNCTION__);
         $r = new \ReflectionProperty($client, 'multi');
         $state = $r->getValue($client);
-        $state->ntlmRequiresFreshConnection['http://127.0.0.1:8057'] = true;
+        $state->ntlmRequiresFreshConnection['http://127.0.0.1:'.self::port()] = true;
 
-        $response = $client->request('GET', 'http://127.0.0.1:8057/custom?'.http_build_query([
+        $response = $client->request('GET', 'http://127.0.0.1:'.self::port().'/custom?'.http_build_query([
             'status' => 401,
             'headers' => ['WWW-Authenticate: NTLM TlRMTVNTUAACAAAAAwADADgAAAAGgokCB7m5ksVjjAsAAAAAAAAAAHYAdgA7AAAACgB8TwAAAA9QUkQ=', 'Content-Length: 0'],
         ]), [
@@ -397,7 +484,7 @@ class CurlHttpClientTest extends HttpClientTestCase
     public function testHandleIsReleasedAfterGettingTheContentOfAHeadResponse()
     {
         $client = $this->getHttpClient(__FUNCTION__);
-        $response = $client->request('HEAD', 'http://127.0.0.1:8057/head');
+        $response = $client->request('HEAD', 'http://127.0.0.1:'.self::port().'/head');
         $handle = \WeakReference::create((new \ReflectionProperty($response, 'handle'))->getValue($response));
 
         self::assertSame(200, $response->getStatusCode());
@@ -410,12 +497,12 @@ class CurlHttpClientTest extends HttpClientTestCase
     public function testHandleIsReleasedWhenTheResponseIsDestructedByACallback()
     {
         $client = $this->getHttpClient(__FUNCTION__);
-        $response = $client->request('GET', 'http://127.0.0.1:8057/');
+        $response = $client->request('GET', 'http://127.0.0.1:'.self::port().'/');
         $handle = \WeakReference::create((new \ReflectionProperty($response, 'handle'))->getValue($response));
 
         self::assertSame(200, $response->getStatusCode());
 
-        $client->request('GET', 'http://127.0.0.1:8057/', ['on_progress' => static function () use (&$response) {
+        $client->request('GET', 'http://127.0.0.1:'.self::port().'/', ['on_progress' => static function () use (&$response) {
             $response = null;
         }])->getContent();
 
@@ -426,7 +513,7 @@ class CurlHttpClientTest extends HttpClientTestCase
     public function testResponseDebugBufferClosesOnDestruct()
     {
         $client = $this->getHttpClient(__FUNCTION__);
-        $response = $client->request('HEAD', 'http://127.0.0.1:8057/head');
+        $response = $client->request('HEAD', 'http://127.0.0.1:'.self::port().'/head');
 
         $r = new \ReflectionProperty($response, 'debugBuffer');
         $debugBuffer = (int) $r->getValue($response);
@@ -443,7 +530,7 @@ class CurlHttpClientTest extends HttpClientTestCase
         $client = $this->getHttpClient(__FUNCTION__);
 
         $traceInfo = [];
-        $client->request('GET', 'http://localhost:8057/timeout-body', ['on_progress' => static function (int $dlNow, int $dlSize, array $info) use (&$traceInfo) {
+        $client->request('GET', 'http://localhost:'.self::port().'/timeout-body', ['on_progress' => static function (int $dlNow, int $dlSize, array $info) use (&$traceInfo) {
             $traceInfo = $info;
         }]);
 
@@ -455,7 +542,7 @@ class CurlHttpClientTest extends HttpClientTestCase
         $client = $this->getHttpClient(__FUNCTION__);
 
         try {
-            $client->request('GET', 'http://localhost:8057/404');
+            $client->request('GET', 'http://localhost:'.self::port().'/404');
             $this->fail(ClientException::class.' expected');
         } catch (ClientException $e) {
             self::assertNotEmpty($e->getResponse()->getInfo('debug'));
@@ -464,23 +551,21 @@ class CurlHttpClientTest extends HttpClientTestCase
 
     public function testCancelFromOnProgressWritesNothingToStderr()
     {
-        $process = new Process([\PHP_BINARY, __DIR__.'/Fixtures/cancel_from_on_progress.php']);
+        $process = new Process([\PHP_BINARY, __DIR__.'/Fixtures/cancel_from_on_progress.php', self::port()]);
         $process->mustRun();
 
         self::assertSame('Response has been canceled.', $process->getOutput());
         self::assertSame('', $process->getErrorOutput());
     }
 
-    /**
-     * @dataProvider provideRelativeRedirectsToGet
-     */
+    #[DataProvider('provideRelativeRedirectsToGet')]
     public function testRelativeRedirectToGetDropsCredentialsOnOtherOrigins(string $url, string $expectedUrl, bool $expectCredentials)
     {
         if (!str_contains(file_get_contents(\dirname((new \ReflectionClass(TestHttpServer::class))->getFileName()).'/Fixtures/web/index.php'), "case '/custom':")) {
             $this->markTestSkipped('The installed symfony/http-client-contracts has no "/custom" route.');
         }
 
-        $p = TestHttpServer::start(8067);
+        $p = TestHttpServer::start(self::port(8067));
 
         try {
             $client = $this->getHttpClient(__FUNCTION__);
@@ -501,14 +586,12 @@ class CurlHttpClientTest extends HttpClientTestCase
     {
         $seeOther = 'custom?'.http_build_query(['status' => 303, 'headers' => ['Location: /']]);
 
-        yield 'same origin' => ['http://localhost:8057/'.$seeOther, 'http://localhost:8057/', true];
-        yield 'same origin with user info' => ['http://foo:bar@localhost:8057/'.$seeOther, 'http://localhost:8057/', true];
-        yield 'other origin' => ['http://localhost:8057/custom?'.http_build_query(['status' => 302, 'headers' => ['Location: http://localhost:8067/'.$seeOther]]), 'http://localhost:8067/', false];
+        yield 'same origin' => ['http://localhost:'.self::port().'/'.$seeOther, 'http://localhost:'.self::port().'/', true];
+        yield 'same origin with user info' => ['http://foo:bar@localhost:'.self::port().'/'.$seeOther, 'http://localhost:'.self::port().'/', true];
+        yield 'other origin' => ['http://localhost:'.self::port().'/custom?'.http_build_query(['status' => 302, 'headers' => ['Location: http://localhost:'.self::port(8067).'/'.$seeOther]]), 'http://localhost:'.self::port(8067).'/', false];
     }
 
-    /**
-     * @group integration
-     */
+    #[Group('integration')]
     public function testMaxConnections()
     {
         foreach ($ports = [80, 8681, 8682, 8683, 8684] as $port) {

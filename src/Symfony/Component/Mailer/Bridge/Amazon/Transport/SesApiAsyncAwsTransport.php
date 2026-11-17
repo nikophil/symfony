@@ -106,8 +106,17 @@ class SesApiAsyncAwsTransport extends SesHttpAsyncAwsTransport
         if ($header = $email->getHeaders()->get('X-SES-SOURCE-ARN')) {
             $request['FromEmailAddressIdentityArn'] = $header->getBodyAsString();
         }
+        if ($header = $email->getHeaders()->get('X-SES-LIST-MANAGEMENT-OPTIONS')) {
+            if (preg_match('/^(contactListName=)*(?<ContactListName>[^;]+)(;\s?topicName=(?<TopicName>.+))?$/ix', $header->getBodyAsString(), $listManagementOptions)) {
+                $request['ListManagementOptions'] = array_filter($listManagementOptions, static fn ($e) => \in_array($e, ['ContactListName', 'TopicName'], true), \ARRAY_FILTER_USE_KEY);
+            }
+        }
         if ($email->getReturnPath()) {
             $request['FeedbackForwardingEmailAddress'] = $email->getReturnPath()->toString();
+        }
+
+        if ($customHeaders = $this->getCustomHeaders($email->getHeaders())) {
+            $request['Content']['Simple']['Headers'] = $customHeaders;
         }
 
         foreach ($email->getHeaders()->all() as $header) {
@@ -124,6 +133,38 @@ class SesApiAsyncAwsTransport extends SesHttpAsyncAwsTransport
         $emailRecipients = array_merge($email->getCc(), $email->getBcc());
 
         return array_filter($envelope->getRecipients(), static fn (Address $address) => !\in_array($address, $emailRecipients, true));
+    }
+
+    private function getCustomHeaders(Headers $headers): array
+    {
+        $headersPrepared = [];
+
+        $headersToBypass = ['from', 'to', 'cc', 'bcc', 'return-path', 'subject', 'reply-to', 'sender', 'content-type', 'x-ses-configuration-set', 'x-ses-source-arn', 'x-ses-list-management-options'];
+        foreach ($headers->all() as $name => $header) {
+            if (\in_array($name, $headersToBypass, true)) {
+                continue;
+            }
+
+            if ($header instanceof MetadataHeader) {
+                continue;
+            }
+
+            $value = $header->getBodyAsString();
+
+            // AWS SES Simple message headers only accept printable ASCII (char codes 32-126).
+            // getBodyAsString() may produce encoded words with \r\n line folding, so we
+            // re-encode using RFC 2047 base64 encoding when non-printable characters are present.
+            if (preg_match('/[^\x20-\x7E]/', $value)) {
+                $value = '=?UTF-8?B?'.base64_encode($header->getBody()).'?=';
+            }
+
+            $headersPrepared[] = [
+                'Name' => $header->getName(),
+                'Value' => $value,
+            ];
+        }
+
+        return $headersPrepared;
     }
 
     protected function stringifyAddresses(array $addresses): array

@@ -11,6 +11,10 @@
 
 namespace Symfony\Component\Process\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\PhpExecutableFinder;
 use Symfony\Component\Process\PhpSubprocess;
@@ -26,9 +30,7 @@ class PhpSubprocessTest extends TestCase
         self::$phpBin = getenv('SYMFONY_PROCESS_PHP_TEST_BINARY') ?: ('phpdbg' === \PHP_SAPI ? 'php' : $phpBin->find());
     }
 
-    /**
-     * @dataProvider subprocessProvider
-     */
+    #[DataProvider('subprocessProvider')]
     public function testSubprocess(string $processClass, string $memoryLimit, string $expectedMemoryLimit)
     {
         $process = new Process([self::$phpBin,
@@ -43,13 +45,9 @@ class PhpSubprocessTest extends TestCase
         $this->assertEquals($expectedMemoryLimit, trim($process->getOutput()));
     }
 
-    /**
-     * @requires extension pcntl
-     *
-     * @runInSeparateProcess
-     *
-     * @preserveGlobalState disabled
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function testForkDoesNotRemoveTemporaryIni()
     {
         $precision = ini_set('precision', '13');

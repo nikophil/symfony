@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\HttpKernel\Tests;
 
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Cookie;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
@@ -23,9 +24,7 @@ use Symfony\Component\HttpKernel\TerminableInterface;
 use Symfony\Component\HttpKernel\Tests\Fixtures\MockableUploadFileWithClientSize;
 use Symfony\Component\HttpKernel\Tests\Fixtures\TestClient;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class HttpKernelBrowserTest extends TestCase
 {
     public function testDoRequest()
@@ -137,6 +136,19 @@ class HttpKernelBrowserTest extends TestCase
         $response = new StreamedResponse(static function () {
             echo 'foo';
         });
+
+        $domResponse = $m->invoke($client, $response);
+        $this->assertEquals('foo', $domResponse->getContent());
+    }
+
+    public function testFilterResponseSupportsStreamedResponsesWithChunks()
+    {
+        $client = new HttpKernelBrowser(new TestHttpKernel());
+
+        $r = new \ReflectionObject($client);
+        $m = $r->getMethod('filterResponse');
+
+        $response = new StreamedResponse(new \ArrayIterator(['foo']));
 
         $domResponse = $m->invoke($client, $response);
         $this->assertEquals('foo', $domResponse->getContent());

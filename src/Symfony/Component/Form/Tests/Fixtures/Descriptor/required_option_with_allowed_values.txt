@@ -26,4 +26,5 @@ Symfony\Component\Form\Tests\Console\Descriptor\FooType (foo)
                      }       %s
                    ]         %s
  ---------------- -----------%s
-
+  Nested Options   -         %s
+ ---------------- -----------%s

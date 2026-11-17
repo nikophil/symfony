@@ -11,33 +11,59 @@
 
 namespace Symfony\Component\PropertyInfo\Tests\Extractor;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
 use Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\Clazz;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\ConstructorDummy;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\ConstructorDummyWithoutDocBlock;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\ConstructorDummyWithUnsupportedType;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\ConstructorDummyWithVarTagsDocBlock;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\DefaultValue;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\DockBlockFallback;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\Dummy;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\DummyCollection;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\DummyGeneric;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\DummyNamespace;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\DummyPropertyAndGetterWithDifferentTypes;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\DummyUnionType;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\DummyWithTemplateAndParent;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\Extractor\ChildWithConstructorOverride;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\Extractor\ChildWithoutConstructorOverride;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\Extractor\ChildWithSelfDocBlock;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\Extractor\DummyInDifferentNs;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\Extractor\DummyWithStaticGetterInDifferentNs;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\Extractor\DummyWithTemplateAndParentInDifferentNs;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\Extractor\ParentWithPromotedPropertyDocBlock;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\Extractor\ParentWithSelfDocBlock;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\Extractor\PromotedPropertiesWithDocBlock;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\IFace;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\IntRangeDummy;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\InvalidDummy;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\LiteralDummy;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\MultiParameterAdderDocDummy;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\ParentDummy;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\Php80Dummy;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\Php80PromotedDummy;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\PhpStanPseudoTypesDummy;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\RejectedCandidateDocDummy;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\RootDummy\RootDummyItem;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\TraitUsage\AnotherNamespace\DummyInAnotherNamespace;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\TraitUsage\DummyImportingDummy;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\TraitUsage\DummyUsedInTrait;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\TraitUsage\DummyUsingConcreteGenericTrait;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\TraitUsage\DummyUsingGenericTrait;
+use Symfony\Component\PropertyInfo\Tests\Fixtures\TraitUsage\DummyUsingGenericTraitWithSameTemplate;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\TraitUsage\DummyUsingTrait;
 use Symfony\Component\PropertyInfo\Tests\Fixtures\VoidNeverReturnTypeDummy;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Exception\LogicException;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\Type\WrappingTypeInterface;
+use Symfony\Component\TypeInfo\TypeContext\TypeContext;
 
 require_once __DIR__.'/../Fixtures/Extractor/DummyNamespace.php';
 
@@ -57,29 +83,35 @@ class PhpStanExtractorTest extends TestCase
 
     public function testAdderWithSeveralRequiredParametersIsIgnored()
     {
-        $this->assertNull($this->extractor->getTypes(MultiParameterAdderDocDummy::class, 'link'));
+        $this->assertNull($this->extractor->getType(MultiParameterAdderDocDummy::class, 'link'));
     }
 
     public function testRejectedCandidateMethodsAreIgnored()
     {
-        $this->assertNull($this->extractor->getTypes(RejectedCandidateDocDummy::class, 'foo'));
-        $this->assertNull($this->extractor->getTypes(RejectedCandidateDocDummy::class, 'bar'));
+        $this->assertNull($this->extractor->getType(RejectedCandidateDocDummy::class, 'foo'));
+        $this->assertNull($this->extractor->getType(RejectedCandidateDocDummy::class, 'bar'));
     }
 
-    /**
-     * @dataProvider typesProvider
-     */
-    public function testExtract($property, ?array $type = null)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyTypes')]
+    public function testExtractLegacy($property, ?array $type = null)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $this->assertEquals($type, $this->extractor->getTypes('Symfony\Component\PropertyInfo\Tests\Fixtures\Dummy', $property));
     }
 
-    public function testParamTagTypeIsOmitted()
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testParamTagTypeIsOmittedLegacy()
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $this->assertNull($this->extractor->getTypes(PhpStanOmittedParamTagTypeDocBlock::class, 'omittedType'));
     }
 
-    public static function invalidTypesProvider()
+    public static function provideLegacyInvalidTypes()
     {
         return [
             'pub' => ['pub'],
@@ -89,428 +121,473 @@ class PhpStanExtractorTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider invalidTypesProvider
-     */
-    public function testInvalid($property)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyInvalidTypes')]
+    public function testInvalidLegacy($property)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $this->assertNull($this->extractor->getTypes('Symfony\Component\PropertyInfo\Tests\Fixtures\InvalidDummy', $property));
     }
 
-    /**
-     * @dataProvider typesWithNoPrefixesProvider
-     */
-    public function testExtractTypesWithNoPrefixes($property, ?array $type = null)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyTypesWithNoPrefixes')]
+    public function testExtractTypesWithNoPrefixesLegacy($property, ?array $type = null)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $noPrefixExtractor = new PhpStanExtractor([], [], []);
 
         $this->assertEquals($type, $noPrefixExtractor->getTypes('Symfony\Component\PropertyInfo\Tests\Fixtures\Dummy', $property));
     }
 
-    public static function typesProvider()
+    public static function provideLegacyTypes()
     {
         return [
             ['foo', null],
-            ['bar', [new Type(Type::BUILTIN_TYPE_STRING)]],
-            ['baz', [new Type(Type::BUILTIN_TYPE_INT)]],
-            ['foo2', [new Type(Type::BUILTIN_TYPE_FLOAT)]],
-            ['foo3', [new Type(Type::BUILTIN_TYPE_CALLABLE)]],
-            ['foo4', [new Type(Type::BUILTIN_TYPE_NULL)]],
+            ['bar', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]],
+            ['baz', [new LegacyType(LegacyType::BUILTIN_TYPE_INT)]],
+            ['foo2', [new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT)]],
+            ['foo3', [new LegacyType(LegacyType::BUILTIN_TYPE_CALLABLE)]],
+            ['foo4', [new LegacyType(LegacyType::BUILTIN_TYPE_NULL)]],
             ['foo5', null],
             [
                 'files',
                 [
-                    new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, 'SplFileInfo')),
-                    new Type(Type::BUILTIN_TYPE_RESOURCE),
+                    new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'SplFileInfo')),
+                    new LegacyType(LegacyType::BUILTIN_TYPE_RESOURCE),
                 ],
             ],
-            ['bal', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable')]],
-            ['parent', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'Symfony\Component\PropertyInfo\Tests\Fixtures\ParentDummy')]],
-            ['collection', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable'))]],
-            ['nestedCollection', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_STRING, false)))]],
-            ['mixedCollection', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, [new Type(Type::BUILTIN_TYPE_INT)], null)]],
-            ['a', [new Type(Type::BUILTIN_TYPE_INT)]],
-            ['b', [new Type(Type::BUILTIN_TYPE_OBJECT, true, 'Symfony\Component\PropertyInfo\Tests\Fixtures\ParentDummy')]],
-            ['c', [new Type(Type::BUILTIN_TYPE_BOOL, true)]],
-            ['d', [new Type(Type::BUILTIN_TYPE_BOOL)]],
-            ['e', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_RESOURCE))]],
-            ['f', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable'))]],
-            ['g', [new Type(Type::BUILTIN_TYPE_ARRAY, true, null, true)]],
-            ['h', [new Type(Type::BUILTIN_TYPE_STRING, true)]],
-            ['j', [new Type(Type::BUILTIN_TYPE_OBJECT, true, 'DateTimeImmutable')]],
-            ['nullableCollectionOfNonNullableElements', [new Type(Type::BUILTIN_TYPE_ARRAY, true, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_INT, false))]],
+            ['bal', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable')]],
+            ['parent', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'Symfony\Component\PropertyInfo\Tests\Fixtures\ParentDummy')]],
+            ['collection', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable'))]],
+            ['nestedCollection', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_STRING, false)))]],
+            ['mixedCollection', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, [new LegacyType(LegacyType::BUILTIN_TYPE_INT)], null)]],
+            ['a', [new LegacyType(LegacyType::BUILTIN_TYPE_INT)]],
+            ['b', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, true, 'Symfony\Component\PropertyInfo\Tests\Fixtures\ParentDummy')]],
+            ['c', [new LegacyType(LegacyType::BUILTIN_TYPE_BOOL, true)]],
+            ['d', [new LegacyType(LegacyType::BUILTIN_TYPE_BOOL)]],
+            ['e', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_RESOURCE))]],
+            ['f', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable'))]],
+            ['g', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, true, null, true)]],
+            ['h', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING, true)]],
+            ['j', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, true, 'DateTimeImmutable')]],
+            ['nullableCollectionOfNonNullableElements', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, true, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_INT, false))]],
             ['donotexist', null],
             ['staticGetter', null],
             ['staticSetter', null],
             ['emptyVar', null],
-            ['arrayWithKeys', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_STRING), new Type(Type::BUILTIN_TYPE_STRING))]],
-            ['arrayOfMixed', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_STRING), null)]],
-            ['listOfStrings', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_STRING))]],
-            ['self', [new Type(Type::BUILTIN_TYPE_OBJECT, false, Dummy::class)]],
-            ['rootDummyItems', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, RootDummyItem::class))]],
-            ['rootDummyItem', [new Type(Type::BUILTIN_TYPE_OBJECT, false, RootDummyItem::class)]],
-            ['collectionAsObject', [new Type(Type::BUILTIN_TYPE_OBJECT, false, DummyCollection::class, true, [new Type(Type::BUILTIN_TYPE_INT)], [new Type(Type::BUILTIN_TYPE_STRING)])]],
+            ['arrayWithKeys', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_STRING), new LegacyType(LegacyType::BUILTIN_TYPE_STRING))]],
+            ['arrayOfMixed', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_STRING), null)]],
+            ['listOfStrings', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_STRING))]],
+            ['self', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, Dummy::class)]],
+            ['rootDummyItems', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, RootDummyItem::class))]],
+            ['rootDummyItem', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, RootDummyItem::class)]],
+            ['collectionAsObject', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DummyCollection::class, true, [new LegacyType(LegacyType::BUILTIN_TYPE_INT)], [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])]],
         ];
     }
 
-    /**
-     * @dataProvider provideCollectionTypes
-     */
-    public function testExtractCollection($property, ?array $type = null)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyCollectionTypes')]
+    public function testExtractCollectionLegacy($property, ?array $type = null)
     {
-        $this->testExtract($property, $type);
+        $this->testExtractLegacy($property, $type);
     }
 
-    public static function provideCollectionTypes()
+    public static function provideLegacyCollectionTypes()
     {
         return [
-            ['iteratorCollection', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'Iterator', true, null, new Type(Type::BUILTIN_TYPE_STRING))]],
-            ['iteratorCollectionWithKey', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'Iterator', true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_STRING))]],
+            ['iteratorCollection', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'Iterator', true, null, new LegacyType(LegacyType::BUILTIN_TYPE_STRING))]],
+            ['iteratorCollectionWithKey', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'Iterator', true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_STRING))]],
             [
                 'nestedIterators',
-                [new Type(
-                    Type::BUILTIN_TYPE_OBJECT,
+                [new LegacyType(
+                    LegacyType::BUILTIN_TYPE_OBJECT,
                     false,
                     'Iterator',
                     true,
-                    new Type(Type::BUILTIN_TYPE_INT),
-                    new Type(Type::BUILTIN_TYPE_OBJECT, false, 'Iterator', true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_STRING))
+                    new LegacyType(LegacyType::BUILTIN_TYPE_INT),
+                    new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'Iterator', true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_STRING))
                 )],
             ],
             [
                 'arrayWithKeys',
-                [new Type(
-                    Type::BUILTIN_TYPE_ARRAY,
+                [new LegacyType(
+                    LegacyType::BUILTIN_TYPE_ARRAY,
                     false,
                     null,
                     true,
-                    new Type(Type::BUILTIN_TYPE_STRING),
-                    new Type(Type::BUILTIN_TYPE_STRING)
+                    new LegacyType(LegacyType::BUILTIN_TYPE_STRING),
+                    new LegacyType(LegacyType::BUILTIN_TYPE_STRING)
                 )],
             ],
             [
                 'arrayWithKeysAndComplexValue',
-                [new Type(
-                    Type::BUILTIN_TYPE_ARRAY,
+                [new LegacyType(
+                    LegacyType::BUILTIN_TYPE_ARRAY,
                     false,
                     null,
                     true,
-                    new Type(Type::BUILTIN_TYPE_STRING),
-                    new Type(
-                        Type::BUILTIN_TYPE_ARRAY,
+                    new LegacyType(LegacyType::BUILTIN_TYPE_STRING),
+                    new LegacyType(
+                        LegacyType::BUILTIN_TYPE_ARRAY,
                         true,
                         null,
                         true,
-                        new Type(Type::BUILTIN_TYPE_INT),
-                        new Type(Type::BUILTIN_TYPE_STRING, true)
+                        new LegacyType(LegacyType::BUILTIN_TYPE_INT),
+                        new LegacyType(LegacyType::BUILTIN_TYPE_STRING, true)
                     )
                 )],
             ],
         ];
     }
 
-    /**
-     * @dataProvider typesWithCustomPrefixesProvider
-     */
-    public function testExtractTypesWithCustomPrefixes($property, ?array $type = null)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyTypesWithCustomPrefixes')]
+    public function testExtractTypesWithCustomPrefixesLegacy($property, ?array $type = null)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $customExtractor = new PhpStanExtractor(['add', 'remove'], ['is', 'can']);
 
         $this->assertEquals($type, $customExtractor->getTypes('Symfony\Component\PropertyInfo\Tests\Fixtures\Dummy', $property));
     }
 
-    public static function typesWithCustomPrefixesProvider()
+    public static function provideLegacyTypesWithCustomPrefixes()
     {
         return [
             ['foo', null],
-            ['bar', [new Type(Type::BUILTIN_TYPE_STRING)]],
-            ['baz', [new Type(Type::BUILTIN_TYPE_INT)]],
-            ['foo2', [new Type(Type::BUILTIN_TYPE_FLOAT)]],
-            ['foo3', [new Type(Type::BUILTIN_TYPE_CALLABLE)]],
-            ['foo4', [new Type(Type::BUILTIN_TYPE_NULL)]],
+            ['bar', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]],
+            ['baz', [new LegacyType(LegacyType::BUILTIN_TYPE_INT)]],
+            ['foo2', [new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT)]],
+            ['foo3', [new LegacyType(LegacyType::BUILTIN_TYPE_CALLABLE)]],
+            ['foo4', [new LegacyType(LegacyType::BUILTIN_TYPE_NULL)]],
             ['foo5', null],
             [
                 'files',
                 [
-                    new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, 'SplFileInfo')),
-                    new Type(Type::BUILTIN_TYPE_RESOURCE),
+                    new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'SplFileInfo')),
+                    new LegacyType(LegacyType::BUILTIN_TYPE_RESOURCE),
                 ],
             ],
-            ['bal', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable')]],
-            ['parent', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'Symfony\Component\PropertyInfo\Tests\Fixtures\ParentDummy')]],
-            ['collection', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable'))]],
-            ['nestedCollection', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_STRING, false)))]],
-            ['mixedCollection', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, [new Type(Type::BUILTIN_TYPE_INT)], null)]],
+            ['bal', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable')]],
+            ['parent', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'Symfony\Component\PropertyInfo\Tests\Fixtures\ParentDummy')]],
+            ['collection', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable'))]],
+            ['nestedCollection', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_STRING, false)))]],
+            ['mixedCollection', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, [new LegacyType(LegacyType::BUILTIN_TYPE_INT)], null)]],
             ['a', null],
             ['b', null],
-            ['c', [new Type(Type::BUILTIN_TYPE_BOOL, true)]],
-            ['d', [new Type(Type::BUILTIN_TYPE_BOOL)]],
-            ['e', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_RESOURCE))]],
-            ['f', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable'))]],
-            ['g', [new Type(Type::BUILTIN_TYPE_ARRAY, true, null, true)]],
-            ['h', [new Type(Type::BUILTIN_TYPE_STRING, true)]],
-            ['j', [new Type(Type::BUILTIN_TYPE_OBJECT, true, 'DateTimeImmutable')]],
-            ['nullableCollectionOfNonNullableElements', [new Type(Type::BUILTIN_TYPE_ARRAY, true, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_INT, false))]],
+            ['c', [new LegacyType(LegacyType::BUILTIN_TYPE_BOOL, true)]],
+            ['d', [new LegacyType(LegacyType::BUILTIN_TYPE_BOOL)]],
+            ['e', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_RESOURCE))]],
+            ['f', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable'))]],
+            ['g', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, true, null, true)]],
+            ['h', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING, true)]],
+            ['j', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, true, 'DateTimeImmutable')]],
+            ['nullableCollectionOfNonNullableElements', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, true, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_INT, false))]],
             ['donotexist', null],
             ['staticGetter', null],
             ['staticSetter', null],
         ];
     }
 
-    public static function typesWithNoPrefixesProvider()
+    public static function provideLegacyTypesWithNoPrefixes()
     {
         return [
             ['foo', null],
-            ['bar', [new Type(Type::BUILTIN_TYPE_STRING)]],
-            ['baz', [new Type(Type::BUILTIN_TYPE_INT)]],
-            ['foo2', [new Type(Type::BUILTIN_TYPE_FLOAT)]],
-            ['foo3', [new Type(Type::BUILTIN_TYPE_CALLABLE)]],
-            ['foo4', [new Type(Type::BUILTIN_TYPE_NULL)]],
+            ['bar', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]],
+            ['baz', [new LegacyType(LegacyType::BUILTIN_TYPE_INT)]],
+            ['foo2', [new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT)]],
+            ['foo3', [new LegacyType(LegacyType::BUILTIN_TYPE_CALLABLE)]],
+            ['foo4', [new LegacyType(LegacyType::BUILTIN_TYPE_NULL)]],
             ['foo5', null],
             [
                 'files',
                 [
-                    new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, 'SplFileInfo')),
-                    new Type(Type::BUILTIN_TYPE_RESOURCE),
+                    new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'SplFileInfo')),
+                    new LegacyType(LegacyType::BUILTIN_TYPE_RESOURCE),
                 ],
             ],
-            ['bal', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable')]],
-            ['parent', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'Symfony\Component\PropertyInfo\Tests\Fixtures\ParentDummy')]],
-            ['collection', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable'))]],
-            ['nestedCollection', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_STRING, false)))]],
-            ['mixedCollection', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, [new Type(Type::BUILTIN_TYPE_INT)], null)]],
+            ['bal', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable')]],
+            ['parent', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'Symfony\Component\PropertyInfo\Tests\Fixtures\ParentDummy')]],
+            ['collection', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable'))]],
+            ['nestedCollection', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_STRING, false)))]],
+            ['mixedCollection', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, [new LegacyType(LegacyType::BUILTIN_TYPE_INT)], null)]],
             ['a', null],
             ['b', null],
             ['c', null],
             ['d', null],
             ['e', null],
             ['f', null],
-            ['g', [new Type(Type::BUILTIN_TYPE_ARRAY, true, null, true)]],
-            ['h', [new Type(Type::BUILTIN_TYPE_STRING, true)]],
-            ['j', [new Type(Type::BUILTIN_TYPE_OBJECT, true, 'DateTimeImmutable')]],
-            ['nullableCollectionOfNonNullableElements', [new Type(Type::BUILTIN_TYPE_ARRAY, true, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_INT, false))]],
+            ['g', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, true, null, true)]],
+            ['h', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING, true)]],
+            ['j', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, true, 'DateTimeImmutable')]],
+            ['nullableCollectionOfNonNullableElements', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, true, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_INT, false))]],
             ['donotexist', null],
             ['staticGetter', null],
             ['staticSetter', null],
         ];
     }
 
-    public static function dockBlockFallbackTypesProvider()
+    public static function provideLegacyDockBlockFallbackTypes()
     {
         return [
             'pub' => [
-                'pub', [new Type(Type::BUILTIN_TYPE_STRING)],
+                'pub', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)],
             ],
             'protAcc' => [
-                'protAcc', [new Type(Type::BUILTIN_TYPE_INT)],
+                'protAcc', [new LegacyType(LegacyType::BUILTIN_TYPE_INT)],
             ],
             'protMut' => [
-                'protMut', [new Type(Type::BUILTIN_TYPE_BOOL)],
+                'protMut', [new LegacyType(LegacyType::BUILTIN_TYPE_BOOL)],
             ],
         ];
     }
 
-    /**
-     * @dataProvider dockBlockFallbackTypesProvider
-     */
-    public function testDocBlockFallback($property, $types)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyDockBlockFallbackTypes')]
+    public function testDocBlockFallbackLegacy($property, $types)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $this->assertEquals($types, $this->extractor->getTypes('Symfony\Component\PropertyInfo\Tests\Fixtures\DockBlockFallback', $property));
     }
 
-    /**
-     * @dataProvider propertiesDefinedByTraitsProvider
-     */
-    public function testPropertiesDefinedByTraits(string $property, Type $type)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyPropertiesDefinedByTraits')]
+    public function testPropertiesDefinedByTraitsLegacy(string $property, LegacyType $type)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $this->assertEquals([$type], $this->extractor->getTypes(DummyUsingTrait::class, $property));
     }
 
-    public static function propertiesDefinedByTraitsProvider(): array
+    public static function provideLegacyPropertiesDefinedByTraits(): array
     {
         return [
-            ['propertyInTraitPrimitiveType', new Type(Type::BUILTIN_TYPE_STRING)],
-            ['propertyInTraitObjectSameNamespace', new Type(Type::BUILTIN_TYPE_OBJECT, false, DummyUsedInTrait::class)],
-            ['propertyInTraitObjectDifferentNamespace', new Type(Type::BUILTIN_TYPE_OBJECT, false, Dummy::class)],
-            ['dummyInAnotherNamespace', new Type(Type::BUILTIN_TYPE_OBJECT, false, DummyInAnotherNamespace::class)],
-            ['redeclaredPropertyInTraitInAnotherNamespace', new Type(Type::BUILTIN_TYPE_OBJECT, false, DummyUsedInTrait::class)],
+            ['propertyInTraitPrimitiveType', new LegacyType(LegacyType::BUILTIN_TYPE_STRING)],
+            ['propertyInTraitObjectSameNamespace', new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DummyUsedInTrait::class)],
+            ['propertyInTraitObjectDifferentNamespace', new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, Dummy::class)],
+            ['dummyInAnotherNamespace', new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DummyInAnotherNamespace::class)],
+            ['redeclaredPropertyInTraitInAnotherNamespace', new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DummyUsedInTrait::class)],
         ];
     }
 
-    public function testMethodsDefinedByTraits()
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testMethodsDefinedByTraitsLegacy()
     {
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_STRING)], $this->extractor->getTypes(DummyUsingTrait::class, 'methodInTraitPrimitiveType'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, DummyUsedInTrait::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'methodInTraitObjectSameNamespace'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, Dummy::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'methodInTraitObjectDifferentNamespace'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_STRING)], $this->extractor->getTypes(DummyUsingTrait::class, 'methodInExternalTraitPrimitiveType'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, Dummy::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'methodInExternalTraitObjectSameNamespace'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, DummyUsedInTrait::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'methodInExternalTraitObjectDifferentNamespace'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, DummyInAnotherNamespace::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'methodInTraitInAnotherNamespace'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, DummyInAnotherNamespace::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'aliasedMethodInTraitInAnotherNamespace'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, DummyUsedInTrait::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'overriddenMethodInTraitInAnotherNamespace'));
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)], $this->extractor->getTypes(DummyUsingTrait::class, 'methodInTraitPrimitiveType'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DummyUsedInTrait::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'methodInTraitObjectSameNamespace'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, Dummy::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'methodInTraitObjectDifferentNamespace'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)], $this->extractor->getTypes(DummyUsingTrait::class, 'methodInExternalTraitPrimitiveType'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, Dummy::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'methodInExternalTraitObjectSameNamespace'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DummyUsedInTrait::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'methodInExternalTraitObjectDifferentNamespace'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DummyInAnotherNamespace::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'methodInTraitInAnotherNamespace'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DummyInAnotherNamespace::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'aliasedMethodInTraitInAnotherNamespace'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DummyUsedInTrait::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'overriddenMethodInTraitInAnotherNamespace'));
         $this->assertNull($this->extractor->getTypes(DummyUsingTrait::class, 'abstractMethodInTraitInAnotherNamespace'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, DummyUsedInTrait::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'overriddenAbstractMethodInTraitInAnotherNamespace'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, DummyInAnotherNamespace::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'mutatorInTraitInAnotherNamespace'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DummyUsedInTrait::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'overriddenAbstractMethodInTraitInAnotherNamespace'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DummyInAnotherNamespace::class)], $this->extractor->getTypes(DummyUsingTrait::class, 'mutatorInTraitInAnotherNamespace'));
     }
 
-    public function testConstructorDefinedByTrait()
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testConstructorDefinedByTraitLegacy()
     {
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, DummyInAnotherNamespace::class)], $this->extractor->getTypesFromConstructor(DummyUsingTrait::class, 'dummyInConstructor'));
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypesFromConstructor()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypeFromConstructor()" instead.');
+
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DummyInAnotherNamespace::class)], $this->extractor->getTypesFromConstructor(DummyUsingTrait::class, 'dummyInConstructor'));
     }
 
-    /**
-     * @dataProvider propertiesStaticTypeProvider
-     */
-    public function testPropertiesStaticType(string $class, string $property, Type $type)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyPropertiesStaticType')]
+    public function testPropertiesStaticTypeLegacy(string $class, string $property, LegacyType $type)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $this->assertEquals([$type], $this->extractor->getTypes($class, $property));
     }
 
-    public static function propertiesStaticTypeProvider(): array
+    public static function provideLegacyPropertiesStaticType(): array
     {
         return [
-            [ParentDummy::class, 'propertyTypeStatic', new Type(Type::BUILTIN_TYPE_OBJECT, false, ParentDummy::class)],
-            [Dummy::class, 'propertyTypeStatic', new Type(Type::BUILTIN_TYPE_OBJECT, false, Dummy::class)],
+            [ParentDummy::class, 'propertyTypeStatic', new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, ParentDummy::class)],
+            [Dummy::class, 'propertyTypeStatic', new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, Dummy::class)],
         ];
     }
 
-    /**
-     * @dataProvider propertiesParentTypeProvider
-     */
-    public function testPropertiesParentType(string $class, string $property, ?array $types)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyPropertiesParentType')]
+    public function testPropertiesParentTypeLegacy(string $class, string $property, ?array $types)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $this->assertEquals($types, $this->extractor->getTypes($class, $property));
     }
 
-    public static function propertiesParentTypeProvider(): array
+    public static function provideLegacyPropertiesParentType(): array
     {
         return [
-            [ParentDummy::class, 'parentAnnotationNoParent', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'parent')]],
-            [Dummy::class, 'parentAnnotation', [new Type(Type::BUILTIN_TYPE_OBJECT, false, ParentDummy::class)]],
+            [ParentDummy::class, 'parentAnnotationNoParent', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'parent')]],
+            [Dummy::class, 'parentAnnotation', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, ParentDummy::class)]],
         ];
     }
 
-    public function testClassKeywordsInCollectionTypes()
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testClassKeywordsInCollectionTypesLegacy()
     {
-        $parent = new Type(Type::BUILTIN_TYPE_OBJECT, false, ParentWithSelfDocBlock::class);
-        $child = new Type(Type::BUILTIN_TYPE_OBJECT, false, ChildWithSelfDocBlock::class);
+        $parent = new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, ParentWithSelfDocBlock::class);
+        $child = new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, ChildWithSelfDocBlock::class);
 
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), $parent)], $this->extractor->getTypes(ParentWithSelfDocBlock::class, 'selfCollectionProp'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_STRING), $child)], $this->extractor->getTypes(ChildWithSelfDocBlock::class, 'staticCollectionProp'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), $parent)], $this->extractor->getTypes(ChildWithSelfDocBlock::class, 'parentCollectionProp'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), $parent)], $this->extractor->getTypes(ParentWithSelfDocBlock::class, 'selfCollectionProp'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_STRING), $child)], $this->extractor->getTypes(ChildWithSelfDocBlock::class, 'staticCollectionProp'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), $parent)], $this->extractor->getTypes(ChildWithSelfDocBlock::class, 'parentCollectionProp'));
     }
 
-    /**
-     * @dataProvider constructorTypesProvider
-     */
-    public function testExtractConstructorTypes($property, ?array $type = null)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyConstructorTypes')]
+    public function testExtractConstructorTypesLegacy($property, ?array $type = null)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypesFromConstructor()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypeFromConstructor()" instead.');
+
         $this->assertEquals($type, $this->extractor->getTypesFromConstructor('Symfony\Component\PropertyInfo\Tests\Fixtures\ConstructorDummy', $property));
     }
 
-    /**
-     * @dataProvider constructorTypesProvider
-     */
-    public function testExtractConstructorTypesReturnNullOnEmptyDocBlock($property)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyConstructorTypes')]
+    public function testExtractConstructorTypesReturnNullOnEmptyDocBlockLegacy($property, ?array $type = null)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypesFromConstructor()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypeFromConstructor()" instead.');
+
         $this->assertNull($this->extractor->getTypesFromConstructor(ConstructorDummyWithoutDocBlock::class, $property));
     }
 
-    public static function constructorTypesProvider()
+    public static function provideLegacyConstructorTypes()
     {
         return [
-            ['date', [new Type(Type::BUILTIN_TYPE_INT)]],
-            ['timezone', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'DateTimeZone')]],
-            ['dateObject', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'DateTimeInterface')]],
-            ['dateTime', [new Type(Type::BUILTIN_TYPE_INT)]],
+            ['date', [new LegacyType(LegacyType::BUILTIN_TYPE_INT)]],
+            ['timezone', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTimeZone')]],
+            ['dateObject', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTimeInterface')]],
+            ['dateTime', [new LegacyType(LegacyType::BUILTIN_TYPE_INT)]],
             ['ddd', null],
         ];
     }
 
-    /**
-     * @dataProvider provideConstructorTypesWithOnlyVarTags
-     */
-    public function testExtractConstructorTypesWithOnlyVarTags($property, ?array $type = null)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyConstructorTypesWithOnlyVarTags')]
+    public function testExtractConstructorTypesWithOnlyVarTagsLegacy($property, ?array $type = null)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypesFromConstructor()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypeFromConstructor()" instead.');
+
         $this->assertEquals($type, $this->extractor->getTypesFromConstructor('Symfony\Component\PropertyInfo\Tests\Fixtures\ConstructorDummyWithVarTagsDocBlock', $property));
     }
 
-    public static function provideConstructorTypesWithOnlyVarTags()
+    public static function provideLegacyConstructorTypesWithOnlyVarTags()
     {
-        yield ['date', [new Type(Type::BUILTIN_TYPE_INT)]];
-        yield ['dateObject', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'DateTimeInterface')]];
-        yield ['objectsArray', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, 'Symfony\Component\PropertyInfo\Tests\Fixtures\ConstructorDummy'))]];
+        yield ['date', [new LegacyType(LegacyType::BUILTIN_TYPE_INT)]];
+        yield ['dateObject', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTimeInterface')]];
+        yield ['objectsArray', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'Symfony\Component\PropertyInfo\Tests\Fixtures\ConstructorDummy'))]];
         yield ['dateTime', null];
         yield ['mixed', null];
         yield ['timezone', null];
     }
 
-    /**
-     * @dataProvider unionTypesProvider
-     */
-    public function testExtractorUnionTypes(string $property, ?array $types)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyUnionTypes')]
+    public function testExtractorUnionTypesLegacy(string $property, ?array $types)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $this->assertEquals($types, $this->extractor->getTypes('Symfony\Component\PropertyInfo\Tests\Fixtures\DummyUnionType', $property));
     }
 
-    public static function unionTypesProvider(): array
+    public static function provideLegacyUnionTypes(): array
     {
         return [
-            ['a', [new Type(Type::BUILTIN_TYPE_STRING), new Type(Type::BUILTIN_TYPE_INT)]],
-            ['b', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, [new Type(Type::BUILTIN_TYPE_INT)], [new Type(Type::BUILTIN_TYPE_STRING), new Type(Type::BUILTIN_TYPE_INT)])]],
-            ['c', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, [], [new Type(Type::BUILTIN_TYPE_STRING), new Type(Type::BUILTIN_TYPE_INT)])]],
-            ['d', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, [new Type(Type::BUILTIN_TYPE_STRING), new Type(Type::BUILTIN_TYPE_INT)], [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, [], [new Type(Type::BUILTIN_TYPE_STRING)])])]],
-            ['e', [new Type(Type::BUILTIN_TYPE_OBJECT, true, Dummy::class, false, [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, [], [new Type(Type::BUILTIN_TYPE_STRING)])], [new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, [new Type(Type::BUILTIN_TYPE_INT)], [new Type(Type::BUILTIN_TYPE_OBJECT, false, \Traversable::class, true, [], [new Type(Type::BUILTIN_TYPE_OBJECT, false, DefaultValue::class)])])]), new Type(Type::BUILTIN_TYPE_OBJECT, false, ParentDummy::class)]],
+            ['a', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING), new LegacyType(LegacyType::BUILTIN_TYPE_INT)]],
+            ['b', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, [new LegacyType(LegacyType::BUILTIN_TYPE_INT)], [new LegacyType(LegacyType::BUILTIN_TYPE_STRING), new LegacyType(LegacyType::BUILTIN_TYPE_INT)])]],
+            ['c', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, [], [new LegacyType(LegacyType::BUILTIN_TYPE_STRING), new LegacyType(LegacyType::BUILTIN_TYPE_INT)])]],
+            ['d', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, [new LegacyType(LegacyType::BUILTIN_TYPE_STRING), new LegacyType(LegacyType::BUILTIN_TYPE_INT)], [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, [], [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])])]],
+            ['e', [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, true, Dummy::class, false, [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, [], [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)])], [new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, [new LegacyType(LegacyType::BUILTIN_TYPE_INT)], [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, \Traversable::class, true, [], [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DefaultValue::class)])])]), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, ParentDummy::class)]],
             ['f', null],
-            ['g', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, [], [new Type(Type::BUILTIN_TYPE_STRING), new Type(Type::BUILTIN_TYPE_INT)])]],
+            ['g', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, [], [new LegacyType(LegacyType::BUILTIN_TYPE_STRING), new LegacyType(LegacyType::BUILTIN_TYPE_INT)])]],
             ['h', null],
             ['i', null],
         ];
     }
 
-    /**
-     * @dataProvider pseudoTypesProvider
-     */
-    public function testPseudoTypes($property, array $type)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyPseudoTypes')]
+    public function testPseudoTypesLegacy($property, array $type)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $this->assertEquals($type, $this->extractor->getTypes('Symfony\Component\PropertyInfo\Tests\Fixtures\PhpStanPseudoTypesDummy', $property));
     }
 
-    public static function pseudoTypesProvider(): array
+    public static function provideLegacyPseudoTypes(): array
     {
         return [
-            ['classString', [new Type(Type::BUILTIN_TYPE_STRING, false, null)]],
-            ['classStringGeneric', [new Type(Type::BUILTIN_TYPE_STRING, false, null)]],
-            ['htmlEscapedString', [new Type(Type::BUILTIN_TYPE_STRING, false, null)]],
-            ['lowercaseString', [new Type(Type::BUILTIN_TYPE_STRING, false, null)]],
-            ['nonEmptyLowercaseString', [new Type(Type::BUILTIN_TYPE_STRING, false, null)]],
-            ['nonEmptyString', [new Type(Type::BUILTIN_TYPE_STRING, false, null)]],
-            ['numericString', [new Type(Type::BUILTIN_TYPE_STRING, false, null)]],
-            ['traitString', [new Type(Type::BUILTIN_TYPE_STRING, false, null)]],
-            ['interfaceString', [new Type(Type::BUILTIN_TYPE_STRING, false, null)]],
-            ['literalString', [new Type(Type::BUILTIN_TYPE_STRING, false, null)]],
-            ['positiveInt', [new Type(Type::BUILTIN_TYPE_INT, false, null)]],
-            ['negativeInt', [new Type(Type::BUILTIN_TYPE_INT, false, null)]],
-            ['nonEmptyArray', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true)]],
-            ['nonEmptyList', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT))]],
-            ['scalar', [new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_FLOAT), new Type(Type::BUILTIN_TYPE_STRING), new Type(Type::BUILTIN_TYPE_BOOL)]],
-            ['number', [new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_FLOAT)]],
-            ['numeric', [new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_FLOAT), new Type(Type::BUILTIN_TYPE_STRING)]],
-            ['arrayKey', [new Type(Type::BUILTIN_TYPE_STRING), new Type(Type::BUILTIN_TYPE_INT)]],
-            ['double', [new Type(Type::BUILTIN_TYPE_FLOAT)]],
+            ['classString', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING, false, null)]],
+            ['classStringGeneric', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING, false, null)]],
+            ['htmlEscapedString', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING, false, null)]],
+            ['lowercaseString', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING, false, null)]],
+            ['nonEmptyLowercaseString', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING, false, null)]],
+            ['nonEmptyString', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING, false, null)]],
+            ['numericString', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING, false, null)]],
+            ['traitString', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING, false, null)]],
+            ['interfaceString', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING, false, null)]],
+            ['literalString', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING, false, null)]],
+            ['positiveInt', [new LegacyType(LegacyType::BUILTIN_TYPE_INT, false, null)]],
+            ['negativeInt', [new LegacyType(LegacyType::BUILTIN_TYPE_INT, false, null)]],
+            ['nonPositiveInt', [new LegacyType(LegacyType::BUILTIN_TYPE_INT, false, null)]],
+            ['nonNegativeInt', [new LegacyType(LegacyType::BUILTIN_TYPE_INT, false, null)]],
+            ['nonZeroInt', [new LegacyType(LegacyType::BUILTIN_TYPE_INT, false, null)]],
+            ['nonEmptyArray', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true)]],
+            ['nonEmptyList', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT))]],
+            ['scalar', [new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT), new LegacyType(LegacyType::BUILTIN_TYPE_STRING), new LegacyType(LegacyType::BUILTIN_TYPE_BOOL)]],
+            ['number', [new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT)]],
+            ['numeric', [new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT), new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]],
+            ['arrayKey', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING), new LegacyType(LegacyType::BUILTIN_TYPE_INT)]],
+            ['double', [new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT)]],
         ];
     }
 
-    public function testDummyNamespace()
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testDummyNamespaceLegacy()
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $this->assertEquals(
-            [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'Symfony\Component\PropertyInfo\Tests\Fixtures\Dummy')],
+            [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'Symfony\Component\PropertyInfo\Tests\Fixtures\Dummy')],
             $this->extractor->getTypes('Symfony\Component\PropertyInfo\Tests\Fixtures\DummyNamespace', 'dummy')
         );
     }
 
-    public function testDummyNamespaceWithProperty()
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testDummyNamespaceWithPropertyLegacy()
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $phpStanTypes = $this->extractor->getTypes(\B\Dummy::class, 'property');
         $phpDocTypes = $this->phpDocExtractor->getTypes(\B\Dummy::class, 'property');
 
@@ -518,98 +595,119 @@ class PhpStanExtractorTest extends TestCase
         $this->assertEquals($phpDocTypes[0]->getClassName(), $phpStanTypes[0]->getClassName());
     }
 
-    public function testClassImportsWinOverTraitAndParentImports()
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testClassImportsWinOverTraitAndParentImportsLegacy()
     {
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, Dummy::class)], $this->extractor->getTypes(DummyImportingDummy::class, 'dummy'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, DummyInAnotherNamespace::class)], $this->extractor->getTypes(DummyImportingDummy::class, 'dummyFromTrait'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, DummyUsedInTrait::class)], $this->extractor->getTypes(DummyImportingDummy::class, 'dummyFromParent'));
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, Dummy::class)], $this->extractor->getTypes(DummyImportingDummy::class, 'dummy'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DummyInAnotherNamespace::class)], $this->extractor->getTypes(DummyImportingDummy::class, 'dummyFromTrait'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DummyUsedInTrait::class)], $this->extractor->getTypes(DummyImportingDummy::class, 'dummyFromParent'));
     }
 
-    /**
-     * @dataProvider intRangeTypeProvider
-     */
-    public function testExtractorIntRangeType(string $property, ?array $types)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyIntRangeType')]
+    public function testExtractorIntRangeTypeLegacy(string $property, ?array $types)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $this->assertEquals($types, $this->extractor->getTypes('Symfony\Component\PropertyInfo\Tests\Fixtures\IntRangeDummy', $property));
     }
 
-    public static function intRangeTypeProvider(): array
+    public static function provideLegacyIntRangeType(): array
     {
         return [
-            ['a', [new Type(Type::BUILTIN_TYPE_INT)]],
-            ['b', [new Type(Type::BUILTIN_TYPE_INT, true)]],
-            ['c', [new Type(Type::BUILTIN_TYPE_INT)]],
+            ['a', [new LegacyType(LegacyType::BUILTIN_TYPE_INT)]],
+            ['b', [new LegacyType(LegacyType::BUILTIN_TYPE_INT, true)]],
+            ['c', [new LegacyType(LegacyType::BUILTIN_TYPE_INT)]],
         ];
     }
 
-    /**
-     * @dataProvider php80TypesProvider
-     */
-    public function testExtractPhp80Type(string $class, $property, ?array $type = null)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideLegacyPhp80Types')]
+    public function testExtractPhp80TypeLegacy(string $class, $property, ?array $type = null)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $this->assertEquals($type, $this->extractor->getTypes($class, $property, []));
     }
 
-    public static function php80TypesProvider()
+    public static function provideLegacyPhp80Types()
     {
         return [
-            [Php80Dummy::class, 'promotedWithDocCommentAndType', [new Type(Type::BUILTIN_TYPE_INT)]],
-            [Php80Dummy::class, 'promotedWithDocComment', [new Type(Type::BUILTIN_TYPE_STRING)]],
-            [Php80Dummy::class, 'promotedAndMutated', [new Type(Type::BUILTIN_TYPE_STRING)]],
+            [Php80Dummy::class, 'promotedWithDocCommentAndType', [new LegacyType(LegacyType::BUILTIN_TYPE_INT)]],
+            [Php80Dummy::class, 'promotedWithDocComment', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]],
+            [Php80Dummy::class, 'promotedAndMutated', [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]],
             [Php80Dummy::class, 'promoted', null],
-            [Php80Dummy::class, 'collection', [new Type(Type::BUILTIN_TYPE_ARRAY, collection: true, collectionValueType: new Type(Type::BUILTIN_TYPE_STRING))]],
+            [Php80Dummy::class, 'collection', [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, null, new LegacyType(LegacyType::BUILTIN_TYPE_STRING))]],
             [Php80PromotedDummy::class, 'promoted', null],
         ];
     }
 
-    public function testInheritedPromotedPropertyWithConstructorOverride()
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testInheritedPromotedPropertyWithConstructorOverrideLegacy()
     {
-        $expectedTypes = [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_STRING), new Type(Type::BUILTIN_TYPE_INT))];
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
+        $expectedTypes = [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_STRING), new LegacyType(LegacyType::BUILTIN_TYPE_INT))];
 
         $this->assertEquals($expectedTypes, $this->extractor->getTypes(ParentWithPromotedPropertyDocBlock::class, 'items'));
         $this->assertEquals($expectedTypes, $this->extractor->getTypes(ChildWithoutConstructorOverride::class, 'items'));
         $this->assertEquals($expectedTypes, $this->extractor->getTypes(ChildWithConstructorOverride::class, 'items'));
     }
 
-    public function testGenericInterface()
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('allowPrivateAccessLegacyProvider')]
+    public function testAllowPrivateAccessLegacy(bool $allowPrivateAccess, array $expectedTypes)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
+        $extractor = new PhpStanExtractor(null, null, null, $allowPrivateAccess);
         $this->assertEquals(
-            [
-                new Type(
-                    builtinType: Type::BUILTIN_TYPE_OBJECT,
-                    class: \BackedEnum::class,
-                    collectionValueType: new Type(
-                        builtinType: Type::BUILTIN_TYPE_STRING,
-                    )
-                ),
-            ],
-            $this->extractor->getTypes(Dummy::class, 'genericInterface')
+            $expectedTypes,
+            $extractor->getTypes(DummyPropertyAndGetterWithDifferentTypes::class, 'foo')
         );
     }
 
+    public static function allowPrivateAccessLegacyProvider(): array
+    {
+        return [
+            [true, [new LegacyType('string')]],
+            [false, [new LegacyType('array', false, null, true, new LegacyType('int'), new LegacyType('string'))]],
+        ];
+    }
+
     /**
-     * @param list<Type> $expectedTypes
-     *
-     * @dataProvider genericsProvider
+     * @param list<LegacyType> $expectedTypes
      */
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('legacyGenericsProvider')]
     public function testGenericsLegacy(string $property, array $expectedTypes)
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getTypes()" method is deprecated, use "Symfony\Component\PropertyInfo\Extractor\PhpStanExtractor::getType()" instead.');
+
         $this->assertEquals($expectedTypes, $this->extractor->getTypes(DummyGeneric::class, $property));
     }
 
     /**
-     * @return iterable<array{0: string, 1: list<Type>}>
+     * @return iterable<array{0: string, 1: list<LegacyType>}>
      */
-    public static function genericsProvider(): iterable
+    public static function legacyGenericsProvider(): iterable
     {
         yield [
             'basicClass',
             [
-                new Type(
-                    builtinType: Type::BUILTIN_TYPE_OBJECT,
+                new LegacyType(
+                    builtinType: LegacyType::BUILTIN_TYPE_OBJECT,
                     class: Clazz::class,
-                    collectionValueType: new Type(
-                        builtinType: Type::BUILTIN_TYPE_OBJECT,
+                    collectionValueType: new LegacyType(
+                        builtinType: LegacyType::BUILTIN_TYPE_OBJECT,
                         class: Dummy::class,
                     )
                 ),
@@ -618,12 +716,12 @@ class PhpStanExtractorTest extends TestCase
         yield [
             'nullableClass',
             [
-                new Type(
-                    builtinType: Type::BUILTIN_TYPE_OBJECT,
+                new LegacyType(
+                    builtinType: LegacyType::BUILTIN_TYPE_OBJECT,
                     class: Clazz::class,
                     nullable: true,
-                    collectionValueType: new Type(
-                        builtinType: Type::BUILTIN_TYPE_OBJECT,
+                    collectionValueType: new LegacyType(
+                        builtinType: LegacyType::BUILTIN_TYPE_OBJECT,
                         class: Dummy::class,
                     )
                 ),
@@ -632,11 +730,11 @@ class PhpStanExtractorTest extends TestCase
         yield [
             'basicInterface',
             [
-                new Type(
-                    builtinType: Type::BUILTIN_TYPE_OBJECT,
+                new LegacyType(
+                    builtinType: LegacyType::BUILTIN_TYPE_OBJECT,
                     class: IFace::class,
-                    collectionValueType: new Type(
-                        builtinType: Type::BUILTIN_TYPE_OBJECT,
+                    collectionValueType: new LegacyType(
+                        builtinType: LegacyType::BUILTIN_TYPE_OBJECT,
                         class: Dummy::class,
                     )
                 ),
@@ -645,12 +743,12 @@ class PhpStanExtractorTest extends TestCase
         yield [
             'nullableInterface',
             [
-                new Type(
-                    builtinType: Type::BUILTIN_TYPE_OBJECT,
+                new LegacyType(
+                    builtinType: LegacyType::BUILTIN_TYPE_OBJECT,
                     class: IFace::class,
                     nullable: true,
-                    collectionValueType: new Type(
-                        builtinType: Type::BUILTIN_TYPE_OBJECT,
+                    collectionValueType: new LegacyType(
+                        builtinType: LegacyType::BUILTIN_TYPE_OBJECT,
                         class: Dummy::class,
                     )
                 ),
@@ -658,11 +756,608 @@ class PhpStanExtractorTest extends TestCase
         ];
     }
 
+    #[DataProvider('typesProvider')]
+    public function testExtract(string $property, ?Type $type)
+    {
+        $this->assertEquals($type, $this->extractor->getType(Dummy::class, $property));
+    }
+
+    public static function typesProvider(): iterable
+    {
+        yield ['foo', null];
+        yield ['bar', Type::string()];
+        yield ['baz', Type::int()];
+        yield ['foo2', Type::float()];
+        yield ['foo3', Type::callable()];
+        yield ['foo5', Type::mixed()];
+        yield ['files', Type::union(Type::array(Type::object(\SplFileInfo::class)), Type::resource())];
+        yield ['bal', Type::object(\DateTimeImmutable::class)];
+        yield ['parent', Type::object(ParentDummy::class)];
+        yield ['collection', Type::array(Type::object(\DateTimeImmutable::class))];
+        yield ['nestedCollection', Type::array(Type::array(Type::string()))];
+        yield ['mixedCollection', Type::array(Type::mixed())];
+        yield ['a', Type::int()];
+        yield ['b', Type::nullable(Type::object(ParentDummy::class))];
+        yield ['c', Type::nullable(Type::bool())];
+        yield ['d', Type::bool()];
+        yield ['e', Type::list(Type::resource())];
+        yield ['f', Type::list(Type::object(\DateTimeImmutable::class))];
+        yield ['g', Type::nullable(Type::array())];
+        yield ['h', Type::nullable(Type::string())];
+        yield ['i', Type::union(Type::int(), Type::string(), Type::null())];
+        yield ['j', Type::nullable(Type::object(\DateTimeImmutable::class))];
+        yield ['nullableCollectionOfNonNullableElements', Type::nullable(Type::array(Type::int()))];
+        yield ['donotexist', null];
+        yield ['staticGetter', null];
+        yield ['staticSetter', null];
+        yield ['emptyVar', null];
+        yield ['arrayWithKeys', Type::dict(Type::string())];
+        yield ['arrayOfMixed', Type::dict(Type::mixed())];
+        yield ['listOfStrings', Type::list(Type::string())];
+        yield ['self', Type::object(Dummy::class)];
+        yield ['rootDummyItems', Type::array(Type::object(RootDummyItem::class))];
+        yield ['rootDummyItem', Type::object(RootDummyItem::class)];
+        yield ['collectionAsObject', Type::collection(Type::object(DummyCollection::class), Type::string(), Type::int())];
+    }
+
+    public function testParamTagTypeIsOmitted()
+    {
+        $this->assertNull($this->extractor->getType(PhpStanOmittedParamTagTypeDocBlock::class, 'omittedType'));
+    }
+
+    #[DataProvider('invalidTypesProvider')]
+    public function testInvalid(string $property)
+    {
+        $this->assertNull($this->extractor->getType(InvalidDummy::class, $property));
+    }
+
+    /**
+     * @return iterable<array{0: string}>
+     */
+    public static function invalidTypesProvider(): iterable
+    {
+        yield 'pub' => ['pub'];
+        yield 'stat' => ['stat'];
+        yield 'foo' => ['foo'];
+        yield 'bar' => ['bar'];
+        yield 'baz' => ['baz'];
+        yield 'invalidKeyType' => ['invalidKeyType'];
+    }
+
+    #[DataProvider('typesWithNoPrefixesProvider')]
+    public function testExtractTypesWithNoPrefixes(string $property, ?Type $type)
+    {
+        $noPrefixExtractor = new PhpStanExtractor([], [], []);
+
+        $this->assertEquals($type, $noPrefixExtractor->getType(Dummy::class, $property));
+    }
+
+    /**
+     * @return iterable<array{0: string, 1: ?Type}>
+     */
+    public static function typesWithNoPrefixesProvider(): iterable
+    {
+        yield ['foo', null];
+        yield ['bar', Type::string()];
+        yield ['baz', Type::int()];
+        yield ['foo2', Type::float()];
+        yield ['foo3', Type::callable()];
+        yield ['foo5', Type::mixed()];
+        yield ['files', Type::union(Type::array(Type::object(\SplFileInfo::class)), Type::resource())];
+        yield ['bal', Type::object(\DateTimeImmutable::class)];
+        yield ['parent', Type::object(ParentDummy::class)];
+        yield ['collection', Type::array(Type::object(\DateTimeImmutable::class))];
+        yield ['nestedCollection', Type::array(Type::array(Type::string()))];
+        yield ['mixedCollection', Type::array(Type::mixed())];
+        yield ['a', null];
+        yield ['b', null];
+        yield ['c', null];
+        yield ['d', null];
+        yield ['e', null];
+        yield ['f', null];
+        yield ['g', Type::nullable(Type::array())];
+        yield ['h', Type::nullable(Type::string())];
+        yield ['i', Type::union(Type::int(), Type::string(), Type::null())];
+        yield ['j', Type::nullable(Type::object(\DateTimeImmutable::class))];
+        yield ['nullableCollectionOfNonNullableElements', Type::nullable(Type::array(Type::int()))];
+        yield ['donotexist', null];
+        yield ['staticGetter', null];
+        yield ['staticSetter', null];
+    }
+
+    #[DataProvider('provideCollectionTypes')]
+    public function testExtractCollection($property, ?Type $type)
+    {
+        $this->testExtract($property, $type);
+    }
+
+    /**
+     * @return iterable<array{0: string, 1: ?Type}>
+     */
+    public static function provideCollectionTypes(): iterable
+    {
+        yield ['iteratorCollection', Type::collection(Type::object(\Iterator::class), Type::string())];
+        yield ['iteratorCollectionWithKey', Type::collection(Type::object(\Iterator::class), Type::string(), Type::int())];
+        yield ['nestedIterators', Type::collection(Type::object(\Iterator::class), Type::collection(Type::object(\Iterator::class), Type::string(), Type::int()), Type::int())];
+        yield ['arrayWithKeys', Type::dict(Type::string())];
+        yield ['arrayWithKeysAndComplexValue', Type::dict(Type::nullable(Type::array(Type::nullable(Type::string()), Type::int())))];
+    }
+
+    #[DataProvider('typesWithCustomPrefixesProvider')]
+    public function testExtractTypesWithCustomPrefixes(string $property, ?Type $type)
+    {
+        $customExtractor = new PhpStanExtractor(['add', 'remove'], ['is', 'can']);
+
+        $this->assertEquals($type, $customExtractor->getType(Dummy::class, $property));
+    }
+
+    /**
+     * @return iterable<array{0: string, 1: ?Type}>
+     */
+    public static function typesWithCustomPrefixesProvider(): iterable
+    {
+        yield ['foo', null];
+        yield ['bar', Type::string()];
+        yield ['baz', Type::int()];
+        yield ['foo2', Type::float()];
+        yield ['foo3', Type::callable()];
+        yield ['foo5', Type::mixed()];
+        yield ['files', Type::union(Type::array(Type::object(\SplFileInfo::class)), Type::resource())];
+        yield ['bal', Type::object(\DateTimeImmutable::class)];
+        yield ['parent', Type::object(ParentDummy::class)];
+        yield ['collection', Type::array(Type::object(\DateTimeImmutable::class))];
+        yield ['nestedCollection', Type::array(Type::array(Type::string()))];
+        yield ['mixedCollection', Type::array(Type::mixed())];
+        yield ['a', null];
+        yield ['b', null];
+        yield ['c', Type::nullable(Type::bool())];
+        yield ['d', Type::bool()];
+        yield ['e', Type::list(Type::resource())];
+        yield ['f', Type::list(Type::object(\DateTimeImmutable::class))];
+        yield ['g', Type::nullable(Type::array())];
+        yield ['h', Type::nullable(Type::string())];
+        yield ['i', Type::union(Type::int(), Type::string(), Type::null())];
+        yield ['j', Type::nullable(Type::object(\DateTimeImmutable::class))];
+        yield ['nullableCollectionOfNonNullableElements', Type::nullable(Type::array(Type::int()))];
+        yield ['nonNullableCollectionOfNullableElements', Type::array(Type::nullable(Type::int()))];
+        yield ['nullableCollectionOfMultipleNonNullableElementTypes', Type::nullable(Type::array(Type::union(Type::int(), Type::string())))];
+        yield ['donotexist', null];
+        yield ['staticGetter', null];
+        yield ['staticSetter', null];
+    }
+
+    #[DataProvider('dockBlockFallbackTypesProvider')]
+    public function testDocBlockFallback(string $property, ?Type $type)
+    {
+        $this->assertEquals($type, $this->extractor->getType(DockBlockFallback::class, $property));
+    }
+
+    /**
+     * @return iterable<array{0: string, 1: ?Type}>
+     */
+    public static function dockBlockFallbackTypesProvider(): iterable
+    {
+        yield ['pub', Type::string()];
+        yield ['protAcc', Type::int()];
+        yield ['protMut', Type::bool()];
+    }
+
+    #[DataProvider('propertiesDefinedByTraitsProvider')]
+    public function testPropertiesDefinedByTraits(string $property, ?Type $type)
+    {
+        $this->assertEquals($type, $this->extractor->getType(DummyUsingTrait::class, $property));
+    }
+
+    /**
+     * @return iterable<array{0: string, 1: ?Type}>
+     */
+    public static function propertiesDefinedByTraitsProvider(): iterable
+    {
+        yield ['propertyInTraitPrimitiveType', Type::string()];
+        yield ['propertyInTraitObjectSameNamespace', Type::object(DummyUsedInTrait::class)];
+        yield ['propertyInTraitObjectDifferentNamespace', Type::object(Dummy::class)];
+        yield ['dummyInAnotherNamespace', Type::object(DummyInAnotherNamespace::class)];
+        yield ['redeclaredPropertyInTraitInAnotherNamespace', Type::object(DummyUsedInTrait::class)];
+    }
+
+    #[DataProvider('methodsDefinedByTraitsProvider')]
+    public function testMethodsDefinedByTraits(string $property, ?Type $type)
+    {
+        $this->assertEquals($type, $this->extractor->getType(DummyUsingTrait::class, $property));
+    }
+
+    /**
+     * @return iterable<array{0: string, 1: ?Type}>
+     */
+    public static function methodsDefinedByTraitsProvider(): iterable
+    {
+        yield ['methodInTraitPrimitiveType', Type::string()];
+        yield ['methodInTraitObjectSameNamespace', Type::object(DummyUsedInTrait::class)];
+        yield ['methodInTraitObjectDifferentNamespace', Type::object(Dummy::class)];
+        yield ['methodInExternalTraitPrimitiveType', Type::string()];
+        yield ['methodInExternalTraitObjectSameNamespace', Type::object(Dummy::class)];
+        yield ['methodInExternalTraitObjectDifferentNamespace', Type::object(DummyUsedInTrait::class)];
+        yield ['methodInTraitInAnotherNamespace', Type::object(DummyInAnotherNamespace::class)];
+        yield ['aliasedMethodInTraitInAnotherNamespace', Type::object(DummyInAnotherNamespace::class)];
+        yield ['overriddenMethodInTraitInAnotherNamespace', Type::object(DummyUsedInTrait::class)];
+        yield ['abstractMethodInTraitInAnotherNamespace', null];
+        yield ['overriddenAbstractMethodInTraitInAnotherNamespace', Type::object(DummyUsedInTrait::class)];
+        yield ['templateInTraitInAnotherNamespace', Type::list(Type::template('T'))];
+        yield ['mutatorInTraitInAnotherNamespace', Type::object(DummyInAnotherNamespace::class)];
+    }
+
+    public function testConstructorDefinedByTrait()
+    {
+        $this->assertEquals(Type::object(DummyInAnotherNamespace::class), $this->extractor->getTypeFromConstructor(DummyUsingTrait::class, 'dummyInConstructor'));
+        $this->assertEquals(Type::list(Type::template('T')), $this->extractor->getTypeFromConstructor(DummyUsingTrait::class, 'templateInConstructor'));
+    }
+
+    #[DataProvider('provideGenericTraitProperties')]
+    public function testGenericTraitPropertiesKeepInheritedTemplateTypes(string $class, Type $expected)
+    {
+        if (!property_exists(TypeContext::class, 'inheritedTemplateTypes')) {
+            $this->markTestSkipped('Inherited template types require symfony/type-info 8.2 or higher.');
+        }
+
+        $this->assertEquals($expected, $this->extractor->getType($class, 'item'));
+        $this->assertEquals(Type::arrayShape(['value' => $expected, 'owner' => Type::object($class)]), $this->extractor->getType($class, 'details'));
+    }
+
+    #[DataProvider('provideGenericTraitProperties')]
+    public function testGenericTraitMethodsKeepInheritedTemplateTypes(string $class, Type $expected)
+    {
+        if (!property_exists(TypeContext::class, 'inheritedTemplateTypes')) {
+            $this->markTestSkipped('Inherited template types require symfony/type-info 8.2 or higher.');
+        }
+
+        $this->assertEquals($expected, $this->extractor->getType($class, 'value'));
+        $this->assertEquals($expected, $this->extractor->getTypeFromConstructor($class, 'value'));
+    }
+
+    /**
+     * @return iterable<array{class-string, Type}>
+     */
+    public static function provideGenericTraitProperties(): iterable
+    {
+        yield 'concrete argument' => [DummyUsingConcreteGenericTrait::class, Type::string()];
+        yield 'renamed template' => [DummyUsingGenericTrait::class, Type::list(Type::template('U'))];
+        yield 'same template name' => [DummyUsingGenericTraitWithSameTemplate::class, Type::list(Type::template('T'))];
+    }
+
+    #[DataProvider('propertiesStaticTypeProvider')]
+    public function testPropertiesStaticType(string $class, string $property, ?Type $type)
+    {
+        $this->assertEquals($type, $this->extractor->getType($class, $property));
+    }
+
+    /**
+     * @return iterable<array{0: class-string, 1: string, 2: ?Type}>
+     */
+    public static function propertiesStaticTypeProvider(): iterable
+    {
+        yield [ParentDummy::class, 'propertyTypeStatic', Type::object(ParentDummy::class)];
+        yield [Dummy::class, 'propertyTypeStatic', Type::object(Dummy::class)];
+        yield [DummyWithStaticGetterInDifferentNs::class, 'static', Type::object(DummyWithStaticGetterInDifferentNs::class)];
+    }
+
+    public function testPropertiesParentType()
+    {
+        $this->assertEquals(Type::object(ParentDummy::class), $this->extractor->getType(Dummy::class, 'parentAnnotation'));
+    }
+
+    public function testPropertiesParentTypeThrowWithoutParent()
+    {
+        $this->expectException(LogicException::class);
+        $this->extractor->getType(ParentDummy::class, 'parentAnnotationNoParent');
+    }
+
+    #[DataProvider('constructorTypesProvider')]
+    public function testExtractConstructorTypes(string $property, ?Type $type)
+    {
+        $this->assertEquals($type, $this->extractor->getTypeFromConstructor(ConstructorDummy::class, $property));
+    }
+
+    #[DataProvider('constructorTypesProvider')]
+    public function testExtractConstructorTypesReturnNullOnEmptyDocBlock(string $property, ?Type $type)
+    {
+        $this->assertNull($this->extractor->getTypeFromConstructor(ConstructorDummyWithoutDocBlock::class, $property));
+    }
+
+    public function testExtractConstructorTypesReturnNullOnUnsupportedType()
+    {
+        $this->assertNull($this->extractor->getTypeFromConstructor(ConstructorDummyWithUnsupportedType::class, 'flags'));
+    }
+
+    /**
+     * @return iterable<array{0: string, 1: ?Type}>
+     */
+    public static function constructorTypesProvider(): iterable
+    {
+        yield ['date', Type::int()];
+        yield ['timezone', Type::object(\DateTimeZone::class)];
+        yield ['dateObject', Type::object(\DateTimeInterface::class)];
+        yield ['dateTime', Type::int()];
+        yield ['ddd', null];
+    }
+
+    #[DataProvider('constructorTypesWithOnlyVarTagsProvider')]
+    public function testExtractConstructorTypesWithOnlyVarTags(string $property, ?Type $type)
+    {
+        $this->assertEquals($type, $this->extractor->getTypeFromConstructor(ConstructorDummyWithVarTagsDocBlock::class, $property));
+    }
+
+    /**
+     * @return iterable<array{0: string, 1: ?Type}>
+     */
+    public static function constructorTypesWithOnlyVarTagsProvider(): iterable
+    {
+        yield ['date', Type::int()];
+        yield ['dateObject', Type::object(\DateTimeInterface::class)];
+        yield ['objectsArray', Type::array(Type::object(ConstructorDummy::class))];
+        yield ['dateTime', null];
+        yield ['mixed', null];
+        yield ['timezone', null];
+    }
+
+    #[DataProvider('constructorTypesOfParentClassProvider')]
+    public function testExtractTypeFromConstructorOfParentClass(string $class, string $property, Type $type)
+    {
+        $this->assertEquals($type, $this->extractor->getTypeFromConstructor($class, $property));
+    }
+
+    public static function constructorTypesOfParentClassProvider(): iterable
+    {
+        yield [Dummy::class, 'rootDummyItem', Type::nullable(Type::object(RootDummyItem::class))];
+        yield [DummyWithTemplateAndParent::class, 'items', Type::list(Type::template('T', Type::object(DummyInDifferentNs::class)))];
+        yield [DummyWithTemplateAndParentInDifferentNs::class, 'items', Type::list(Type::template('T', Type::object(DummyInDifferentNs::class)))];
+    }
+
+    #[DataProvider('unionTypesProvider')]
+    public function testExtractorUnionTypes(string $property, ?Type $type)
+    {
+        $this->assertEquals($type, $this->extractor->getType(DummyUnionType::class, $property));
+    }
+
+    /**
+     * @return iterable<array{0: string, 1: ?Type}>
+     */
+    public static function unionTypesProvider(): iterable
+    {
+        yield ['a', Type::union(Type::string(), Type::int())];
+        yield ['b', Type::array(Type::union(Type::string(), Type::int()))];
+        yield ['c', Type::array(Type::union(Type::string(), Type::int()))];
+        yield ['d', Type::array(Type::array(Type::string()), Type::union(Type::string(), Type::int()))];
+        yield ['e', Type::union(
+            Type::generic(
+                Type::object(Dummy::class),
+                Type::array(Type::string()),
+                Type::union(
+                    Type::int(),
+                    Type::array(Type::collection(Type::object(\Traversable::class), Type::object(DefaultValue::class))),
+                ),
+            ),
+            Type::object(ParentDummy::class),
+            Type::null(),
+        )];
+        yield ['f', Type::union(Type::string(), Type::null())];
+        yield ['g', Type::array(Type::union(Type::string(), Type::int()))];
+    }
+
+    #[DataProvider('pseudoTypesProvider')]
+    public function testPseudoTypes(string $property, ?Type $type)
+    {
+        $this->assertEquals($type, $this->extractor->getType(PhpStanPseudoTypesDummy::class, $property));
+    }
+
+    /**
+     * @return iterable<array{0: string, 1: ?Type}>
+     */
+    public static function pseudoTypesProvider(): iterable
+    {
+        yield ['classString', Type::string()];
+
+        // BC layer for type-info < 7.2
+        if (!interface_exists(WrappingTypeInterface::class)) {
+            yield ['classStringGeneric', Type::generic(Type::string(), Type::object(\stdClass::class))];
+        } else {
+            yield ['classStringGeneric', Type::string()];
+        }
+
+        yield ['htmlEscapedString', Type::string()];
+        yield ['lowercaseString', Type::string()];
+        yield ['nonEmptyLowercaseString', Type::string()];
+        yield ['nonEmptyString', Type::string()];
+        yield ['numericString', Type::string()];
+        yield ['traitString', Type::string()];
+        yield ['interfaceString', Type::string()];
+        yield ['literalString', Type::string()];
+        yield ['positiveInt', Type::int()];
+        yield ['negativeInt', Type::int()];
+        yield ['nonEmptyArray', Type::array()];
+        yield ['nonEmptyList', Type::list()];
+        yield ['scalar', Type::union(Type::int(), Type::float(), Type::string(), Type::bool())];
+        yield ['number', Type::union(Type::int(), Type::float())];
+        yield ['numeric', Type::union(Type::int(), Type::float(), Type::string())];
+        yield ['arrayKey', Type::union(Type::int(), Type::string())];
+        yield ['double', Type::float()];
+    }
+
+    public function testDummyNamespace()
+    {
+        $this->assertEquals(Type::object(Dummy::class), $this->extractor->getType(DummyNamespace::class, 'dummy'));
+    }
+
+    public function testDummyNamespaceWithProperty()
+    {
+        $phpStanType = $this->extractor->getType(\B\Dummy::class, 'property');
+        $phpDocType = $this->phpDocExtractor->getType(\B\Dummy::class, 'property');
+
+        $this->assertEquals('A\Property', $phpStanType->getClassName());
+        $this->assertEquals($phpDocType->getClassName(), $phpStanType->getClassName());
+    }
+
+    public function testClassImportsWinOverTraitAndParentImports()
+    {
+        $this->assertEquals(Type::object(Dummy::class), $this->extractor->getType(DummyImportingDummy::class, 'dummy'));
+        $this->assertEquals(Type::object(DummyInAnotherNamespace::class), $this->extractor->getType(DummyImportingDummy::class, 'dummyFromTrait'));
+        $this->assertEquals(Type::object(DummyUsedInTrait::class), $this->extractor->getType(DummyImportingDummy::class, 'dummyFromParent'));
+    }
+
+    #[DataProvider('intRangeTypeProvider')]
+    public function testExtractorIntRangeType(string $property, ?Type $type)
+    {
+        $this->assertEquals($type, $this->extractor->getType(IntRangeDummy::class, $property));
+    }
+
+    /**
+     * @return iterable<array{0: string, 1: ?Type}>
+     */
+    public static function intRangeTypeProvider(): iterable
+    {
+        yield ['a', Type::int()];
+        yield ['b', Type::nullable(Type::int())];
+        yield ['c', Type::int()];
+    }
+
+    public function testExtractorLiteralType()
+    {
+        $this->assertEquals(Type::arrayShape(['quoted key' => Type::string()]), $this->extractor->getType(LiteralDummy::class, 'shape'));
+    }
+
+    #[DataProvider('php80TypesProvider')]
+    public function testExtractPhp80Type(string $class, string $property, ?Type $type)
+    {
+        $this->assertEquals($type, $this->extractor->getType($class, $property));
+    }
+
+    /**
+     * @return iterable<array{0: class-string, 1: string, 2: ?Type}>
+     */
+    public static function php80TypesProvider(): iterable
+    {
+        yield [Php80Dummy::class, 'promotedAndMutated', Type::string()];
+        yield [Php80Dummy::class, 'promoted', null];
+        yield [Php80Dummy::class, 'collection', Type::array(Type::string())];
+        yield [Php80PromotedDummy::class, 'promoted', null];
+    }
+
+    public function testInheritedPromotedPropertyWithConstructorOverride()
+    {
+        $expectedType = Type::dict(Type::int(), Type::string());
+
+        $this->assertEquals($expectedType, $this->extractor->getType(ParentWithPromotedPropertyDocBlock::class, 'items'));
+        $this->assertEquals($expectedType, $this->extractor->getType(ChildWithoutConstructorOverride::class, 'items'));
+        $this->assertEquals($expectedType, $this->extractor->getType(ChildWithConstructorOverride::class, 'items'));
+    }
+
+    #[DataProvider('allowPrivateAccessProvider')]
+    public function testAllowPrivateAccess(bool $allowPrivateAccess, Type $expectedType)
+    {
+        $extractor = new PhpStanExtractor(null, null, null, $allowPrivateAccess);
+
+        $this->assertEquals($expectedType, $extractor->getType(DummyPropertyAndGetterWithDifferentTypes::class, 'foo'));
+    }
+
+    public static function allowPrivateAccessProvider(): array
+    {
+        return [
+            [true, Type::string()],
+            [false, Type::array(Type::string(), Type::int())],
+        ];
+    }
+
+    public function testGenericInterface()
+    {
+        $this->assertEquals(
+            Type::generic(Type::object(\BackedEnum::class), Type::string()),
+            $this->extractor->getType(Dummy::class, 'genericInterface'),
+        );
+    }
+
+    #[DataProvider('genericsProvider')]
+    public function testGenerics(string $property, Type $expectedType)
+    {
+        $this->assertEquals($expectedType, $this->extractor->getType(DummyGeneric::class, $property));
+    }
+
+    /**
+     * @return iterable<array{0: string, 1: Type}>
+     */
+    public static function genericsProvider(): iterable
+    {
+        yield [
+            'basicClass',
+            Type::generic(Type::object(Clazz::class), Type::object(Dummy::class)),
+        ];
+        yield [
+            'nullableClass',
+            Type::nullable(Type::generic(Type::object(Clazz::class), Type::object(Dummy::class))),
+        ];
+        yield [
+            'basicInterface',
+            Type::generic(Type::object(IFace::class), Type::object(Dummy::class)),
+        ];
+        yield [
+            'nullableInterface',
+            Type::nullable(Type::generic(Type::object(IFace::class), Type::object(Dummy::class))),
+        ];
+        yield [
+            'twoGenerics',
+            Type::generic(Type::object(Clazz::class), Type::int(), Type::object(Dummy::class)),
+        ];
+        yield [
+            'threeGenerics',
+            Type::generic(Type::object(Clazz::class), Type::int(), Type::object(Dummy::class), Type::string()),
+        ];
+    }
+
+    #[DataProvider('descriptionsProvider')]
+    public function testGetDescriptions(string $property, ?string $shortDescription, ?string $longDescription)
+    {
+        $this->assertEquals($shortDescription, $this->extractor->getShortDescription(Dummy::class, $property));
+        $this->assertEquals($longDescription, $this->extractor->getLongDescription(Dummy::class, $property));
+    }
+
+    public static function descriptionsProvider(): iterable
+    {
+        yield ['foo', 'Short description.', 'Long description.'];
+        yield ['bar', 'This is bar', null];
+        yield ['baz', 'Should be used.', null];
+        yield ['bal', 'A short description ignoring template.', "A long description...\n\n...over several lines."];
+        yield ['foo2', null, null];
+    }
+
     public function testSkipVoidNeverReturnTypeAccessors()
+    {
+        $this->assertNull($this->extractor->getType(VoidNeverReturnTypeDummy::class, 'voidProperty'));
+        $this->assertNull($this->extractor->getType(VoidNeverReturnTypeDummy::class, 'neverProperty'));
+        $this->assertEquals(Type::string(), $this->extractor->getType(VoidNeverReturnTypeDummy::class, 'normalProperty'));
+    }
+
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testSkipVoidNeverReturnTypeAccessorsLegacy()
     {
         $this->assertNull($this->extractor->getTypes(VoidNeverReturnTypeDummy::class, 'voidProperty'));
         $this->assertNull($this->extractor->getTypes(VoidNeverReturnTypeDummy::class, 'neverProperty'));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_STRING)], $this->extractor->getTypes(VoidNeverReturnTypeDummy::class, 'normalProperty'));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_STRING)], $this->extractor->getTypes(VoidNeverReturnTypeDummy::class, 'normalProperty'));
+    }
+
+    #[DataProvider('providePromotedPropertyDocBlockTestCases')]
+    public function testPromotedPropertyDocBlock(string $class, string $property, ?string $shortDescription, ?string $longDescription, ?Type $type)
+    {
+        $this->assertSame($shortDescription, $this->extractor->getShortDescription($class, $property));
+        $this->assertSame($longDescription, $this->extractor->getLongDescription($class, $property));
+        $this->assertEquals($type, $this->extractor->getType($class, $property));
+    }
+
+    public static function providePromotedPropertyDocBlockTestCases(): iterable
+    {
+        yield 'description from constructor @param' => [PromotedPropertiesWithDocBlock::class, 'foo', 'Just a foo property', null, Type::string()];
+        yield 'promoted property with no docblock' => [PromotedPropertiesWithDocBlock::class, 'bar', null, null, null];
+        yield 'description and type from inline @var' => [PromotedPropertiesWithDocBlock::class, 'baz', 'A baz property', null, Type::string()];
+        yield 'inline @var wins over constructor @param' => [PromotedPropertiesWithDocBlock::class, 'qux', 'An overridden qux property', null, Type::int()];
+        yield 'long description from inline docblock' => [PromotedPropertiesWithDocBlock::class, 'corge', 'A corge property.', 'A detailed explanation of corge.', null];
     }
 }
 
@@ -670,8 +1365,6 @@ class PhpStanOmittedParamTagTypeDocBlock
 {
     /**
      * The type is omitted here to ensure that the extractor doesn't choke on missing types.
-     *
-     * @param $omittedTagType
      */
     public function setOmittedType(array $omittedTagType)
     {

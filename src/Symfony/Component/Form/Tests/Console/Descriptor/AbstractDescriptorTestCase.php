@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Form\Tests\Console\Descriptor;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -42,7 +43,7 @@ abstract class AbstractDescriptorTestCase extends TestCase
         putenv($this->colSize ? 'COLUMNS='.$this->colSize : 'COLUMNS');
     }
 
-    /** @dataProvider getDescribeDefaultsTestData */
+    #[DataProvider('getDescribeDefaultsTestData')]
     public function testDescribeDefaults($object, array $options, $fixtureName)
     {
         $describedObject = $this->getObjectDescription($object, $options);
@@ -55,7 +56,7 @@ abstract class AbstractDescriptorTestCase extends TestCase
         }
     }
 
-    /** @dataProvider getDescribeResolvedFormTypeTestData */
+    #[DataProvider('getDescribeResolvedFormTypeTestData')]
     public function testDescribeResolvedFormType(ResolvedFormTypeInterface $type, array $options, $fixtureName)
     {
         $describedObject = $this->getObjectDescription($type, $options);
@@ -68,7 +69,7 @@ abstract class AbstractDescriptorTestCase extends TestCase
         }
     }
 
-    /** @dataProvider getDescribeOptionTestData */
+    #[DataProvider('getDescribeOptionTestData')]
     public function testDescribeOption(OptionsResolver $optionsResolver, array $options, $fixtureName)
     {
         $describedObject = $this->getObjectDescription($optionsResolver, $options);
@@ -138,6 +139,11 @@ abstract class AbstractDescriptorTestCase extends TestCase
         $options['option'] = 'bar';
         $options['show_deprecated'] = true;
         yield [$resolvedType->getOptionsResolver(), $options, 'deprecated_option'];
+
+        $resolvedType = new ResolvedFormType(new FooType(), [], $parent);
+        $options['type'] = $resolvedType->getInnerType();
+        $options['option'] = 'baz';
+        yield [$resolvedType->getOptionsResolver(), $options, 'nested_option'];
     }
 
     abstract protected function getDescriptor();
@@ -180,6 +186,10 @@ class FooType extends AbstractType
         $resolver->setAllowedTypes('foo', 'string');
         $resolver->setAllowedValues('foo', ['bar', 'baz']);
         $resolver->setNormalizer('foo', static fn (Options $options, $value) => (string) $value);
+        $resolver->setOptions('baz', static function (OptionsResolver $baz) {
+            $baz->setRequired('foo');
+            $baz->setDefaults(['foo' => true, 'bar' => true]);
+        });
     }
 }
 

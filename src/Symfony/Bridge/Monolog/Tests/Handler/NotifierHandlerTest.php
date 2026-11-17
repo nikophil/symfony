@@ -12,6 +12,7 @@
 namespace Symfony\Bridge\Monolog\Tests\Handler;
 
 use Monolog\Logger;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bridge\Monolog\Handler\NotifierHandler;
 use Symfony\Bridge\Monolog\Tests\RecordFactory;
@@ -42,9 +43,7 @@ class NotifierHandlerTest extends TestCase
         $this->assertSame([], $notifier->recipients);
     }
 
-    /**
-     * @dataProvider provideLevelsBelowError
-     */
+    #[DataProvider('provideLevelsBelowError')]
     public function testLevelBelowErrorIsRaisedToError($level)
     {
         $notifier = new class implements NotifierInterface {

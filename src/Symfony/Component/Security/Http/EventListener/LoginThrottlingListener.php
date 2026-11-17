@@ -31,19 +31,15 @@ final class LoginThrottlingListener implements EventSubscriberInterface
     private const UNTOUCHED_LIMITER_ATTRIBUTE = '_security_login_throttling_untouched';
     private const CONSUMED_ATTRIBUTE = '_security_login_throttling_consumed';
 
-    private RequestStack $requestStack;
-    private RequestRateLimiterInterface $limiter;
-    private bool $stateless;
-
     /**
      * @param bool $stateless Whether the firewall is stateless. On stateless firewalls, a successful login
      *                        in an untouched window doesn't write to the storage of the limiter.
      */
-    public function __construct(RequestStack $requestStack, RequestRateLimiterInterface $limiter, bool $stateless = true)
-    {
-        $this->requestStack = $requestStack;
-        $this->limiter = $limiter;
-        $this->stateless = $stateless;
+    public function __construct(
+        private RequestStack $requestStack,
+        private RequestRateLimiterInterface $limiter,
+        private bool $stateless = true,
+    ) {
     }
 
     public function checkPassport(CheckPassportEvent $event): void

@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Serializer\Tests\Normalizer;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\File\Exception\FileException;
 use Symfony\Component\HttpFoundation\File\File;
@@ -56,9 +58,7 @@ class DataUriNormalizerTest extends TestCase
         $this->assertTrue($this->normalizer->supportsNormalization(new \SplFileObject('data:,Hello%2C%20World!')));
     }
 
-    /**
-     * @requires extension fileinfo
-     */
+    #[RequiresPhpExtension('fileinfo')]
     public function testNormalizeHttpFoundationFile()
     {
         $file = new File(__DIR__.'/../Fixtures/test.gif');
@@ -66,9 +66,7 @@ class DataUriNormalizerTest extends TestCase
         $this->assertSame(self::TEST_GIF_DATA, $this->normalizer->normalize($file));
     }
 
-    /**
-     * @requires extension fileinfo
-     */
+    #[RequiresPhpExtension('fileinfo')]
     public function testNormalizeSplFileInfo()
     {
         $file = new \SplFileInfo(__DIR__.'/../Fixtures/test.gif');
@@ -76,9 +74,7 @@ class DataUriNormalizerTest extends TestCase
         $this->assertSame(self::TEST_GIF_DATA, $this->normalizer->normalize($file));
     }
 
-    /**
-     * @requires extension fileinfo
-     */
+    #[RequiresPhpExtension('fileinfo')]
     public function testNormalizeText()
     {
         $file = new \SplFileObject(__DIR__.'/../Fixtures/test.txt');
@@ -138,9 +134,7 @@ class DataUriNormalizerTest extends TestCase
         $this->assertSame(file_get_contents(self::TEST_GIF_DATA), $this->getContent($file->openFile()));
     }
 
-    /**
-     * @dataProvider denormalizedFileProvider
-     */
+    #[DataProvider('denormalizedFileProvider')]
     public function testNormalizeDenormalizedFile(string $uri, string $type, string $expected)
     {
         $this->assertSame($expected, $this->normalizer->normalize($this->normalizer->denormalize($uri, $type)));
@@ -158,9 +152,7 @@ class DataUriNormalizerTest extends TestCase
         yield ['data:text/plain;charset=utf-8;base64,SGVsbG8gV29ybGQh', \SplFileObject::class, 'data:text/plain;charset=utf-8,Hello%20World%21'];
     }
 
-    /**
-     * @dataProvider guessedMimeTypeProvider
-     */
+    #[DataProvider('guessedMimeTypeProvider')]
     public function testNormalizeDenormalizedFileWithGuesser(?string $guessedMimeType, string $uri, string $expected)
     {
         $guesser = $this->createStub(MimeTypeGuesserInterface::class);
@@ -225,9 +217,7 @@ class DataUriNormalizerTest extends TestCase
         $this->assertFalse($this->normalizer->supportsDenormalization([], \stdClass::class));
     }
 
-    /**
-     * @dataProvider provideInstancesOfType
-     */
+    #[DataProvider('provideInstancesOfType')]
     public function testDenormalizeInstanceOfType(\SplFileInfo $file, string $type)
     {
         $this->assertSame($file, $this->normalizer->denormalize($file, $type));
@@ -245,9 +235,7 @@ class DataUriNormalizerTest extends TestCase
         yield [new \SplFileObject(__DIR__.'/../Fixtures/test.txt'), \SplFileObject::class];
     }
 
-    /**
-     * @dataProvider provideDataForSubclasses
-     */
+    #[DataProvider('provideDataForSubclasses')]
     public function testDenormalizeSubclassFromData($data, string $type)
     {
         try {
@@ -273,9 +261,7 @@ class DataUriNormalizerTest extends TestCase
         yield [self::TEST_GIF_DATA, SplFileInfoChild::class];
     }
 
-    /**
-     * @dataProvider provideOtherSpellingsOfSupportedTypes
-     */
+    #[DataProvider('provideOtherSpellingsOfSupportedTypes')]
     public function testDeserializeFromDataWithOtherSpellingOfType(string $type)
     {
         $serializer = new Serializer([$this->normalizer, new ObjectNormalizer()], ['json' => new JsonEncoder()]);
@@ -322,10 +308,8 @@ class DataUriNormalizerTest extends TestCase
         $this->assertSame([$file], $dummy->files);
     }
 
-    /**
-     * @dataProvider invalidUriProvider
-     */
-    public function testInvalidData($uri)
+    #[DataProvider('invalidUriProvider')]
+    public function testInvalidData(?string $uri)
     {
         $this->expectException(UnexpectedValueException::class);
         $this->normalizer->denormalize($uri, 'SplFileObject');
@@ -349,10 +333,8 @@ class DataUriNormalizerTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider validUriProvider
-     */
-    public function testValidData($uri)
+    #[DataProvider('validUriProvider')]
+    public function testValidData(string $uri)
     {
         $this->assertInstanceOf(\SplFileObject::class, $this->normalizer->denormalize($uri, 'SplFileObject'));
     }

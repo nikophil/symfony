@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Cache\Tests\Adapter;
 
+use PHPUnit\Framework\Attributes\Group;
 use Psr\Cache\CacheItemInterface;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
@@ -19,12 +20,10 @@ use Symfony\Component\Cache\Adapter\NullAdapter;
 use Symfony\Component\Cache\Adapter\PhpArrayAdapter;
 use Symfony\Component\Filesystem\Filesystem;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class PhpArrayAdapterTest extends AdapterTestCase
 {
-    protected $skippedTests = [
+    protected array $skippedTests = [
         'testGet' => 'PhpArrayAdapter is read-only.',
         'testDontSaveWhenAskedNotTo' => 'PhpArrayAdapter is read-only.',
         'testRecursiveGet' => 'PhpArrayAdapter is read-only.',
@@ -61,6 +60,8 @@ class PhpArrayAdapterTest extends AdapterTestCase
         'testPrune' => 'PhpArrayAdapter just proxies',
         'testClearWithInvalidPrefix' => 'PhpArrayAdapter does not validate the prefix.',
         'testInvalidKeyWithoutAssertions' => 'PhpArrayAdapter does not throw exceptions on invalid key.',
+
+        'testNamespaces' => 'PhpArrayAdapter does not support namespaces.',
     ];
 
     protected static string $file;
@@ -86,6 +87,11 @@ class PhpArrayAdapterTest extends AdapterTestCase
         }
 
         return new PhpArrayAdapterWrapper(self::$file, new NullAdapter());
+    }
+
+    public function testDeleteItemsValidatesEveryKeyBeforeMutation()
+    {
+        $this->markTestSkipped('PhpArrayAdapter does not throw exceptions on invalid key.');
     }
 
     public function testStore()

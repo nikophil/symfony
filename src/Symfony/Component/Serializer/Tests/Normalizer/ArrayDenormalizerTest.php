@@ -13,7 +13,7 @@ namespace Symfony\Component\Serializer\Tests\Normalizer;
 
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
-use Symfony\Component\Serializer\Tests\Fixtures\UpcomingDenormalizerInterface as DenormalizerInterface;
+use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 
 class ArrayDenormalizerTest extends TestCase
 {
@@ -166,6 +166,22 @@ class ArrayDenormalizerTest extends TestCase
                 ArrayDummy::class
             )
         );
+    }
+
+    public function testDenormalizeWithoutDenormalizer()
+    {
+        $arrayDenormalizer = new ArrayDenormalizer();
+
+        $this->expectException(\BadMethodCallException::class);
+        $arrayDenormalizer->denormalize([], 'string[]');
+    }
+
+    public function testSupportsDenormalizationWithoutDenormalizer()
+    {
+        $arrayDenormalizer = new ArrayDenormalizer();
+
+        $this->expectException(\BadMethodCallException::class);
+        $arrayDenormalizer->supportsDenormalization([], 'string[]');
     }
 
     public function testSupportsEmptyArray()

@@ -32,14 +32,14 @@ class RememberMeFactory implements AuthenticatorFactoryInterface, PrependExtensi
 {
     public const PRIORITY = -50;
 
-    protected $options = [
+    protected array $options = [
         'name' => 'REMEMBERME',
         'lifetime' => 31536000,
         'path' => '/',
         'domain' => null,
-        'secure' => false,
+        'secure' => 'auto',
         'httponly' => true,
-        'samesite' => null,
+        'samesite' => Cookie::SAMESITE_LAX,
         'always_remember_me' => false,
         'remember_me_parameter' => '_remember_me',
     ];
@@ -49,6 +49,11 @@ class RememberMeFactory implements AuthenticatorFactoryInterface, PrependExtensi
         if (!$container->hasDefinition('security.authenticator.remember_me')) {
             $loader = new PhpFileLoader($container, new FileLocator(\dirname(__DIR__).'/../../Resources/config'));
             $loader->load('security_authenticator_remember_me.php');
+        }
+
+        $config['secure'] ??= $this->options['secure'];
+        if (!\array_key_exists('samesite', $config)) {
+            $config['samesite'] = $this->options['samesite'];
         }
 
         if ('auto' === $config['secure']) {
@@ -112,7 +117,7 @@ class RememberMeFactory implements AuthenticatorFactoryInterface, PrependExtensi
         $container
             ->setDefinition($authenticatorId, new ChildDefinition('security.authenticator.remember_me'))
             ->replaceArgument(0, new Reference($rememberMeHandlerId))
-            ->replaceArgument(3, $config['name'] ?? $this->options['name'])
+            ->replaceArgument(2, $config['name'] ?? $this->options['name'])
         ;
 
         return $authenticatorId;
@@ -130,36 +135,28 @@ class RememberMeFactory implements AuthenticatorFactoryInterface, PrependExtensi
 
     public function addConfiguration(NodeDefinition $node): void
     {
-        $builder = $node
-            ->fixXmlConfig('user_provider')
-            ->children()
-        ;
-
+        $builder = $node->children();
         $builder
             ->scalarNode('secret')
                 ->cannotBeEmpty()
                 ->defaultValue('%kernel.secret%')
             ->end()
             ->scalarNode('service')->end()
-            ->arrayNode('user_providers')
-                ->beforeNormalization()
-                    ->ifString()->then(static fn ($v) => [$v])
-                ->end()
+            ->arrayNode('user_providers', 'user_provider')
+                ->acceptAndWrap(['string'])
                 ->prototype('scalar')->end()
             ->end()
             ->booleanNode('catch_exceptions')->defaultTrue()->end()
-            ->arrayNode('signature_properties')
+            ->arrayNode('signature_properties', 'signature_property')
                 ->prototype('scalar')->end()
                 ->requiresAtLeastOneElement()
                 ->info('An array of properties on your User. All existing cookies become invalid when one of them changes. Defaults to ["password"], which a "token_provider" skips when the user class does not expose it. A property listed here explicitly must exist on the user class. Cannot be combined with a custom "service".')
                 ->example(['email', 'password'])
             ->end()
             ->arrayNode('token_provider')
-                ->beforeNormalization()
-                    ->ifString()->then(static fn ($v) => ['service' => $v])
-                ->end()
+                ->acceptAndWrap(['string'], 'service')
                 ->children()
-                    ->scalarNode('service')->info('The service ID of a custom rememberme token provider.')->end()
+                    ->scalarNode('service')->info('The service ID of a custom remember-me token provider.')->end()
                     ->arrayNode('doctrine')
                         ->canBeEnabled()
                         ->children()
@@ -174,9 +171,9 @@ class RememberMeFactory implements AuthenticatorFactoryInterface, PrependExtensi
 
         foreach ($this->options as $name => $value) {
             if ('secure' === $name) {
-                $builder->enumNode($name)->values([true, false, 'auto'])->defaultValue('auto' === $value ? null : $value);
+                $builder->enumNode($name)->values([true, false, 'auto'])->info('Defaults to the value of "framework.session.cookie_secure", or to "auto".');
             } elseif ('samesite' === $name) {
-                $builder->enumNode($name)->values([null, Cookie::SAMESITE_LAX, Cookie::SAMESITE_STRICT, Cookie::SAMESITE_NONE])->defaultValue($value);
+                $builder->enumNode($name)->values([null, Cookie::SAMESITE_LAX, Cookie::SAMESITE_STRICT, Cookie::SAMESITE_NONE])->info('Defaults to the value of "framework.session.cookie_samesite", or to "lax".');
             } elseif (\is_bool($value)) {
                 $builder->booleanNode($name)->defaultValue($value);
             } elseif (\is_int($value)) {
@@ -231,21 +228,15 @@ class RememberMeFactory implements AuthenticatorFactoryInterface, PrependExtensi
 
     public function prepend(ContainerBuilder $container): void
     {
-        $rememberMeSecureDefault = false;
-        $rememberMeSameSiteDefault = null;
-
         if (!isset($container->getExtensions()['framework'])) {
             return;
         }
 
         foreach ($container->getExtensionConfig('framework') as $config) {
             if (isset($config['session']) && \is_array($config['session'])) {
-                $rememberMeSecureDefault = $config['session']['cookie_secure'] ?? $rememberMeSecureDefault;
-                $rememberMeSameSiteDefault = \array_key_exists('cookie_samesite', $config['session']) ? $config['session']['cookie_samesite'] : $rememberMeSameSiteDefault;
+                $this->options['secure'] = $config['session']['cookie_secure'] ?? $this->options['secure'];
+                $this->options['samesite'] = \array_key_exists('cookie_samesite', $config['session']) ? $config['session']['cookie_samesite'] : $this->options['samesite'];
             }
         }
-
-        $this->options['secure'] = $rememberMeSecureDefault;
-        $this->options['samesite'] = $rememberMeSameSiteDefault;
     }
 }

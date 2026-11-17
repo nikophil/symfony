@@ -11,16 +11,20 @@
 
 namespace Symfony\Component\Lock\Tests\Store;
 
+use AsyncAws\DynamoDb\DynamoDbClient;
 use Doctrine\DBAL\Connection;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Cache\Adapter\AbstractAdapter;
 use Symfony\Component\Cache\Adapter\MemcachedAdapter;
+use Symfony\Component\Lock\Bridge\DynamoDb\Store\DynamoDbStore;
 use Symfony\Component\Lock\Exception\InvalidArgumentException;
 use Symfony\Component\Lock\Store\DoctrineDbalPostgreSqlStore;
 use Symfony\Component\Lock\Store\DoctrineDbalStore;
 use Symfony\Component\Lock\Store\FlockStore;
 use Symfony\Component\Lock\Store\InMemoryStore;
 use Symfony\Component\Lock\Store\MemcachedStore;
+use Symfony\Component\Lock\Store\NullStore;
 use Symfony\Component\Lock\Store\PdoStore;
 use Symfony\Component\Lock\Store\PostgreSqlStore;
 use Symfony\Component\Lock\Store\RedisStore;
@@ -32,9 +36,7 @@ use Symfony\Component\Lock\Store\StoreFactory;
  */
 class StoreFactoryTest extends TestCase
 {
-    /**
-     * @dataProvider validConnections
-     */
+    #[DataProvider('validConnections')]
     public function testCreateStore($connection, string $expectedStoreClass)
     {
         $store = StoreFactory::createStore($connection);
@@ -88,11 +90,16 @@ class StoreFactoryTest extends TestCase
             yield ['postgres+advisory://server.com/test', DoctrineDbalPostgreSqlStore::class];
             yield ['postgresql+advisory://server.com/test', DoctrineDbalPostgreSqlStore::class];
         }
+        if (class_exists(DynamoDbClient::class)) {
+            yield ['dynamodb://default', DynamoDbStore::class];
+        }
 
         yield ['in-memory', InMemoryStore::class];
 
         yield ['flock', FlockStore::class];
         yield ['flock://'.sys_get_temp_dir(), FlockStore::class];
+
+        yield ['null', NullStore::class];
     }
 
     public function testCreateStoreWithUnsupportedDsnDoesNotLeakCredentials()

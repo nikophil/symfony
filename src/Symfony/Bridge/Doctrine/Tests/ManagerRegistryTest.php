@@ -12,6 +12,8 @@
 namespace Symfony\Bridge\Doctrine\Tests;
 
 use Doctrine\Persistence\ObjectManager;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresPhp;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bridge\Doctrine\Tests\Fixtures\DummyManager;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -22,7 +24,7 @@ use Symfony\Component\VarExporter\LazyObjectInterface;
 
 class ManagerRegistryTest extends TestCase
 {
-    public static function setUpBeforeClass(): void
+    public function testResetService()
     {
         $container = new ContainerBuilder();
 
@@ -32,10 +34,7 @@ class ManagerRegistryTest extends TestCase
 
         $dumper = new PhpDumper($container);
         eval('?>'.$dumper->dump(['class' => 'LazyServiceDoctrineBridgeContainer']));
-    }
 
-    public function testResetService()
-    {
         $container = new \LazyServiceDoctrineBridgeContainer();
 
         $registry = new TestManagerRegistry('name', [], ['defaultManager' => 'foo'], 'defaultConnection', 'defaultManager', 'proxyInterfaceName');
@@ -52,8 +51,121 @@ class ManagerRegistryTest extends TestCase
         $this->assertFalse(isset($foo->bar));
     }
 
+    #[DataProvider('provideResetNonLazyServiceCases')]
+    #[RequiresPhp('>=8.4.0')]
+    public function testResetNonLazyService(string $class)
+    {
+        $container = new $class();
+
+        $registry = new TestManagerRegistry('name', [], ['defaultManager' => 'foo'], 'defaultConnection', 'defaultManager', 'proxyInterfaceName');
+        $registry->setTestContainer($container);
+
+        $foo = $container->get('foo');
+        $foo->bar = 123;
+
+        $this->assertSame($foo, $registry->resetManager());
+        $this->assertSame($foo, $container->get('foo'));
+        $this->assertSame(DummyManager::class, $foo::class);
+        $this->assertNull($foo->bar);
+
+        $r = new \ReflectionClass($foo);
+        $foo->bar = 456;
+        $firstInstance = $r->initializeLazyObject($foo);
+        $this->assertNotSame($foo, $firstInstance);
+        $this->assertSame(456, $firstInstance->bar);
+
+        $registry->resetManager();
+
+        $this->assertSame($foo, $container->get('foo'));
+        $this->assertNull($foo->bar);
+
+        $secondInstance = $r->initializeLazyObject($foo);
+        $this->assertNotSame($firstInstance, $secondInstance);
+        $this->assertSame($secondInstance, $r->initializeLazyObject($secondInstance));
+    }
+
+    public static function provideResetNonLazyServiceCases(): iterable
+    {
+        $container = new ContainerBuilder();
+
+        // the registry knows the manager by an alias, as it does when the manager is decorated
+        $container->register('foo.manager', DummyManager::class)->setPublic(true);
+        $container->setAlias('foo', 'foo.manager')->setPublic(true);
+        $container->compile();
+
+        $dumper = new PhpDumper($container);
+
+        eval('?>'.$dumper->dump(['class' => 'NonLazyServiceDoctrineBridgeContainer']));
+
+        yield ['NonLazyServiceDoctrineBridgeContainer'];
+
+        $dumps = $dumper->dump(['class' => 'NonLazyServiceDoctrineBridgeContainerAsFiles', 'as_files' => true]);
+
+        $lastDump = array_pop($dumps);
+        foreach (array_reverse($dumps) as $dump) {
+            eval('?>'.$dump);
+        }
+        eval('?>'.$lastDump);
+
+        yield ['NonLazyServiceDoctrineBridgeContainerAsFiles'];
+    }
+
+    #[DataProvider('provideResetServiceWithNativeLazyObjectsCases')]
+    #[RequiresPhp('>=8.4.0')]
+    public function testResetServiceWithNativeLazyObjects(string $class)
+    {
+        $container = new $class();
+
+        $registry = new TestManagerRegistry(
+            'irrelevant',
+            [],
+            ['defaultManager' => 'foo'],
+            'irrelevant',
+            'defaultManager',
+            'irrelevant',
+        );
+        $registry->setTestContainer($container);
+
+        $foo = $container->get('foo');
+        self::assertSame(DummyManager::class, $foo::class);
+
+        $foo->bar = 123;
+        self::assertTrue(isset($foo->bar));
+
+        $registry->resetManager();
+
+        self::assertSame($foo, $container->get('foo'));
+        self::assertSame(DummyManager::class, $foo::class);
+        self::assertFalse(isset($foo->bar));
+    }
+
+    public static function provideResetServiceWithNativeLazyObjectsCases(): iterable
+    {
+        $container = new ContainerBuilder();
+
+        $container->register('foo', DummyManager::class)->setPublic(true);
+        $container->getDefinition('foo')->setLazy(true);
+        $container->compile();
+
+        $dumper = new PhpDumper($container);
+
+        eval('?>'.$dumper->dump(['class' => 'NativeLazyServiceDoctrineBridgeContainer']));
+
+        yield ['NativeLazyServiceDoctrineBridgeContainer'];
+
+        $dumps = $dumper->dump(['class' => 'NativeLazyServiceDoctrineBridgeContainerAsFiles', 'as_files' => true]);
+
+        $lastDump = array_pop($dumps);
+        foreach (array_reverse($dumps) as $dump) {
+            eval('?>'.$dump);
+        }
+        eval('?>'.$lastDump);
+
+        yield ['NativeLazyServiceDoctrineBridgeContainerAsFiles'];
+    }
+
     /**
-     * When performing an entity manager lazy service reset, the reset operations may re-use the container
+     * When performing an entity manager lazy service reset, the reset operations may reuse the container
      * to create a "fresh" service: when doing so, it can happen that the "fresh" service is itself a proxy.
      *
      * Because of that, the proxy will be populated with a wrapped value that is itself a proxy: repeating

@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Dotenv\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Dotenv\Dotenv;
 use Symfony\Component\Dotenv\Exception\FormatException;
@@ -19,9 +21,7 @@ use Symfony\Component\Dotenv\Exception\VariableCircularReferenceException;
 
 class DotenvTest extends TestCase
 {
-    /**
-     * @dataProvider getEnvDataWithFormatErrors
-     */
+    #[DataProvider('getEnvDataWithFormatErrors')]
     public function testParseWithFormatError($data, $error)
     {
         $dotenv = new Dotenv();
@@ -64,9 +64,7 @@ class DotenvTest extends TestCase
         return $tests;
     }
 
-    /**
-     * @dataProvider getEnvData
-     */
+    #[DataProvider('getEnvData')]
     public function testParse($data, $expected)
     {
         $dotenv = new Dotenv();
@@ -333,10 +331,8 @@ class DotenvTest extends TestCase
         }
     }
 
-    /**
-     * @testWith [false]
-     *           [true]
-     */
+    #[TestWith([false])]
+    #[TestWith([true])]
     public function testLoadDoesNotTruncateExternalEnvVarOnlyPresentInGetenvOnSelfReference(bool $usePutenv)
     {
         unset($_ENV['EXT_VAR'], $_SERVER['EXT_VAR'], $_ENV['SYMFONY_DOTENV_VARS'], $_SERVER['SYMFONY_DOTENV_VARS']);
@@ -368,10 +364,8 @@ class DotenvTest extends TestCase
         }
     }
 
-    /**
-     * @testWith [false]
-     *           [true]
-     */
+    #[TestWith([false])]
+    #[TestWith([true])]
     public function testLoadResolvesSelfReferencingDefaultWhenNoExternalEnvVarExists(bool $usePutenv)
     {
         unset($_ENV['EXT_VAR'], $_SERVER['EXT_VAR'], $_ENV['SYMFONY_DOTENV_VARS'], $_SERVER['SYMFONY_DOTENV_VARS']);
@@ -398,10 +392,8 @@ class DotenvTest extends TestCase
         }
     }
 
-    /**
-     * @testWith [false]
-     *           [true]
-     */
+    #[TestWith([false])]
+    #[TestWith([true])]
     public function testLoadPrefersExternalEnvVarOnlyPresentInGetenvOverSelfReferencingDefault(bool $usePutenv)
     {
         unset($_ENV['EXT_VAR'], $_SERVER['EXT_VAR'], $_ENV['SYMFONY_DOTENV_VARS'], $_SERVER['SYMFONY_DOTENV_VARS']);
@@ -425,10 +417,8 @@ class DotenvTest extends TestCase
         }
     }
 
-    /**
-     * @testWith [false]
-     *           [true]
-     */
+    #[TestWith([false])]
+    #[TestWith([true])]
     public function testLoadDoesNotExecuteShellSyntaxFromExternalEnvVarOnlyPresentInGetenv(bool $usePutenv)
     {
         unset($_ENV['EXT_VAR'], $_SERVER['EXT_VAR'], $_ENV['SYMFONY_DOTENV_VARS'], $_SERVER['SYMFONY_DOTENV_VARS']);
@@ -452,9 +442,7 @@ class DotenvTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider provideBackslashedExternalEnvVars
-     */
+    #[DataProvider('provideBackslashedExternalEnvVars')]
     public function testPreservesBackslashesOfExternalEnvVar(string $external, bool $onlyInGetenv, bool $selfReference)
     {
         unset($_ENV['EXT_VAR'], $_SERVER['EXT_VAR'], $_ENV['REF_VAR'], $_SERVER['REF_VAR'], $_ENV['SYMFONY_DOTENV_VARS'], $_SERVER['SYMFONY_DOTENV_VARS']);

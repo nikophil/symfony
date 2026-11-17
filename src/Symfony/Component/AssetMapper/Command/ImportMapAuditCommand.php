@@ -15,6 +15,9 @@ use Symfony\Component\AssetMapper\ImportMap\ImportMapAuditor;
 use Symfony\Component\AssetMapper\ImportMap\ImportMapPackageAuditVulnerability;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Completion\CompletionInput;
+use Symfony\Component\Console\Completion\CompletionSuggestions;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
@@ -41,12 +44,19 @@ class ImportMapAuditCommand extends Command
 
     protected function configure(): void
     {
-        $this->addOption(
-            name: 'format',
-            mode: InputOption::VALUE_REQUIRED,
-            description: \sprintf('The output format ("%s")', implode(', ', $this->getAvailableFormatOptions())),
-            default: 'txt',
-        );
+        $this
+            ->addOption(
+                name: 'format',
+                mode: InputOption::VALUE_REQUIRED,
+                description: \sprintf('The output format ("%s")', implode(', ', $this->getAvailableFormatOptions())),
+                default: 'txt',
+            )
+            ->setHelp(<<<'EOT'
+                The <info>--format</info> option specifies the format of the command output:
+
+                  <info>php %command.full_name% --format=json</info>
+                EOT
+            );
     }
 
     protected function initialize(InputInterface $input, OutputInterface $output): void
@@ -80,8 +90,8 @@ class ImportMapAuditCommand extends Command
             foreach ($packageAudit->vulnerabilities as $vulnerability) {
                 $rows[] = [
                     \sprintf('<fg=%s>%s</>', self::SEVERITY_COLORS[$vulnerability->severity] ?? 'default', ucfirst($vulnerability->severity)),
-                    $vulnerability->summary,
-                    $packageAudit->package,
+                    OutputFormatter::escape($vulnerability->summary),
+                    OutputFormatter::escape($packageAudit->package),
                     $packageAudit->version ?? 'n/a',
                     $vulnerability->firstPatchedVersion ?? 'n/a',
                     $vulnerability->url,
@@ -175,11 +185,19 @@ class ImportMapAuditCommand extends Command
             }
         }
 
-        $this->io->write(json_encode($json));
+        $this->io->write(json_encode($json, \JSON_INVALID_UTF8_SUBSTITUTE), false, OutputInterface::OUTPUT_RAW);
 
         return 0 < array_sum($json['summary']) ? self::FAILURE : self::SUCCESS;
     }
 
+    public function complete(CompletionInput $input, CompletionSuggestions $suggestions): void
+    {
+        if ($input->mustSuggestOptionValuesFor('format')) {
+            $suggestions->suggestValues($this->getAvailableFormatOptions());
+        }
+    }
+
+    /** @return string[] */
     private function getAvailableFormatOptions(): array
     {
         return ['txt', 'json'];

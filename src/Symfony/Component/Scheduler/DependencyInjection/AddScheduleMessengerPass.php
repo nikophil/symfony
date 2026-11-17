@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Scheduler\DependencyInjection;
 
+use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Messenger\RunCommandMessage;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
@@ -46,6 +47,11 @@ class AddScheduleMessengerPass implements CompilerPassInterface
         $scheduleProviderIds = [];
         foreach ($container->findTaggedServiceIds('scheduler.schedule_provider') as $serviceId => $tags) {
             $name = $tags[0]['name'];
+
+            if (isset($scheduleProviderIds[$name])) {
+                throw new InvalidArgumentException(\sprintf('Schedule provider service "%s" can not replace already registered service "%s" for schedule "%s". Make sure to register only one provider per schedule name.', $serviceId, $scheduleProviderIds[$name], $name), 1);
+            }
+
             $scheduleProviderIds[$name] = $serviceId;
         }
 
@@ -56,7 +62,9 @@ class AddScheduleMessengerPass implements CompilerPassInterface
                 $scheduleName = $tagAttributes['schedule'] ?? 'default';
 
                 if ($commandTags = $serviceDefinition->getTag('console.command')) {
-                    $aliases = explode('|', $commandTags[0]['command'] ?? $serviceDefinition->getClass()::getDefaultName() ?? '');
+                    /** @var AsCommand|null $attribute */
+                    $attribute = ($container->getReflectionClass($serviceDefinition->getClass())->getAttributes(AsCommand::class)[0] ?? null)?->newInstance();
+                    $aliases = explode('|', $commandTags[0]['command'] ?? $attribute?->name ?? $serviceDefinition->getClass()::getDefaultName() ?? '');
                     if ('' === $commandName = array_shift($aliases)) {
                         $commandName = array_shift($aliases) ?? '';
                     }

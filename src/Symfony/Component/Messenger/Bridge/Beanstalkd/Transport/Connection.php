@@ -11,11 +11,16 @@
 
 namespace Symfony\Component\Messenger\Bridge\Beanstalkd\Transport;
 
-use Pheanstalk\Contract\PheanstalkInterface;
+use Pheanstalk\Contract\PheanstalkManagerInterface;
+use Pheanstalk\Contract\PheanstalkPublisherInterface;
+use Pheanstalk\Contract\PheanstalkSubscriberInterface;
+use Pheanstalk\Contract\SocketFactoryInterface;
 use Pheanstalk\Exception;
-use Pheanstalk\Job as PheanstalkJob;
-use Pheanstalk\JobId;
+use Pheanstalk\Exception\ConnectionException;
+use Pheanstalk\Exception\JobNotFoundException;
 use Pheanstalk\Pheanstalk;
+use Pheanstalk\Values\JobId;
+use Pheanstalk\Values\TubeName;
 use Symfony\Component\Messenger\Exception\InvalidArgumentException;
 use Symfony\Component\Messenger\Exception\TransportException;
 
@@ -29,31 +34,40 @@ use Symfony\Component\Messenger\Exception\TransportException;
 class Connection
 {
     private const DEFAULT_OPTIONS = [
-        'tube_name' => PheanstalkInterface::DEFAULT_TUBE,
+        'tube_name' => 'default',
         'timeout' => 0,
         'ttr' => 90,
+        'bury_on_reject' => false,
     ];
 
+    private TubeName $tube;
+    private int $timeout;
+    private int $ttr;
+    private bool $buryOnReject;
+
+    private bool $usingTube = false;
+    private bool $watchingTube = false;
+    private bool $busy = false;
+
     /**
-     * Available options:.
+     * Constructor.
+     *
+     * Available options:
      *
      * * tube_name: name of the tube
      * * timeout: message reservation timeout (in seconds)
      * * ttr: the message time to run before it is put back in the ready queue (in seconds)
+     * * bury_on_reject: bury rejected messages instead of deleting them
      */
-    private array $configuration;
-    private PheanstalkInterface $client;
-    private string $tube;
-    private int $timeout;
-    private int $ttr;
-
-    public function __construct(array $configuration, PheanstalkInterface $client)
-    {
+    public function __construct(
+        private array $configuration,
+        private PheanstalkSubscriberInterface&PheanstalkPublisherInterface&PheanstalkManagerInterface $client,
+    ) {
         $this->configuration = array_replace_recursive(self::DEFAULT_OPTIONS, $configuration);
-        $this->client = $client;
-        $this->tube = $this->configuration['tube_name'];
+        $this->tube = new TubeName($this->configuration['tube_name']);
         $this->timeout = $this->configuration['timeout'];
         $this->ttr = $this->configuration['ttr'];
+        $this->buryOnReject = $this->configuration['bury_on_reject'];
     }
 
     public static function fromDsn(#[\SensitiveParameter] string $dsn, array $options = []): self
@@ -64,7 +78,7 @@ class Connection
 
         $connectionCredentials = [
             'host' => $components['host'],
-            'port' => $components['port'] ?? PheanstalkInterface::DEFAULT_PORT,
+            'port' => $components['port'] ?? SocketFactoryInterface::DEFAULT_PORT,
         ];
 
         $query = [];
@@ -73,7 +87,15 @@ class Connection
         }
 
         $configuration = [];
-        $configuration += $options + $query + self::DEFAULT_OPTIONS;
+        foreach (self::DEFAULT_OPTIONS as $k => $v) {
+            $value = $options[$k] ?? $query[$k] ?? $v;
+
+            $configuration[$k] = match (\gettype($v)) {
+                'integer' => filter_var($value, \FILTER_VALIDATE_INT, \FILTER_NULL_ON_FAILURE) ?? throw new InvalidArgumentException(\sprintf('Option "%s" of the Beanstalkd Messenger transport must be an integer.', $k)),
+                'boolean' => filter_var($value, \FILTER_VALIDATE_BOOL, \FILTER_NULL_ON_FAILURE) ?? throw new InvalidArgumentException(\sprintf('Option "%s" of the Beanstalkd Messenger transport must be a boolean.', $k)),
+                default => $value,
+            };
+        }
 
         // check for extra keys in options
         $optionsExtraKeys = array_diff(array_keys($options), array_keys(self::DEFAULT_OPTIONS));
@@ -100,42 +122,46 @@ class Connection
 
     public function getTube(): string
     {
-        return $this->tube;
+        return (string) $this->tube;
     }
 
     /**
-     * @param int $delay The delay in milliseconds
+     * @param int  $delay    The delay in milliseconds
+     * @param ?int $priority The priority at which the message will be reserved
      *
      * @return string The inserted id
      */
-    public function send(string $body, array $headers, int $delay = 0): string
+    public function send(string $body, array $headers, int $delay = 0, ?int $priority = null): string
     {
-        $message = json_encode([
-            'body' => $body,
-            'headers' => $headers,
-        ]);
-
-        if (false === $message) {
-            throw new TransportException(json_last_error_msg());
-        }
-
         try {
-            $job = $this->client->useTube($this->tube)->put(
-                $message,
-                PheanstalkInterface::DEFAULT_PRIORITY,
-                (int) ($delay / 1000),
-                $this->ttr
-            );
-        } catch (Exception $exception) {
+            $message = json_encode([
+                'body' => $body,
+                'headers' => $headers,
+            ], \JSON_THROW_ON_ERROR);
+        } catch (\JsonException $exception) {
             throw new TransportException($exception->getMessage(), 0, $exception);
         }
 
-        return (string) $job->getId();
+        return $this->withReconnect(function () use ($message, $delay, $priority) {
+            $this->useTube();
+            $job = $this->client->put(
+                $message,
+                $priority ?? PheanstalkPublisherInterface::DEFAULT_PRIORITY,
+                (int) ($delay / 1000),
+                $this->ttr
+            );
+
+            return $job->getId();
+        });
     }
 
     public function get(): ?array
     {
-        $job = $this->getFromTube();
+        $job = $this->withReconnect(function () {
+            $this->watchTube();
+
+            return $this->client->reserveWithTimeout($this->timeout);
+        });
 
         if (null === $job) {
             return null;
@@ -146,48 +172,164 @@ class Connection
         $beanstalkdEnvelope = json_decode($data, true);
 
         return [
-            'id' => (string) $job->getId(),
+            'id' => $job->getId(),
             'body' => \is_string($beanstalkdEnvelope['body'] ?? null) ? $beanstalkdEnvelope['body'] : null,
             'headers' => \is_array($beanstalkdEnvelope['headers'] ?? null) ? $beanstalkdEnvelope['headers'] : null,
         ];
     }
 
-    private function getFromTube(): ?PheanstalkJob
-    {
-        try {
-            return $this->client->watchOnly($this->tube)->reserveWithTimeout($this->timeout);
-        } catch (Exception $exception) {
-            throw new TransportException($exception->getMessage(), 0, $exception);
-        }
-    }
-
     public function ack(string $id): void
     {
-        try {
-            $this->client->useTube($this->tube)->delete(new JobId((int) $id));
-        } catch (Exception $exception) {
-            throw new TransportException($exception->getMessage(), 0, $exception);
-        }
+        $jobId = new JobId($id);
+
+        $this->withReconnect(function () use ($jobId) {
+            $this->useTube();
+            $this->client->delete($jobId);
+        }, $jobId);
     }
 
-    public function reject(string $id): void
+    public function reject(string $id, ?int $priority = null, bool $forceDelete = false): void
     {
-        try {
-            $this->client->useTube($this->tube)->delete(new JobId((int) $id));
-        } catch (Exception $exception) {
-            throw new TransportException($exception->getMessage(), 0, $exception);
+        $jobId = new JobId($id);
+
+        $this->withReconnect(function () use ($jobId, $priority, $forceDelete) {
+            $this->useTube();
+
+            if (!$forceDelete && $this->buryOnReject) {
+                $this->client->bury($jobId, $priority ?? PheanstalkPublisherInterface::DEFAULT_PRIORITY);
+            } else {
+                $this->client->delete($jobId);
+            }
+        }, $jobId);
+    }
+
+    public function keepalive(string $id): void
+    {
+        // keepalive can be triggered by a signal while another command awaits its
+        // response; a touch sent now would cross replies with it on the shared socket
+        if ($this->busy) {
+            return;
         }
+
+        $jobId = new JobId($id);
+
+        $this->withReconnect(function () use ($jobId) {
+            $this->useTube();
+            $this->client->touch($jobId);
+        }, $jobId);
     }
 
     public function getMessageCount(): int
     {
-        try {
-            $this->client->useTube($this->tube);
+        return $this->withReconnect(function () {
+            $this->useTube();
             $tubeStats = $this->client->statsTube($this->tube);
-        } catch (Exception $exception) {
-            throw new TransportException($exception->getMessage(), 0, $exception);
+
+            return $tubeStats->currentJobsReady;
+        });
+    }
+
+    public function getMessagePriority(string $id): int
+    {
+        return $this->withReconnect(function () use ($id) {
+            $jobStats = $this->client->statsJob(new JobId($id));
+
+            return $jobStats->priority;
+        });
+    }
+
+    private function useTube(): void
+    {
+        if ($this->usingTube) {
+            return;
         }
 
-        return (int) $tubeStats['current-jobs-ready'];
+        $this->client->useTube($this->tube);
+        $this->usingTube = true;
+    }
+
+    private function watchTube(): void
+    {
+        if ($this->watchingTube) {
+            return;
+        }
+
+        if ($this->client->watch($this->tube) > 1) {
+            foreach ($this->client->listTubesWatched() as $tube) {
+                if ((string) $tube !== (string) $this->tube) {
+                    $this->client->ignore($tube);
+                }
+            }
+        }
+
+        $this->watchingTube = true;
+    }
+
+    /**
+     * @param ?JobId $reservedJobId The id of a job the command may only run on while holding its
+     *                              reservation, which then has to be reacquired after a reconnect
+     *                              before the command can be retried
+     */
+    private function withReconnect(callable $command, ?JobId $reservedJobId = null): mixed
+    {
+        return $this->holdSignals(function () use ($command, $reservedJobId) {
+            $this->busy = true;
+
+            try {
+                try {
+                    return $command();
+                } catch (ConnectionException) {
+                    $this->client->disconnect();
+
+                    $this->usingTube = false;
+                    $this->watchingTube = false;
+
+                    if (null !== $reservedJobId) {
+                        try {
+                            $this->client->reserveJob($reservedJobId);
+                        } catch (JobNotFoundException $exception) {
+                            throw new TransportException(\sprintf('Failed to reacquire the reservation for the Beanstalkd job "%s": the job no longer exists or was reserved by another consumer.', $reservedJobId->getId()), 0, $exception);
+                        }
+                    }
+
+                    return $command();
+                }
+            } catch (Exception $exception) {
+                if ($exception instanceof ConnectionException) {
+                    // the next command opens a new session, which uses and watches the "default" tube
+                    $this->usingTube = false;
+                    $this->watchingTube = false;
+                }
+
+                throw new TransportException($exception->getMessage(), 0, $exception);
+            } finally {
+                $this->busy = false;
+            }
+        });
+    }
+
+    /**
+     * Runs $command with asynchronous signal dispatching suspended.
+     *
+     * The keepalive alarm of messenger:consume is raised at any point of the program, and the
+     * signal handler cannot send a touch while a command awaits its response on the same socket.
+     * Holding the signals until the command is done sends the keepalive a moment later instead of
+     * skipping it, which matters most with a "timeout" option: the worker then spends nearly all
+     * of its time inside reserve-with-timeout, where every keepalive would be skipped.
+     *
+     * @param-immediately-invoked-callable $command
+     */
+    private function holdSignals(callable $command): mixed
+    {
+        $asyncSignals = \function_exists('pcntl_async_signals') && \function_exists('pcntl_signal_dispatch') && pcntl_async_signals(false);
+
+        try {
+            return $command();
+        } finally {
+            if ($asyncSignals) {
+                pcntl_async_signals(true);
+                pcntl_signal_dispatch();
+            }
+        }
     }
 }

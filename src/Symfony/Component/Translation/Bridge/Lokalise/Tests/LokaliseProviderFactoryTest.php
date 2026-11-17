@@ -18,10 +18,13 @@ use Symfony\Component\Translation\Bridge\Lokalise\LokaliseProviderFactory;
 use Symfony\Component\Translation\Loader\ArrayLoader;
 use Symfony\Component\Translation\Provider\Dsn;
 use Symfony\Component\Translation\Provider\ProviderFactoryInterface;
-use Symfony\Component\Translation\Test\ProviderFactoryTestCase;
+use Symfony\Component\Translation\Test\AbstractProviderFactoryTestCase;
+use Symfony\Component\Translation\Test\IncompleteDsnTestTrait;
 
-class LokaliseProviderFactoryTest extends ProviderFactoryTestCase
+class LokaliseProviderFactoryTest extends AbstractProviderFactoryTestCase
 {
+    use IncompleteDsnTestTrait;
+
     public static function supportsProvider(): iterable
     {
         yield [true, 'lokalise://PROJECT_ID:API_KEY@default'];
@@ -50,7 +53,7 @@ class LokaliseProviderFactoryTest extends ProviderFactoryTestCase
     {
         $response = new JsonMockResponse(['files' => []]);
         $httpClient = new MockHttpClient([$response]);
-        $factory = new LokaliseProviderFactory($httpClient, new NullLogger(), $this->getDefaultLocale(), new ArrayLoader());
+        $factory = new LokaliseProviderFactory($httpClient, new NullLogger(), 'en', new ArrayLoader());
         $provider = $factory->create(new Dsn('lokalise://PROJECT_ID:API_KEY@default'));
 
         // Make a real HTTP request.
@@ -61,6 +64,6 @@ class LokaliseProviderFactoryTest extends ProviderFactoryTestCase
 
     public function createFactory(): ProviderFactoryInterface
     {
-        return new LokaliseProviderFactory(new MockHttpClient(), new NullLogger(), $this->getDefaultLocale(), new ArrayLoader());
+        return new LokaliseProviderFactory(new MockHttpClient(), new NullLogger(), 'en', new ArrayLoader());
     }
 }

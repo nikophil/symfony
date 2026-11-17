@@ -107,14 +107,17 @@ bar';
     {
         if (!$application) {
             $application = new BaseApplication();
-            $application->add(new YamlLintCommand());
+            $command = new YamlLintCommand();
+            if (method_exists($application, 'addCommand')) {
+                $application->addCommand($command);
+            } else {
+                $application->add($command);
+            }
         }
 
         $command = $application->find('lint:yaml');
 
-        if ($application) {
-            $command->setApplication($application);
-        }
+        $command->setApplication($application);
 
         return new CommandTester($command);
     }

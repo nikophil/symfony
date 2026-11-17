@@ -11,6 +11,9 @@
 
 namespace Symfony\Component\Messenger\Bridge\Amqp\Tests\Transport;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Bridge\Amqp\Tests\Fixtures\DummyMessage;
 use Symfony\Component\Messenger\Bridge\Amqp\Transport\AmqpFactory;
@@ -19,11 +22,8 @@ use Symfony\Component\Messenger\Bridge\Amqp\Transport\Connection;
 use Symfony\Component\Messenger\Exception\InvalidArgumentException;
 use Symfony\Component\Messenger\Exception\TransportException;
 
-/**
- * @requires extension amqp
- *
- * @group time-sensitive
- */
+#[RequiresPhpExtension('amqp')]
+#[Group('time-sensitive')]
 class ConnectionTest extends TestCase
 {
     private const DEFAULT_EXCHANGE_NAME = 'messages';
@@ -97,6 +97,22 @@ class ConnectionTest extends TestCase
                 'custom' => [],
             ]),
             Connection::fromDsn('amqp://host/%2f/custom')
+        );
+    }
+
+    public function testItKeepsPlusSignsInTheVhost()
+    {
+        $this->assertEquals(
+            new Connection([
+                'host' => 'host',
+                'port' => 5672,
+                'vhost' => 'a+b c',
+            ], [
+                'name' => self::DEFAULT_EXCHANGE_NAME,
+            ], [
+                self::DEFAULT_EXCHANGE_NAME => [],
+            ]),
+            Connection::fromDsn('amqp://host/a+b%20c')
         );
     }
 
@@ -201,6 +217,12 @@ class ConnectionTest extends TestCase
                     ],
                 ],
             ],
+            'delay' => [
+                'arguments' => [
+                    'x-queue-type' => 'classic',
+                    'x-message-deduplication' => true,
+                ],
+            ],
             'exchange' => [
                 'arguments' => [
                     'alternate-exchange' => 'alternate',
@@ -232,9 +254,7 @@ class ConnectionTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider invalidQueueArgumentsDataProvider
-     */
+    #[DataProvider('invalidQueueArgumentsDataProvider')]
     public function testFromDsnWithInvalidValueOnQueueArguments(string $dsn, array $options)
     {
         $this->expectException(InvalidArgumentException::class);
@@ -501,7 +521,7 @@ class ConnectionTest extends TestCase
         $connection->publish('body');
     }
 
-    public function testBindingArguments()
+    public function testQueueBindingArguments()
     {
         $amqpConnection = $this->createStub(\AMQPConnection::class);
         $amqpChannel = $this->createStub(\AMQPChannel::class);
@@ -521,6 +541,62 @@ class ConnectionTest extends TestCase
 
         $dsn = 'amqp://localhost?exchange[type]=headers'.
             '&queues[queue0][binding_arguments][x-match]=all';
+
+        $connection = Connection::fromDsn($dsn, [], $factory);
+        $connection->publish('body');
+    }
+
+    public function testExchangeBindingArguments()
+    {
+        $factory = new TestAmqpFactory(
+            $this->createStub(\AMQPConnection::class),
+            $this->createStub(\AMQPChannel::class),
+            $this->createStub(\AMQPQueue::class),
+            $amqpExchange = $this->createMock(\AMQPExchange::class)
+        );
+
+        $amqpExchange->expects($this->once())->method('declareExchange');
+        $amqpExchange->expects($this->exactly(4))->method('bind')
+            ->willReturnCallback(function (...$args) {
+                static $series = [
+                    ['exchange0', 'binding_key0', ['x-match' => 'all']],
+                    ['exchange0', 'binding_key1', ['x-match' => 'all']],
+                    ['exchange1', 'binding_key2', ['x-match' => 'any']],
+                    ['exchange1', 'binding_key3', ['x-match' => 'any']],
+                ];
+
+                $expectedArgs = array_shift($series);
+                $this->assertSame($expectedArgs, $args);
+            })
+        ;
+        $amqpExchange->expects($this->once())->method('publish')->with('body', null, \AMQP_NOPARAM, ['headers' => [], 'delivery_mode' => 2, 'timestamp' => time()]);
+
+        $dsn = 'amqp://localhost?exchange[type]=headers'.
+            '&exchange[bindings][exchange0][binding_arguments][x-match]=all'.
+            '&exchange[bindings][exchange0][binding_keys][0]=binding_key0'.
+            '&exchange[bindings][exchange0][binding_keys][1]=binding_key1'.
+            '&exchange[bindings][exchange1][binding_arguments][x-match]=any'.
+            '&exchange[bindings][exchange1][binding_keys][0]=binding_key2'.
+            '&exchange[bindings][exchange1][binding_keys][1]=binding_key3';
+
+        $connection = Connection::fromDsn($dsn, [], $factory);
+        $connection->publish('body');
+    }
+
+    public function testNoBindingKeysInExchangeBindings()
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('The "binding_keys" option must be set to a non-empty array for exchange "exchange0".');
+
+        $factory = new TestAmqpFactory(
+            $this->createStub(\AMQPConnection::class),
+            $this->createStub(\AMQPChannel::class),
+            $this->createStub(\AMQPQueue::class),
+            $this->createStub(\AMQPExchange::class)
+        );
+
+        $dsn = 'amqp://localhost?exchange[type]=headers'.
+            '&exchange[bindings][exchange0][binding_arguments][x-match]=all';
 
         $connection = Connection::fromDsn($dsn, [], $factory);
         $connection->publish('body');
@@ -1367,21 +1443,65 @@ class ConnectionTest extends TestCase
 
         return Connection::fromDsn('amqp://localhost', $options, $factory);
     }
+
+    public function testGettingDefaultExchange()
+    {
+        $factory = $this->createMock(AmqpFactory::class);
+
+        $amqpExchange = $this->createMock(\AMQPExchange::class);
+        $amqpExchange->expects($this->once())->method('setName')->with('');
+        $amqpExchange->expects($this->once())->method('setType')->with(\AMQP_EX_TYPE_DIRECT);
+        $amqpExchange->expects($this->never())->method('setFlags');
+        $amqpExchange->expects($this->never())->method('setArguments');
+
+        $factory->expects($this->once())->method('createExchange')->willReturn($amqpExchange);
+
+        $connection = new Connection([
+            'host' => 'localhost',
+            'port' => 5672,
+            'vhost' => '/',
+        ], [
+            'name' => '',
+        ], [
+            '' => [],
+        ], $factory);
+
+        $connection->exchange();
+    }
+
+    public function testBindIsNotCalledWhenPublishingInDefaultExchange()
+    {
+        $factory = $this->createMock(AmqpFactory::class);
+
+        $amqpExchange = $this->createMock(\AMQPExchange::class);
+        $amqpExchange->expects($this->never())->method('declareExchange');
+
+        $factory->expects($this->once())->method('createExchange')->willReturn($amqpExchange);
+        $factory->expects($this->once())->method('createQueue')->willReturn($queue = $this->createMock(\AMQPQueue::class));
+        $queue->expects($this->never())->method('bind');
+
+        $connection = new Connection([
+            'host' => 'localhost',
+            'port' => 5672,
+            'vhost' => '/',
+        ], [
+            'name' => '',
+        ], [
+            '' => [],
+        ], $factory);
+
+        $connection->publish('body');
+    }
 }
 
 class TestAmqpFactory extends AmqpFactory
 {
-    private \AMQPConnection $connection;
-    private \AMQPChannel $channel;
-    private \AMQPQueue $queue;
-    private \AMQPExchange $exchange;
-
-    public function __construct(\AMQPConnection $connection, \AMQPChannel $channel, \AMQPQueue $queue, \AMQPExchange $exchange)
-    {
-        $this->connection = $connection;
-        $this->channel = $channel;
-        $this->queue = $queue;
-        $this->exchange = $exchange;
+    public function __construct(
+        private \AMQPConnection $connection,
+        private \AMQPChannel $channel,
+        private \AMQPQueue $queue,
+        private \AMQPExchange $exchange,
+    ) {
     }
 
     public function createConnection(array $credentials): \AMQPConnection

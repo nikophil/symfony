@@ -11,11 +11,13 @@
 
 namespace Symfony\Bundle\SecurityBundle\Tests\Functional;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\HttpFoundation\Cookie;
 use Symfony\Component\HttpFoundation\ResponseHeaderBag;
 
 class RememberMeCookieTest extends AbstractWebTestCase
 {
-    /** @dataProvider getSessionRememberMeSecureCookieFlagAutoHttpsMap */
+    #[DataProvider('getSessionRememberMeSecureCookieFlagAutoHttpsMap')]
     public function testSessionRememberMeSecureCookieFlagAuto($https, $expectedSecureFlag)
     {
         $client = $this->createClient(['test_case' => 'RememberMeCookie', 'root_config' => 'config.yml']);
@@ -29,6 +31,23 @@ class RememberMeCookieTest extends AbstractWebTestCase
 
         $cookies = $client->getResponse()->headers->getCookies(ResponseHeaderBag::COOKIES_ARRAY);
         $this->assertSame($expectedSecureFlag, $cookies['']['/']['REMEMBERME']->isSecure());
+    }
+
+    #[DataProvider('getSessionRememberMeSecureCookieFlagAutoHttpsMap')]
+    public function testRememberMeCookieDefaults($https, $expectedSecureFlag)
+    {
+        $client = $this->createClient(['test_case' => 'RememberMeCookie', 'root_config' => 'config_defaults.yml']);
+
+        $client->request('POST', '/login', [
+            '_username' => 'test',
+            '_password' => 'test',
+        ], [], [
+            'HTTPS' => (int) $https,
+        ]);
+
+        $cookies = $client->getResponse()->headers->getCookies(ResponseHeaderBag::COOKIES_ARRAY);
+        $this->assertSame($expectedSecureFlag, $cookies['']['/']['REMEMBERME']->isSecure());
+        $this->assertSame(Cookie::SAMESITE_LAX, $cookies['']['/']['REMEMBERME']->getSameSite());
     }
 
     public static function getSessionRememberMeSecureCookieFlagAutoHttpsMap()

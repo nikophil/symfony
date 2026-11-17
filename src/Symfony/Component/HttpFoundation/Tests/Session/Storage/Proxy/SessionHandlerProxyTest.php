@@ -11,6 +11,9 @@
 
 namespace Symfony\Component\HttpFoundation\Tests\Session\Storage\Proxy;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Session\Storage\Handler\StrictSessionHandler;
 use Symfony\Component\HttpFoundation\Session\Storage\NativeSessionStorage;
@@ -21,11 +24,9 @@ use Symfony\Component\HttpFoundation\Tests\Fixtures\BareSessionHandler;
  * Tests for SessionHandlerProxy class.
  *
  * @author Drak <drak@zikula.org>
- *
- * @runTestsInSeparateProcesses
- *
- * @preserveGlobalState disabled
  */
+#[PreserveGlobalState(false)]
+#[RunTestsInSeparateProcesses]
 class SessionHandlerProxyTest extends TestCase
 {
     public function testOpenTrue()
@@ -183,9 +184,7 @@ class SessionHandlerProxyTest extends TestCase
         $this->assertTrue($proxy->updateTimestamp('id', 'data'));
     }
 
-    /**
-     * @dataProvider provideNativeSessionStorageHandler
-     */
+    #[DataProvider('provideNativeSessionStorageHandler')]
     public function testNativeSessionStorageSaveHandlerName($handlerType)
     {
         switch ($handlerType) {

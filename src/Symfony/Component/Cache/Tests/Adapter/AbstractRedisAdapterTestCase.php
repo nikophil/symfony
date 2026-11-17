@@ -11,20 +11,22 @@
 
 namespace Symfony\Component\Cache\Tests\Adapter;
 
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use Psr\Cache\CacheItemPoolInterface;
+use Relay\Cluster as RelayCluster;
 use Relay\Relay;
 use Symfony\Component\Cache\Adapter\RedisAdapter;
 use Symfony\Component\Cache\Adapter\RedisTagAwareAdapter;
 
 abstract class AbstractRedisAdapterTestCase extends AdapterTestCase
 {
-    protected $skippedTests = [
+    protected array $skippedTests = [
         'testExpiration' => 'Testing expiration slows down the test suite',
         'testHasItemReturnsFalseWhenDeferredItemIsExpired' => 'Testing expiration slows down the test suite',
         'testDefaultLifeTime' => 'Testing expiration slows down the test suite',
     ];
 
-    protected static \Redis|Relay|\RedisArray|\RedisCluster|\Predis\ClientInterface $redis;
+    protected static \Redis|Relay|RelayCluster|\RedisArray|\RedisCluster|\Predis\ClientInterface $redis;
 
     public function createCachePool(int $defaultLifetime = 0, ?string $testMethod = null): CacheItemPoolInterface
     {
@@ -43,9 +45,7 @@ abstract class AbstractRedisAdapterTestCase extends AdapterTestCase
         }
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testClearWithPrefix()
     {
         $cache = $this->createCachePool(0, __FUNCTION__);

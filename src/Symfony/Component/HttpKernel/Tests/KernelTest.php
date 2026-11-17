@@ -11,17 +11,16 @@
 
 namespace Symfony\Component\HttpKernel\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
-use Symfony\Bridge\PhpUnit\ExpectDeprecationTrait;
 use Symfony\Component\Config\ConfigCache;
 use Symfony\Component\Config\Loader\LoaderInterface;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
-use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Extension\ExtensionInterface;
-use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\Filesystem\Exception\IOException;
 use Symfony\Component\Filesystem\Filesystem;
@@ -39,15 +38,11 @@ use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\Kernel;
 use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\HttpKernel\TerminableInterface;
-use Symfony\Component\HttpKernel\Tests\Fixtures\KernelForTest;
-use Symfony\Component\HttpKernel\Tests\Fixtures\KernelForTestWithLoadClassCache;
 use Symfony\Component\HttpKernel\Tests\Fixtures\KernelWithoutBundles;
 use Symfony\Component\HttpKernel\Tests\Fixtures\ResettableService;
 
 class KernelTest extends TestCase
 {
-    use ExpectDeprecationTrait;
-
     protected function tearDown(): void
     {
         try {
@@ -127,9 +122,7 @@ class KernelTest extends TestCase
         $this->assertFileDoesNotExist($legacyContainerDir.'.legacy');
     }
 
-    /**
-     * @dataProvider provideFailingContainerBuilds
-     */
+    #[DataProvider('provideFailingContainerBuilds')]
     public function testContainerBuildLockIsReleasedWhenContainerFailsToBuild(\Closure $createKernel, string $exceptionMessage)
     {
         $cacheDir = __DIR__.'/Fixtures/var/cache/container-build-lock-'.uniqid('', true);
@@ -348,118 +341,12 @@ class KernelTest extends TestCase
         $kernel->handle($request, $type, $catch);
     }
 
-    /**
-     * @dataProvider getStripCommentsCodes
-     *
-     * @group legacy
-     */
-    public function testStripComments(string $source, string $expected)
-    {
-        $this->expectDeprecation('Since symfony/http-kernel 6.4: Method "Symfony\Component\HttpKernel\Kernel::stripComments()" is deprecated without replacement.');
-
-        $output = Kernel::stripComments($source);
-
-        // Heredocs are preserved, making the output mixing Unix and Windows line
-        // endings, switching to "\n" everywhere on Windows to avoid failure.
-        if ('\\' === \DIRECTORY_SEPARATOR) {
-            $expected = str_replace("\r\n", "\n", $expected);
-            $output = str_replace("\r\n", "\n", $output);
-        }
-
-        $this->assertEquals($expected, $output);
-    }
-
-    public static function getStripCommentsCodes(): array
-    {
-        return [
-            ['<?php echo foo();', '<?php echo foo();'],
-            ['<?php echo/**/foo();', '<?php echo foo();'],
-            ['<?php echo/** bar */foo();', '<?php echo foo();'],
-            ['<?php /**/echo foo();', '<?php echo foo();'],
-            ['<?php echo \foo();', '<?php echo \foo();'],
-            ['<?php echo/**/\foo();', '<?php echo \foo();'],
-            ['<?php echo/** bar */\foo();', '<?php echo \foo();'],
-            ['<?php /**/echo \foo();', '<?php echo \foo();'],
-            [
-                <<<'EOF'
-                    <?php
-                    include_once \dirname(__DIR__).'/foo.php';
-
-                    $string = 'string should not be   modified';
-
-                    $string = 'string should not be
-
-                    modified';
-
-
-                    $heredoc = <<<HD
-
-
-                    Heredoc should not be   modified {$a[1+$b]}
-
-
-                    HD;
-
-                    $nowdoc = <<<'ND'
-
-
-                    Nowdoc should not be   modified
-
-
-                    ND;
-
-                    /**
-                     * some class comments to strip
-                     */
-                    class TestClass
-                    {
-                        /**
-                         * some method comments to strip
-                         */
-                        public function doStuff()
-                        {
-                            // inline comment
-                        }
-                    }
-                    EOF,
-                <<<'EOF'
-                    <?php
-                    include_once \dirname(__DIR__).'/foo.php';
-                    $string = 'string should not be   modified';
-                    $string = 'string should not be
-
-                    modified';
-                    $heredoc = <<<HD
-
-
-                    Heredoc should not be   modified {$a[1+$b]}
-
-
-                    HD;
-                    $nowdoc = <<<'ND'
-
-
-                    Nowdoc should not be   modified
-
-
-                    ND;
-                    class TestClass
-                    {
-                        public function doStuff()
-                        {
-                            }
-                    }
-                    EOF,
-            ],
-        ];
-    }
-
     public function testSerialize()
     {
         $env = 'test_env';
         $debug = true;
         $kernel = new KernelForTest($env, $debug);
-        $expected = "O:57:\"Symfony\Component\HttpKernel\Tests\Fixtures\KernelForTest\":2:{s:14:\"\0*\0environment\";s:8:\"test_env\";s:8:\"\0*\0debug\";b:1;}";
+        $expected = \sprintf('O:48:"%s":2:{s:11:"environment";s:8:"test_env";s:5:"debug";b:1;}', KernelForTest::class);
         $this->assertEquals($expected, serialize($kernel));
     }
 
@@ -658,11 +545,17 @@ class KernelTest extends TestCase
                 $container->setParameter('test.extension-registered', true);
             }
 
+            /**
+             * @deprecated since Symfony 7.4, to be removed in Symfony 8.0 together with XML support.
+             */
             public function getNamespace(): string
             {
                 return '';
             }
 
+            /**
+             * @deprecated since Symfony 7.4, to be removed in Symfony 8.0 together with XML support.
+             */
             public function getXsdValidationBasePath(): string|false
             {
                 return false;
@@ -793,7 +686,7 @@ class KernelTest extends TestCase
                 ->setPublic(true);
             $container->register('http_cache', HttpCache::class)
                 ->setPublic(true)
-                ->setArguments([new Reference('kernel'), new Definition(Store::class, [__DIR__.'/Fixtures/var/http_cache']), null, ['terminate_on_cache_hit' => false]]);
+                ->setArguments([new Reference('kernel'), new Definition(Store::class, [__DIR__.'/Fixtures/var/http_cache'])]);
         }, $httpKernel, 'http_cache_terminate');
 
         $request = Request::create('/page');
@@ -827,9 +720,7 @@ class KernelTest extends TestCase
         $this->assertSame([null], $httpKernel->terminatedRoutes);
     }
 
-    /**
-     * @group time-sensitive
-     */
+    #[Group('time-sensitive')]
     public function testKernelStartTimeIsResetWhileBootingAlreadyBootedKernel()
     {
         $kernel = new KernelForTest('test', true);
@@ -863,43 +754,23 @@ class KernelTest extends TestCase
         $this->assertMatchesRegularExpression('/^[a-zA-Z_\x80-\xff][a-zA-Z0-9_\x80-\xff]*TestDebugContainer$/', $kernel->getContainerClass());
     }
 
-    /**
-     * @group legacy
-     */
-    public function testKernelWithParameterDeprecation()
+    public function testTrustedParameters()
     {
-        $kernel = new class('test', true) extends Kernel {
-            public function __construct(string $env, bool $debug)
-            {
-                $this->container = new ContainerBuilder(new ParameterBag(['container.dumper.inline_factories' => true, 'container.dumper.inline_class_loader' => true]));
-                parent::__construct($env, $debug);
-            }
-
-            public function registerBundles(): iterable
-            {
-                return [];
-            }
-
-            public function registerContainerConfiguration(LoaderInterface $loader): void
-            {
-            }
-
-            public function boot(): void
-            {
-                $this->container->compile();
-                parent::dumpContainer(new ConfigCache(tempnam(sys_get_temp_dir(), 'symfony-kernel-deprecated-parameter'), true), $this->container, Container::class, $this->getContainerBaseClass());
-            }
-
-            public function getContainerClass(): string
-            {
-                return parent::getContainerClass();
-            }
-        };
-
-        $this->expectDeprecation('Since symfony/http-kernel 6.3: Parameter "container.dumper.inline_factories" is deprecated, use ".container.dumper.inline_factories" instead.');
-        $this->expectDeprecation('Since symfony/http-kernel 6.3: Parameter "container.dumper.inline_class_loader" is deprecated, use ".container.dumper.inline_class_loader" instead.');
-
+        $kernel = new CustomProjectDirKernel(static function (ContainerBuilder $container) {
+            $container->setParameter('kernel.trusted_hosts', '^a{2,3}.com$, ^b{2,}.com$');
+            $container->setParameter('kernel.trusted_proxies', 'a,b');
+            $container->setParameter('kernel.trusted_headers', 'x-forwarded-for');
+        });
         $kernel->boot();
+
+        try {
+            $this->assertSame(['{^a{2,3}.com$}i', '{^b{2,}.com$}i'], Request::getTrustedHosts());
+            $this->assertSame(['a', 'b'], Request::getTrustedProxies());
+            $this->assertSame(Request::HEADER_X_FORWARDED_FOR, Request::getTrustedHeaderSet());
+        } finally {
+            Request::setTrustedHosts([]);
+            Request::setTrustedProxies([], 0);
+        }
     }
 
     /**
@@ -1236,6 +1107,58 @@ class ThrowingHttpKernel implements HttpKernelInterface
     public function handle(Request $request, int $type = self::MAIN_REQUEST, bool $catch = true): Response
     {
         throw new \LogicException('The worker HTTP kernel should not be reached when the http_cache service handles the request.');
+    }
+}
+
+class KernelForTest extends Kernel
+{
+    public function __construct(
+        string $environment,
+        bool $debug,
+        private readonly bool $fakeContainer = true,
+        private array $registeredBundles = [],
+    ) {
+        parent::__construct($environment, $debug);
+    }
+
+    public function getBundleMap(): array
+    {
+        return [];
+    }
+
+    public function registerBundles(): iterable
+    {
+        return $this->registeredBundles;
+    }
+
+    public function registerContainerConfiguration(LoaderInterface $loader): void
+    {
+    }
+
+    public function isBooted(): bool
+    {
+        return $this->booted;
+    }
+
+    public function getProjectDir(): string
+    {
+        return __DIR__;
+    }
+
+    protected function initializeContainer(): void
+    {
+        if ($this->fakeContainer) {
+            $this->container = new ContainerBuilder();
+        } else {
+            parent::initializeContainer();
+        }
+    }
+}
+
+class KernelForTestWithLoadClassCache extends KernelForTest
+{
+    public function doLoadClassCache(): void
+    {
     }
 }
 

@@ -19,6 +19,9 @@ use Doctrine\DBAL\Types\BigIntType;
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Mapping\Driver\AttributeDriver;
 use Doctrine\ORM\ORMSetup;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bridge\Doctrine\PropertyInfo\DoctrineExtractor;
 use Symfony\Bridge\Doctrine\Tests\DoctrineTestHelper;
@@ -33,7 +36,8 @@ use Symfony\Bridge\Doctrine\Tests\PropertyInfo\Fixtures\EnumInt;
 use Symfony\Bridge\Doctrine\Tests\PropertyInfo\Fixtures\EnumString;
 use Symfony\Bridge\Doctrine\Types\UlidType;
 use Symfony\Bridge\Doctrine\Types\UuidType;
-use Symfony\Component\PropertyInfo\Type;
+use Symfony\Component\PropertyInfo\Type as LegacyType;
+use Symfony\Component\TypeInfo\Type;
 
 /**
  * @author Kévin Dunglas <dunglas@gmail.com>
@@ -44,15 +48,11 @@ class DoctrineExtractorTest extends TestCase
     {
         $config = ORMSetup::createConfiguration(true);
         $config->setMetadataDriverImpl(new AttributeDriver([__DIR__.'/../Tests/Fixtures' => 'Symfony\Bridge\Doctrine\Tests\Fixtures'], true));
-        if (class_exists(DefaultSchemaManagerFactory::class)) {
-            $config->setSchemaManagerFactory(new DefaultSchemaManagerFactory());
-        }
-        if (!class_exists(\Doctrine\Persistence\Mapping\Driver\AnnotationDriver::class)) { // doctrine/persistence >= 3.0
-            if (\PHP_VERSION_ID >= 80400 && method_exists($config, 'enableNativeLazyObjects')) {
-                $config->enableNativeLazyObjects(true);
-            } else {
-                $config->setLazyGhostObjectEnabled(true);
-            }
+        $config->setSchemaManagerFactory(new DefaultSchemaManagerFactory());
+        if (\PHP_VERSION_ID >= 80400 && method_exists($config, 'enableNativeLazyObjects')) {
+            $config->enableNativeLazyObjects(true);
+        } else {
+            $config->setLazyGhostObjectEnabled(true);
         }
 
         DoctrineTestHelper::registerTypes($config, ['foo' => DoctrineFooType::class, 'uuid' => UuidType::class, 'ulid' => UlidType::class]);
@@ -118,18 +118,32 @@ class DoctrineExtractorTest extends TestCase
         );
     }
 
-    /**
-     * @dataProvider typesProvider
-     */
-    public function testExtract(string $property, ?array $type = null)
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('legacyTypesProvider')]
+    public function testExtractLegacy(string $property, ?callable $typeFactory = null)
     {
-        $this->assertEquals($type, $this->createExtractor()->getTypes(DoctrineDummy::class, $property, []));
+        if (!class_exists(LegacyType::class)) {
+            $this->markTestSkipped('This test requires symfony/property-info < 8.0.');
+        }
+
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Bridge\Doctrine\PropertyInfo\DoctrineExtractor::getTypes()" method is deprecated, use "Symfony\Bridge\Doctrine\PropertyInfo\DoctrineExtractor::getType()" instead.');
+
+        $this->assertEquals(null !== $typeFactory ? $typeFactory() : null, $this->createExtractor()->getTypes(DoctrineDummy::class, $property, []));
     }
 
-    public function testExtractWithEmbedded()
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testExtractWithEmbeddedLegacy()
     {
-        $expectedTypes = [new Type(
-            Type::BUILTIN_TYPE_OBJECT,
+        if (!class_exists(LegacyType::class)) {
+            $this->markTestSkipped('This test requires symfony/property-info < 8.0.');
+        }
+
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Bridge\Doctrine\PropertyInfo\DoctrineExtractor::getTypes()" method is deprecated, use "Symfony\Bridge\Doctrine\PropertyInfo\DoctrineExtractor::getType()" instead.');
+
+        $expectedTypes = [new LegacyType(
+            LegacyType::BUILTIN_TYPE_OBJECT,
             false,
             DoctrineEmbeddable::class
         )];
@@ -143,121 +157,131 @@ class DoctrineExtractorTest extends TestCase
         $this->assertEquals($expectedTypes, $actualTypes);
     }
 
-    public function testExtractEnum()
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testExtractEnumLegacy()
     {
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, EnumString::class)], $this->createExtractor()->getTypes(DoctrineEnum::class, 'enumString', []));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_OBJECT, false, EnumInt::class)], $this->createExtractor()->getTypes(DoctrineEnum::class, 'enumInt', []));
+        if (!class_exists(LegacyType::class)) {
+            $this->markTestSkipped('This test requires symfony/property-info < 8.0.');
+        }
+
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Bridge\Doctrine\PropertyInfo\DoctrineExtractor::getTypes()" method is deprecated, use "Symfony\Bridge\Doctrine\PropertyInfo\DoctrineExtractor::getType()" instead.');
+
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, EnumString::class)], $this->createExtractor()->getTypes(DoctrineEnum::class, 'enumString', []));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, EnumInt::class)], $this->createExtractor()->getTypes(DoctrineEnum::class, 'enumInt', []));
         $this->assertNull($this->createExtractor()->getTypes(DoctrineEnum::class, 'enumStringArray', []));
-        $this->assertEquals([new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_OBJECT, false, EnumInt::class))], $this->createExtractor()->getTypes(DoctrineEnum::class, 'enumIntArray', []));
+        $this->assertEquals([new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, EnumInt::class))], $this->createExtractor()->getTypes(DoctrineEnum::class, 'enumIntArray', []));
         $this->assertNull($this->createExtractor()->getTypes(DoctrineEnum::class, 'enumCustom', []));
     }
 
-    public static function typesProvider(): array
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public static function legacyTypesProvider(): array
     {
         // DBAL 4 has a special fallback strategy for BINGINT (int -> string)
         if (!method_exists(BigIntType::class, 'getName')) {
-            $expectedBingIntType = [new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_STRING)];
+            $expectedBingIntType = static fn () => [new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
         } else {
-            $expectedBingIntType = [new Type(Type::BUILTIN_TYPE_STRING)];
+            $expectedBingIntType = static fn () => [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)];
         }
 
         return [
-            ['id', [new Type(Type::BUILTIN_TYPE_INT)]],
-            ['guid', [new Type(Type::BUILTIN_TYPE_STRING)]],
+            ['id', static fn () => [new LegacyType(LegacyType::BUILTIN_TYPE_INT)]],
+            ['guid', static fn () => [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]],
             ['uuid', null],
             ['ulid', null],
             ['bigint', $expectedBingIntType],
-            ['time', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'DateTime')]],
-            ['timeImmutable', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable')]],
-            ['dateInterval', [new Type(Type::BUILTIN_TYPE_OBJECT, false, 'DateInterval')]],
-            ['float', [new Type(Type::BUILTIN_TYPE_FLOAT)]],
-            ['decimal', [new Type(Type::BUILTIN_TYPE_STRING)]],
-            ['bool', [new Type(Type::BUILTIN_TYPE_BOOL)]],
-            ['binary', [new Type(Type::BUILTIN_TYPE_RESOURCE)]],
-            ['jsonArray', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true)]],
-            ['foo', [new Type(Type::BUILTIN_TYPE_OBJECT, true, 'Symfony\Bridge\Doctrine\Tests\PropertyInfo\Fixtures\DoctrineRelation')]],
-            ['bar', [new Type(
-                Type::BUILTIN_TYPE_OBJECT,
+            ['time', static fn () => [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTime')]],
+            ['timeImmutable', static fn () => [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateTimeImmutable')]],
+            ['dateInterval', static fn () => [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'DateInterval')]],
+            ['float', static fn () => [new LegacyType(LegacyType::BUILTIN_TYPE_FLOAT)]],
+            ['decimal', static fn () => [new LegacyType(LegacyType::BUILTIN_TYPE_STRING)]],
+            ['bool', static fn () => [new LegacyType(LegacyType::BUILTIN_TYPE_BOOL)]],
+            ['binary', static fn () => [new LegacyType(LegacyType::BUILTIN_TYPE_RESOURCE)]],
+            ['jsonArray', static fn () => [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true)]],
+            ['foo', static fn () => [new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, true, 'Symfony\Bridge\Doctrine\Tests\PropertyInfo\Fixtures\DoctrineRelation')]],
+            ['bar', static fn () => [new LegacyType(
+                LegacyType::BUILTIN_TYPE_OBJECT,
                 false,
                 'Doctrine\Common\Collections\Collection',
                 true,
-                new Type(Type::BUILTIN_TYPE_INT),
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, 'Symfony\Bridge\Doctrine\Tests\PropertyInfo\Fixtures\DoctrineRelation')
+                new LegacyType(LegacyType::BUILTIN_TYPE_INT),
+                new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'Symfony\Bridge\Doctrine\Tests\PropertyInfo\Fixtures\DoctrineRelation')
             )]],
-            ['indexedRguid', [new Type(
-                Type::BUILTIN_TYPE_OBJECT,
+            ['indexedRguid', static fn () => [new LegacyType(
+                LegacyType::BUILTIN_TYPE_OBJECT,
                 false,
                 'Doctrine\Common\Collections\Collection',
                 true,
-                new Type(Type::BUILTIN_TYPE_STRING),
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, 'Symfony\Bridge\Doctrine\Tests\PropertyInfo\Fixtures\DoctrineRelation')
+                new LegacyType(LegacyType::BUILTIN_TYPE_STRING),
+                new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'Symfony\Bridge\Doctrine\Tests\PropertyInfo\Fixtures\DoctrineRelation')
             )]],
-            ['indexedBar', [new Type(
-                Type::BUILTIN_TYPE_OBJECT,
+            ['indexedBar', static fn () => [new LegacyType(
+                LegacyType::BUILTIN_TYPE_OBJECT,
                 false,
                 'Doctrine\Common\Collections\Collection',
                 true,
-                new Type(Type::BUILTIN_TYPE_STRING),
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, 'Symfony\Bridge\Doctrine\Tests\PropertyInfo\Fixtures\DoctrineRelation')
+                new LegacyType(LegacyType::BUILTIN_TYPE_STRING),
+                new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'Symfony\Bridge\Doctrine\Tests\PropertyInfo\Fixtures\DoctrineRelation')
             )]],
-            ['indexedFoo', [new Type(
-                Type::BUILTIN_TYPE_OBJECT,
+            ['indexedFoo', static fn () => [new LegacyType(
+                LegacyType::BUILTIN_TYPE_OBJECT,
                 false,
                 'Doctrine\Common\Collections\Collection',
                 true,
-                new Type(Type::BUILTIN_TYPE_STRING),
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, 'Symfony\Bridge\Doctrine\Tests\PropertyInfo\Fixtures\DoctrineRelation')
+                new LegacyType(LegacyType::BUILTIN_TYPE_STRING),
+                new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, 'Symfony\Bridge\Doctrine\Tests\PropertyInfo\Fixtures\DoctrineRelation')
             )]],
-            ['indexedBaz', [new Type(
-                Type::BUILTIN_TYPE_OBJECT,
+            ['indexedBaz', static fn () => [new LegacyType(
+                LegacyType::BUILTIN_TYPE_OBJECT,
                 false,
                 Collection::class,
                 true,
-                new Type(Type::BUILTIN_TYPE_INT),
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, DoctrineRelation::class)
+                new LegacyType(LegacyType::BUILTIN_TYPE_INT),
+                new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DoctrineRelation::class)
             )]],
-            ['simpleArray', [new Type(Type::BUILTIN_TYPE_ARRAY, false, null, true, new Type(Type::BUILTIN_TYPE_INT), new Type(Type::BUILTIN_TYPE_STRING))]],
+            ['simpleArray', static fn () => [new LegacyType(LegacyType::BUILTIN_TYPE_ARRAY, false, null, true, new LegacyType(LegacyType::BUILTIN_TYPE_INT), new LegacyType(LegacyType::BUILTIN_TYPE_STRING))]],
             ['customFoo', null],
             ['notMapped', null],
-            ['indexedByDt', [new Type(
-                Type::BUILTIN_TYPE_OBJECT,
+            ['indexedByDt', static fn () => [new LegacyType(
+                LegacyType::BUILTIN_TYPE_OBJECT,
                 false,
                 Collection::class,
                 true,
                 null,
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, DoctrineRelation::class)
+                new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DoctrineRelation::class)
             )]],
-            ['indexedByCustomType', [new Type(
-                Type::BUILTIN_TYPE_OBJECT,
+            ['indexedByCustomType', static fn () => [new LegacyType(
+                LegacyType::BUILTIN_TYPE_OBJECT,
                 false,
                 Collection::class,
                 true,
                 null,
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, DoctrineRelation::class)
+                new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DoctrineRelation::class)
             )]],
-            ['indexedByUuid', [new Type(
-                Type::BUILTIN_TYPE_OBJECT,
+            ['indexedByUuid', static fn () => [new LegacyType(
+                LegacyType::BUILTIN_TYPE_OBJECT,
                 false,
                 Collection::class,
                 true,
                 null,
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, DoctrineRelation::class)
+                new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DoctrineRelation::class)
             )]],
-            ['indexedBuz', [new Type(
-                Type::BUILTIN_TYPE_OBJECT,
+            ['indexedBuz', static fn () => [new LegacyType(
+                LegacyType::BUILTIN_TYPE_OBJECT,
                 false,
                 Collection::class,
                 true,
-                new Type(Type::BUILTIN_TYPE_STRING),
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, DoctrineRelation::class)
+                new LegacyType(LegacyType::BUILTIN_TYPE_STRING),
+                new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DoctrineRelation::class)
             )]],
-            ['dummyGeneratedValueList', [new Type(
-                Type::BUILTIN_TYPE_OBJECT,
+            ['dummyGeneratedValueList', static fn () => [new LegacyType(
+                LegacyType::BUILTIN_TYPE_OBJECT,
                 false,
                 'Doctrine\Common\Collections\Collection',
                 true,
-                new Type(Type::BUILTIN_TYPE_INT),
-                new Type(Type::BUILTIN_TYPE_OBJECT, false, DoctrineRelation::class)
+                new LegacyType(LegacyType::BUILTIN_TYPE_INT),
+                new LegacyType(LegacyType::BUILTIN_TYPE_OBJECT, false, DoctrineRelation::class)
             )]],
             ['json', null],
         ];
@@ -268,8 +292,12 @@ class DoctrineExtractorTest extends TestCase
         $this->assertNull($this->createExtractor()->getProperties('Not\Exist'));
     }
 
-    public function testGetTypesCatchException()
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testGetTypesCatchExceptionLegacy()
     {
+        $this->expectUserDeprecationMessage('Since symfony/property-info 7.3: The "Symfony\Bridge\Doctrine\PropertyInfo\DoctrineExtractor::getTypes()" method is deprecated, use "Symfony\Bridge\Doctrine\PropertyInfo\DoctrineExtractor::getType()" instead.');
+
         $this->assertNull($this->createExtractor()->getTypes('Not\Exist', 'baz'));
     }
 
@@ -280,5 +308,75 @@ class DoctrineExtractorTest extends TestCase
         $this->assertNull($extractor->isReadable(DoctrineGeneratedValue::class, 'id'));
         $this->assertNull($extractor->isWritable(DoctrineGeneratedValue::class, 'foo'));
         $this->assertNull($extractor->isReadable(DoctrineGeneratedValue::class, 'foo'));
+    }
+
+    public function testExtractWithEmbedded()
+    {
+        $this->assertEquals(
+            Type::object(DoctrineEmbeddable::class),
+            $this->createExtractor()->getType(DoctrineWithEmbedded::class, 'embedded'),
+        );
+    }
+
+    public function testExtractEnum()
+    {
+        $this->assertEquals(Type::enum(EnumString::class), $this->createExtractor()->getType(DoctrineEnum::class, 'enumString'));
+        $this->assertEquals(Type::enum(EnumInt::class), $this->createExtractor()->getType(DoctrineEnum::class, 'enumInt'));
+        $this->assertNull($this->createExtractor()->getType(DoctrineEnum::class, 'enumStringArray'));
+        $this->assertEquals(Type::list(Type::enum(EnumInt::class)), $this->createExtractor()->getType(DoctrineEnum::class, 'enumIntArray'));
+        $this->assertNull($this->createExtractor()->getType(DoctrineEnum::class, 'enumCustom'));
+    }
+
+    #[DataProvider('typeProvider')]
+    public function testExtract(string $property, ?Type $type)
+    {
+        $this->assertEquals($type, $this->createExtractor()->getType(DoctrineDummy::class, $property, []));
+    }
+
+    /**
+     * @return iterable<array{0: string, 1: ?Type}>
+     */
+    public static function typeProvider(): iterable
+    {
+        // DBAL 4 has a special fallback strategy for BINGINT (int -> string)
+        if (!method_exists(BigIntType::class, 'getName')) {
+            $expectedBigIntType = Type::union(Type::int(), Type::string());
+        } else {
+            $expectedBigIntType = Type::string();
+        }
+
+        yield ['id', Type::int()];
+        yield ['guid', Type::string()];
+        yield ['uuid', null];
+        yield ['ulid', null];
+        yield ['bigint', $expectedBigIntType];
+        yield ['time', Type::object(\DateTime::class)];
+        yield ['timeImmutable', Type::object(\DateTimeImmutable::class)];
+        yield ['dateInterval', Type::object(\DateInterval::class)];
+        yield ['float', Type::float()];
+        yield ['decimal', Type::string()];
+        yield ['bool', Type::bool()];
+        yield ['binary', Type::resource()];
+        yield ['jsonArray', Type::array()];
+        yield ['foo', Type::nullable(Type::object(DoctrineRelation::class))];
+        yield ['bar', Type::collection(Type::object(Collection::class), Type::object(DoctrineRelation::class), Type::int())];
+        yield ['indexedRguid', Type::collection(Type::object(Collection::class), Type::object(DoctrineRelation::class), Type::string())];
+        yield ['indexedBar', Type::collection(Type::object(Collection::class), Type::object(DoctrineRelation::class), Type::string())];
+        yield ['indexedFoo', Type::collection(Type::object(Collection::class), Type::object(DoctrineRelation::class), Type::string())];
+        yield ['indexedBaz', Type::collection(Type::object(Collection::class), Type::object(DoctrineRelation::class), Type::int())];
+        yield ['simpleArray', Type::list(Type::string())];
+        yield ['customFoo', null];
+        yield ['notMapped', null];
+        yield ['indexedByDt', Type::collection(Type::object(Collection::class), Type::object(DoctrineRelation::class))];
+        yield ['indexedByCustomType', Type::collection(Type::object(Collection::class), Type::object(DoctrineRelation::class))];
+        yield ['indexedByUuid', Type::collection(Type::object(Collection::class), Type::object(DoctrineRelation::class))];
+        yield ['indexedBuz', Type::collection(Type::object(Collection::class), Type::object(DoctrineRelation::class), Type::string())];
+        yield ['dummyGeneratedValueList', Type::collection(Type::object(Collection::class), Type::object(DoctrineRelation::class), Type::int())];
+        yield ['json', null];
+    }
+
+    public function testGetTypeCatchException()
+    {
+        $this->assertNull($this->createExtractor()->getType('Not\Exist', 'baz'));
     }
 }

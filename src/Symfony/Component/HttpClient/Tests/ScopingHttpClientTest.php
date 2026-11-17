@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\HttpClient\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\Exception\InvalidArgumentException;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -38,9 +39,7 @@ class ScopingHttpClientTest extends TestCase
         $this->assertSame('http://example.com/foo?f=g&a=b', $client->request('GET', '/foo?f=g')->getInfo('url'));
     }
 
-    /**
-     * @dataProvider provideMatchingUrls
-     */
+    #[DataProvider('provideMatchingUrls')]
     public function testMatchingUrls(string $regexp, string $url, array $options)
     {
         $mockClient = new MockHttpClient();
@@ -106,16 +105,16 @@ class ScopingHttpClientTest extends TestCase
     public function testRetryableHttpClientIntegration()
     {
         $responses = [
-            new MockResponse(info: ['http_code' => 503]),
-            new MockResponse(info: ['http_code' => 503]),
-            new MockResponse(info: ['http_code' => 503]),
+            new MockResponse('', ['http_code' => 503]),
+            new MockResponse('', ['http_code' => 503]),
+            new MockResponse('', ['http_code' => 503]),
             new MockResponse(),
         ];
 
         $client = ScopingHttpClient::forBaseUri(
             new RetryableHttpClient(
                 new MockHttpClient($responses),
-                new GenericRetryStrategy(delayMs: 0)
+                new GenericRetryStrategy(GenericRetryStrategy::DEFAULT_RETRY_STATUS_CODES, 0)
             ),
             'https://foo.example.com/app/',
         );
@@ -125,9 +124,7 @@ class ScopingHttpClientTest extends TestCase
         $this->assertSame('https://foo.example.com/app/santysisi', $response->getInfo('url'));
     }
 
-    /**
-     * @dataProvider provideUrlsOnTheBaseUriOrigin
-     */
+    #[DataProvider('provideUrlsOnTheBaseUriOrigin')]
     public function testForBaseUriAppliesOptionsOnTheBaseUriOrigin(string $url, string $expectedUrl)
     {
         $client = ScopingHttpClient::forBaseUri(new MockHttpClient(null, null), 'https://safe.example/api/', [
@@ -157,9 +154,7 @@ class ScopingHttpClientTest extends TestCase
         yield 'absolute URL' => ['https://safe.example/api/users/1', 'https://safe.example/api/users/1'];
     }
 
-    /**
-     * @dataProvider provideUrlsOutsideTheBaseUriOrigin
-     */
+    #[DataProvider('provideUrlsOutsideTheBaseUriOrigin')]
     public function testForBaseUriDoesNotApplyOptionsOutsideTheBaseUriOrigin(string $url, string $expectedUrl)
     {
         $client = ScopingHttpClient::forBaseUri(new MockHttpClient(null, null), 'https://safe.example/api/', [
@@ -186,9 +181,7 @@ class ScopingHttpClientTest extends TestCase
         yield 'network-path reference with the default port of another scheme' => ['//safe.example:80/api/users/1', 'https://safe.example:80/api/users/1'];
     }
 
-    /**
-     * @dataProvider provideUrlsOnABaseUriWithUserinfo
-     */
+    #[DataProvider('provideUrlsOnABaseUriWithUserinfo')]
     public function testForBaseUriWithUserinfoAppliesOptionsOnItsHost(string $url, string $expectedUrl, bool $withUserinfo)
     {
         $client = ScopingHttpClient::forBaseUri(new MockHttpClient(null, null), 'https://user:pass@safe.example/api/', [
@@ -209,9 +202,7 @@ class ScopingHttpClientTest extends TestCase
         yield 'absolute URL with the userinfo of the base URI' => ['https://user:pass@safe.example/api/users/1', 'https://safe.example/api/users/1', true];
     }
 
-    /**
-     * @dataProvider provideUrlsWithUserinfo
-     */
+    #[DataProvider('provideUrlsWithUserinfo')]
     public function testScopesAreMatchedAgainstTheUrlWithoutItsUserinfo(string $url, bool $inScope)
     {
         $client = new ScopingHttpClient(new MockHttpClient(), [

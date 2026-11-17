@@ -22,7 +22,6 @@ use Twig\Template;
  */
 class TwigRendererEngine extends AbstractRendererEngine
 {
-    private Environment $environment;
     private bool $useBlockChain;
     private Template $template;
 
@@ -33,10 +32,12 @@ class TwigRendererEngine extends AbstractRendererEngine
 
     private ?BlockChain $defaultChain = null;
 
-    public function __construct(array $defaultThemes, Environment $environment)
-    {
+    public function __construct(
+        array $defaultThemes,
+        private Environment $environment,
+    ) {
         parent::__construct($defaultThemes);
-        $this->environment = $environment;
+
         $this->useBlockChain = class_exists(BlockChain::class);
     }
 
@@ -211,10 +212,8 @@ class TwigRendererEngine extends AbstractRendererEngine
      *                     to initialize the theme first. Any changes made to
      *                     this variable will be kept and be available upon
      *                     further calls to this method using the same theme.
-     *
-     * @return void
      */
-    protected function loadResourcesFromTheme(string $cacheKey, mixed &$theme)
+    protected function loadResourcesFromTheme(string $cacheKey, mixed &$theme): void
     {
         if (!$theme instanceof Template) {
             $theme = $this->environment->load($theme)->unwrap();

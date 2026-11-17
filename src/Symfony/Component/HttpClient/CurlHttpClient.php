@@ -42,7 +42,7 @@ final class CurlHttpClient implements HttpClientInterface, LoggerAwareInterface,
 
     private array $defaultOptions = self::OPTIONS_DEFAULTS + [
         'auth_ntlm' => null, // array|string - an array containing the username as first value, and optionally the
-                             //   password as the second one; or string like username:password - enabling NTLM auth
+        //   password as the second one; or string like username:password - enabling NTLM auth
         'extra' => [
             'curl' => [],    // A list of extra curl options indexed by their corresponding CURLOPT_*
         ],
@@ -108,7 +108,7 @@ final class CurlHttpClient implements HttpClientInterface, LoggerAwareInterface,
             \CURLOPT_PROTOCOLS => \CURLPROTO_HTTP | \CURLPROTO_HTTPS,
             \CURLOPT_REDIR_PROTOCOLS => \CURLPROTO_HTTP | \CURLPROTO_HTTPS,
             \CURLOPT_FOLLOWLOCATION => true,
-            \CURLOPT_MAXREDIRS => 0 < $options['max_redirects'] ? $options['max_redirects'] : 0,
+            \CURLOPT_MAXREDIRS => max(0, $options['max_redirects']),
             \CURLOPT_COOKIEFILE => '', // Keep track of cookies during redirects
             \CURLOPT_TIMEOUT => 0,
             // Always set, so that curl doesn't resolve the proxy from its own environment
@@ -135,6 +135,9 @@ final class CurlHttpClient implements HttpClientInterface, LoggerAwareInterface,
             $curlopts[\CURLOPT_HTTP_VERSION] = \CURL_HTTP_VERSION_1_0;
         } elseif (1.1 === (float) $options['http_version']) {
             $curlopts[\CURLOPT_HTTP_VERSION] = \CURL_HTTP_VERSION_1_1;
+        } elseif (3.0 === (float) $options['http_version'] && 'https:' === $scheme && \defined('CURL_HTTP_VERSION_3ONLY') && (\CURL_VERSION_HTTP3 & CurlClientState::$curlVersion['features']) && !self::willUseProxy($proxy, $curlopts[\CURLOPT_NOPROXY], $host)) {
+            // CURL_HTTP_VERSION_3 falls back to older versions since curl 7.88, which added CURL_HTTP_VERSION_3ONLY
+            $curlopts[\CURLOPT_HTTP_VERSION] = \CURL_HTTP_VERSION_3;
         } elseif (\defined('CURL_VERSION_HTTP2') && (\CURL_VERSION_HTTP2 & CurlClientState::$curlVersion['features']) && ('https:' === $scheme || 2.0 === (float) $options['http_version'])) {
             $curlopts[\CURLOPT_HTTP_VERSION] = \CURL_HTTP_VERSION_2_0;
         }
@@ -238,9 +241,18 @@ final class CurlHttpClient implements HttpClientInterface, LoggerAwareInterface,
         }
 
         if (!\is_string($body)) {
+            if (isset($options['auth_ntlm'])) {
+                $curlopts[\CURLOPT_FORBID_REUSE] = true; // Reusing NTLM connections requires seeking capability, which only string bodies support
+            }
+
             if (\is_resource($body)) {
                 // Not CURLOPT_READDATA: curl would then read streams such as php://temp through a FILE* that PHP creates once and that ignores later rewinds
                 $curlopts[\CURLOPT_READFUNCTION] = static fn ($ch, $fd, $length) => false !== ($data = fread($body, $length)) ? $data : '';
+
+                if (\defined('CURLOPT_SEEKFUNCTION') && stream_get_meta_data($body)['seekable']) {
+                    $start = ftell($body);
+                    $curlopts[\CURLOPT_SEEKFUNCTION] = static fn ($ch, $offset, $origin) => \SEEK_SET === $origin && 0 === fseek($body, $start + $offset) ? \CURL_SEEKFUNC_OK : \CURL_SEEKFUNC_CANTSEEK;
+                }
             } else {
                 $curlopts[\CURLOPT_READFUNCTION] = static function ($ch, $fd, $length) use ($body) {
                     static $eof = false;
@@ -328,7 +340,7 @@ final class CurlHttpClient implements HttpClientInterface, LoggerAwareInterface,
             }
         }
 
-        return $pushedResponse ?? new CurlResponse($this->multi, $ch, $options, $this->logger, $method, self::createRedirectResolver($options, $scheme, $authority, $noProxy), CurlClientState::$curlVersion['version_number'], $url, $ntlmOriginKey);
+        return $pushedResponse ?? new CurlResponse($this->multi, $ch, $options, $this->logger, $method, self::createRedirectResolver($options, $curlopts[\CURLOPT_HTTPHEADER], $scheme, $authority, $noProxy), CurlClientState::$curlVersion['version_number'], $url, $ntlmOriginKey);
     }
 
     public function stream(ResponseInterface|iterable $responses, ?float $timeout = null): ResponseStreamInterface
@@ -414,13 +426,13 @@ final class CurlHttpClient implements HttpClientInterface, LoggerAwareInterface,
      *
      * Work around CVE-2018-1000007: Authorization and Cookie headers should not follow redirects - fixed in Curl 7.64
      */
-    private static function createRedirectResolver(array $options, string $scheme, string $authority, string $noProxy): \Closure
+    private static function createRedirectResolver(array $options, array $headers, string $scheme, string $authority, string $noProxy): \Closure
     {
         $redirectHeaders = [];
         if (0 < $options['max_redirects']) {
             $redirectHeaders['scheme'] = $scheme;
             $redirectHeaders['authority'] = $authority;
-            $redirectHeaders['with_auth'] = $redirectHeaders['no_auth'] = array_filter($options['headers'], static fn ($h) => 0 !== stripos($h, 'Host:'));
+            $redirectHeaders['with_auth'] = $redirectHeaders['no_auth'] = array_filter($headers, static fn ($h) => 0 !== stripos($h, 'Host:'));
 
             if (isset($options['normalized_headers']['authorization'][0]) || isset($options['normalized_headers']['cookie'][0])) {
                 $redirectHeaders['no_auth'] = array_filter($redirectHeaders['no_auth'], static fn ($h) => 0 !== stripos($h, 'Authorization:') && 0 !== stripos($h, 'Cookie:'));
@@ -454,6 +466,10 @@ final class CurlHttpClient implements HttpClientInterface, LoggerAwareInterface,
             $proxy = self::getProxyUrl($options['proxy'], $url);
             self::checkHttpsProxySupport($proxy, $url, $noProxy);
             curl_setopt($ch, \CURLOPT_PROXY, $proxy ?? '');
+
+            if (\defined('CURL_HTTP_VERSION_3') && \CURL_HTTP_VERSION_3 === curl_getinfo($ch, \CURLINFO_HTTP_VERSION) && self::willUseProxy($proxy, $noProxy, parse_url($url['authority'], \PHP_URL_HOST))) {
+                curl_setopt($ch, \CURLOPT_HTTP_VERSION, \defined('CURL_HTTP_VERSION_2_0') ? \CURL_HTTP_VERSION_2_0 : \CURL_HTTP_VERSION_1_1);
+            }
 
             return implode('', $url);
         };
@@ -573,28 +589,41 @@ final class CurlHttpClient implements HttpClientInterface, LoggerAwareInterface,
             $curloptsToCheck[] = \CURLOPT_HEADEROPT;
         }
 
-        $methodOpts = [
-            \CURLOPT_POST,
-            \CURLOPT_PUT,
-            \CURLOPT_CUSTOMREQUEST,
-            \CURLOPT_HTTPGET,
-            \CURLOPT_NOBODY,
-        ];
-
         foreach ($options as $opt => $optValue) {
             if (isset($curloptsToConfig[$opt])) {
                 $constName = $this->findConstantName($opt) ?? $opt;
                 throw new InvalidArgumentException(\sprintf('Cannot set "%s" with "extra.curl", use option "%s" instead.', $constName, $curloptsToConfig[$opt]));
             }
 
-            if (\in_array($opt, $methodOpts)) {
+            if (\in_array($opt, [\CURLOPT_POST, \CURLOPT_PUT, \CURLOPT_CUSTOMREQUEST, \CURLOPT_HTTPGET, \CURLOPT_NOBODY], true)) {
                 throw new InvalidArgumentException('The HTTP method cannot be overridden using "extra.curl".');
             }
 
-            if (\in_array($opt, $curloptsToCheck)) {
+            if (\in_array($opt, $curloptsToCheck, true)) {
                 $constName = $this->findConstantName($opt) ?? $opt;
                 throw new InvalidArgumentException(\sprintf('Cannot set "%s" with "extra.curl".', $constName));
             }
         }
+    }
+
+    private static function willUseProxy(?string $proxy, string $noProxy, string $host): bool
+    {
+        if (null === $proxy) {
+            return false;
+        }
+
+        if ('' === $noProxy) {
+            return true;
+        }
+
+        foreach (preg_split('/[\s,]+/', $noProxy) as $rule) {
+            $dotRule = '.'.ltrim($rule, '.');
+
+            if ('*' === $rule || $host === $rule || str_ends_with($host, $dotRule)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

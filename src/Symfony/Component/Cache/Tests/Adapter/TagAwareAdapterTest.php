@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Cache\Tests\Adapter;
 
+use PHPUnit\Framework\Attributes\DoesNotPerformAssertions;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\MockObject\MockObject;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\Cache\Adapter\AdapterInterface;
@@ -21,9 +23,7 @@ use Symfony\Component\Cache\PruneableInterface;
 use Symfony\Component\Cache\Tests\Fixtures\PrunableAdapter;
 use Symfony\Component\Filesystem\Filesystem;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class TagAwareAdapterTest extends AdapterTestCase
 {
     use TagAwareTestTrait;
@@ -140,9 +140,7 @@ class TagAwareAdapterTest extends AdapterTestCase
         return $pruneable;
     }
 
-    /**
-     * @doesNotPerformAssertions
-     */
+    #[DoesNotPerformAssertions]
     public function testToleranceForStringsAsTagVersionsCase1()
     {
         $pool = $this->createCachePool();
@@ -157,9 +155,7 @@ class TagAwareAdapterTest extends AdapterTestCase
         $pool->getItem($itemKey);
     }
 
-    /**
-     * @doesNotPerformAssertions
-     */
+    #[DoesNotPerformAssertions]
     public function testToleranceForStringsAsTagVersionsCase2()
     {
         $pool = $this->createCachePool();
@@ -175,9 +171,7 @@ class TagAwareAdapterTest extends AdapterTestCase
         $pool->hasItem($itemKey);
     }
 
-    /**
-     * @doesNotPerformAssertions
-     */
+    #[DoesNotPerformAssertions]
     public function testToleranceForStringsAsTagVersionsCase3()
     {
         $pool = $this->createCachePool();
@@ -199,9 +193,7 @@ class TagAwareAdapterTest extends AdapterTestCase
         $pool->hasItem($itemKey);
     }
 
-    /**
-     * @doesNotPerformAssertions
-     */
+    #[DoesNotPerformAssertions]
     public function testToleranceForStringsAsTagVersionsCase4()
     {
         $pool = $this->createCachePool();
@@ -221,9 +213,7 @@ class TagAwareAdapterTest extends AdapterTestCase
         $pool->getItem($itemKey);
     }
 
-    /**
-     * @doesNotPerformAssertions
-     */
+    #[DoesNotPerformAssertions]
     public function testToleranceForStringsAsTagVersionsCase5()
     {
         $pool = $this->createCachePool();

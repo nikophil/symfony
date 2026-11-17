@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\VarDumper\Tests\Caster;
 
+use PHPUnit\Framework\Attributes\RequiresMethod;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\ErrorHandler\Exception\FlattenException;
 use Symfony\Component\ErrorHandler\Exception\SilencedErrorContext;
@@ -147,9 +148,7 @@ class ExceptionCasterTest extends TestCase
         $this->assertDumpMatchesFormat($expectedDump, $e);
     }
 
-    /**
-     * @requires function \Symfony\Component\ErrorHandler\Exception\SilencedErrorContext::__construct
-     */
+    #[RequiresMethod(SilencedErrorContext::class, '__construct')]
     public function testCastSilencedErrorContext()
     {
         $e = $this->getTestSilencedErrorContext();
@@ -407,9 +406,7 @@ class ExceptionCasterTest extends TestCase
         $this->assertDumpMatchesFormat($expectedDump, $e, Caster::EXCLUDE_VERBOSE);
     }
 
-    /**
-     * @requires function \Symfony\Component\ErrorHandler\Exception\FlattenException::create
-     */
+    #[RequiresMethod(FlattenException::class, 'create')]
     public function testFlattenException()
     {
         $f = FlattenException::createFromThrowable(new \Exception('Hello'));

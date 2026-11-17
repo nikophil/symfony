@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Form\Tests\Extension\Csrf\Type;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Form\AbstractType;
@@ -44,7 +45,7 @@ class FormTypeCsrfExtensionTest extends TypeTestCase
         parent::setUp();
     }
 
-    protected function getExtensions()
+    protected function getExtensions(): array
     {
         return array_merge(parent::getExtensions(), [
             new CsrfExtension($this->tokenManager, new IdentityTranslator()),
@@ -181,6 +182,26 @@ class FormTypeCsrfExtensionTest extends TypeTestCase
         $this->assertEquals('token', $view['csrf']->vars['value']);
     }
 
+    public function testGenerateCsrfTokenWhenAttributesAreReplaced()
+    {
+        $this->tokenManager->expects($this->once())
+            ->method('getToken')
+            ->with('FORM_NAME')
+            ->willReturn(new CsrfToken('TOKEN_ID', 'token'));
+
+        $view = $this->factory
+            ->createNamedBuilder('FORM_NAME', 'Symfony\Component\Form\Extension\Core\Type\FormType', null, [
+                'csrf_field_name' => 'csrf',
+                'csrf_token_manager' => $this->tokenManager,
+                'compound' => true,
+            ])
+            ->setAttributes([])
+            ->getForm()
+            ->createView();
+
+        $this->assertEquals('token', $view['csrf']->vars['value']);
+    }
+
     public static function provideBoolean()
     {
         return [
@@ -189,9 +210,7 @@ class FormTypeCsrfExtensionTest extends TypeTestCase
         ];
     }
 
-    /**
-     * @dataProvider provideBoolean
-     */
+    #[DataProvider('provideBoolean')]
     public function testValidateTokenOnSubmitIfRootAndCompound($valid)
     {
         $this->tokenManager->expects($this->once())
@@ -221,9 +240,7 @@ class FormTypeCsrfExtensionTest extends TypeTestCase
         $this->assertSame($valid, $form->isValid());
     }
 
-    /**
-     * @dataProvider provideBoolean
-     */
+    #[DataProvider('provideBoolean')]
     public function testValidateTokenOnSubmitIfRootAndCompoundUsesFormNameAsIntentionByDefault($valid)
     {
         $this->tokenManager->expects($this->once())
@@ -252,9 +269,7 @@ class FormTypeCsrfExtensionTest extends TypeTestCase
         $this->assertSame($valid, $form->isValid());
     }
 
-    /**
-     * @dataProvider provideBoolean
-     */
+    #[DataProvider('provideBoolean')]
     public function testValidateTokenOnSubmitIfRootAndCompoundUsesTypeClassAsIntentionIfEmptyFormName($valid)
     {
         $this->tokenManager->expects($this->once())

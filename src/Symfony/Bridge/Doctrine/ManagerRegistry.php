@@ -24,10 +24,7 @@ use Symfony\Component\VarExporter\LazyObjectInterface;
  */
 abstract class ManagerRegistry extends AbstractManagerRegistry
 {
-    /**
-     * @var Container
-     */
-    protected $container;
+    protected Container $container;
 
     protected function getService($name): object
     {
@@ -48,31 +45,88 @@ abstract class ManagerRegistry extends AbstractManagerRegistry
 
             return;
         }
-        if (!$manager instanceof LazyLoadingInterface) {
-            throw new \LogicException(\sprintf('Resetting a non-lazy manager service is not supported. Declare the "%s" service as lazy.', $name));
-        }
-        if ($manager instanceof GhostObjectInterface) {
-            throw new \LogicException('Resetting a lazy-ghost-object manager service is not supported.');
-        }
-        $manager->setProxyInitializer(\Closure::bind(
-            function (&$wrappedInstance, LazyLoadingInterface $manager) use ($name) {
-                if (isset($this->aliases[$name])) {
-                    $name = $this->aliases[$name];
-                }
-                if (isset($this->fileMap[$name])) {
-                    $wrappedInstance = $this->load($this->fileMap[$name], false);
-                } elseif ((new \ReflectionMethod($this, $this->methodMap[$name]))->isStatic()) {
-                    $wrappedInstance = $this->{$this->methodMap[$name]}($this, false);
-                } else {
-                    $wrappedInstance = $this->{$this->methodMap[$name]}(false);
-                }
+        if (\PHP_VERSION_ID < 80400) {
+            if (!$manager instanceof LazyLoadingInterface) {
+                throw new \LogicException(\sprintf('Resetting a non-lazy manager service is not supported. Declare the "%s" service as lazy.', $name));
+            }
+            trigger_deprecation('symfony/doctrine-bridge', '7.3', 'Support for proxy-manager is deprecated.');
 
-                $manager->setProxyInitializer(null);
+            if ($manager instanceof GhostObjectInterface) {
+                throw new \LogicException('Resetting a lazy-ghost-object manager service is not supported.');
+            }
+            $manager->setProxyInitializer(\Closure::bind(
+                function (&$wrappedInstance, LazyLoadingInterface $manager) use ($name) {
+                    $name = $this->aliases[$name] ?? $name;
+                    $wrappedInstance = match (true) {
+                        isset($this->fileMap[$name]) => $this->load($this->fileMap[$name], false),
+                        !$method = $this->methodMap[$name] ?? null => throw new \LogicException(\sprintf('The "%s" service is synthetic and cannot be reset.', $name)),
+                        (new \ReflectionMethod($this, $method))->isStatic() => $this->{$method}($this, false),
+                        default => $this->{$method}(false),
+                    };
+                    $manager->setProxyInitializer(null);
 
-                return true;
+                    return true;
+                },
+                $this->container,
+                Container::class
+            ));
+
+            return;
+        }
+
+        $r = new \ReflectionClass($manager);
+
+        if ($r->isUninitializedLazyObject($manager)) {
+            return;
+        }
+
+        $factory = \Closure::bind(
+            function ($lazyLoad) use ($name) {
+                $id = $this->aliases[$name] ?? $name;
+
+                return match (true) {
+                    isset($this->fileMap[$id]) => $this->load($this->fileMap[$id], $lazyLoad),
+                    !$method = $this->methodMap[$id] ?? null => throw new \LogicException(\sprintf('The "%s" service is synthetic and cannot be reset.', $id)),
+                    (new \ReflectionMethod($this, $method))->isStatic() => $this->{$method}($this, $lazyLoad),
+                    default => $this->{$method}($lazyLoad),
+                };
             },
             $this->container,
             Container::class
-        ));
+        );
+
+        // The factory of a lazy service returns a new uninitialized lazy object, while the one of a non-lazy service builds it right away
+        $instance = \Closure::bind(
+            function () use ($factory) {
+                [$services, $privates] = [$this->services, $this->privates];
+
+                try {
+                    return $factory(true);
+                } finally {
+                    [$this->services, $this->privates] = [$services, $privates];
+                }
+            },
+            $this->container,
+            Container::class
+        )();
+
+        try {
+            if (!(new \ReflectionClass($instance))->isUninitializedLazyObject($instance)) {
+                // A non-lazy manager cannot be rebuilt in place, so it forwards to the new instance instead
+                $r->resetAsLazyProxy($manager, static fn () => $instance);
+            } elseif ($r->initializeLazyObject($manager) !== $manager) {
+                $r->resetAsLazyProxy($manager, static fn () => $factory(false));
+            } else {
+                $r->resetAsLazyGhost($manager, static function ($manager) use ($factory) {
+                    $factory($manager);
+                });
+            }
+        } catch (\Error $e) {
+            if (__FILE__ !== $e->getFile()) {
+                throw $e;
+            }
+
+            throw new \LogicException(\sprintf('Resetting a non-lazy manager service is not supported. Declare the "%s" service as lazy.', $name), 0, $e);
+        }
     }
 }

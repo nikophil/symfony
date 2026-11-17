@@ -17,14 +17,13 @@ use Doctrine\DBAL\Driver\PgSQL\Driver;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Schema\DefaultSchemaManagerFactory;
 use Doctrine\DBAL\Tools\DsnParser;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Bridge\Doctrine\Transport\PostgreSqlConnection;
 
-/**
- * @requires extension pgsql
- *
- * @group integration
- */
+#[RequiresPhpExtension('pgsql')]
+#[Group('integration')]
 class DoctrinePostgreSqlNotifyIntegrationTest extends TestCase
 {
     private const NOTIFY_DELAY_IN_SECONDS = 0.3;
@@ -38,10 +37,6 @@ class DoctrinePostgreSqlNotifyIntegrationTest extends TestCase
     {
         if (!$host = getenv('POSTGRES_HOST')) {
             $this->markTestSkipped('Missing POSTGRES_HOST env variable');
-        }
-
-        if (!class_exists(Driver::class)) {
-            $this->markTestSkipped('The "pgsql" driver requires DBAL 3.6');
         }
 
         $config = new Configuration();

@@ -11,6 +11,7 @@
 
 namespace Symfony\Bundle\FrameworkBundle\Tests\Console\Descriptor;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Bundle\FrameworkBundle\Console\Descriptor\TextDescriptor;
 use Symfony\Component\ErrorHandler\ErrorRenderer\FileLinkFormatter;
 use Symfony\Component\Routing\Route;
@@ -35,8 +36,8 @@ class TextDescriptorTest extends AbstractDescriptorTestCase
         return static::getDescribeRouteWithControllerTestData('_link');
     }
 
-    /** @dataProvider getDescribeRouteWithControllerLinkTestData */
-    public function testDescribeRouteWithControllerLink(Route $route, $expectedDescription)
+    #[DataProvider('getDescribeRouteWithControllerLinkTestData')]
+    public function testDescribeRouteWithControllerLink(Route $route, $expectedDescription, $file)
     {
         static::$fileLinkFormatter = new FileLinkFormatter('myeditor://open?file=%f&line=%l');
         $this->assertDescription(static::expandFixturePlaceholders($expectedDescription), $route, ['raw_text' => false]);
@@ -47,8 +48,8 @@ class TextDescriptorTest extends AbstractDescriptorTestCase
         return static::getDescribeRouteWithControllerTestData('_link_raw');
     }
 
-    /** @dataProvider getDescribeRouteWithControllerLinkInRawModeTestData */
-    public function testDescribeRouteWithControllerLinkInRawMode(Route $route, $expectedDescription)
+    #[DataProvider('getDescribeRouteWithControllerLinkInRawModeTestData')]
+    public function testDescribeRouteWithControllerLinkInRawMode(Route $route, $expectedDescription, $file)
     {
         static::$fileLinkFormatter = new FileLinkFormatter('myeditor://open?file=%f&line=%l');
         $this->assertDescription($expectedDescription, $route);
@@ -66,6 +67,13 @@ class TextDescriptorTest extends AbstractDescriptorTestCase
         static::$fileLinkFormatter = new FileLinkFormatter('myeditor://open?file=%f&line=%l');
         $expectedDescription = file_get_contents(__DIR__.'/../../Fixtures/Descriptor/route_collection_1_link_raw.txt');
         $this->assertDescription($expectedDescription, static::getRouteCollectionWithControllers(), ['show_controllers' => true]);
+    }
+
+    protected function normalizeOutput(string $output): string
+    {
+        $output = str_replace(\PHP_EOL, "\n", $output);
+
+        return preg_replace_callback("/\e\[([0-9]+)X\e\[([0-9]+)C/", static fn ($m) => str_repeat(' ', $m[1]), $output);
     }
 
     private static function getDescribeRouteWithControllerTestData(string $suffix): array

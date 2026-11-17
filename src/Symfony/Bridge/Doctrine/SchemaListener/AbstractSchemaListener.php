@@ -94,12 +94,9 @@ abstract class AbstractSchemaListener
         // public createTable/createSequence.
         //
         // When doctrine/orm minimum is bumped to a version providing
-        // GenerateSchemaEventArgs::setSchema() (>= 3.6.8) and doctrine/dbal minimum is bumped
-        // to ^4.5, this whole block can be dropped and the
-        // `if (method_exists($schema, 'edit') && method_exists($event, 'setSchema'))` guards in
-        // each *SchemaListener subclass can become unconditional `$event->setSchema($schema);` calls.
-        // The Schema::edit() check is required because GenerateSchemaEventArgs::setSchema() itself
-        // relies on it and throws when running on a DBAL version that does not provide it.
+        // GenerateSchemaEventArgs::setSchema() (>= 3.6.8), this whole block can be dropped
+        // and the `if (method_exists($event, 'setSchema'))` guards in each *SchemaListener
+        // subclass can become unconditional `$event->setSchema($schema);` calls.
         if ($newSchema !== $schema) {
             \Closure::bind(static function (Schema $schema) use ($newSchema, $getName): void {
                 foreach ($newSchema->getTables() as $table) {

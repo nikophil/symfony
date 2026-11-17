@@ -11,16 +11,15 @@
 
 namespace Symfony\Component\Cache\Tests\Adapter;
 
+use PHPUnit\Framework\Attributes\Group;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\Cache\Adapter\PhpFilesAdapter;
 use Symfony\Component\Filesystem\Filesystem;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class PhpFilesAdapterTest extends AdapterTestCase
 {
-    protected $skippedTests = [
+    protected array $skippedTests = [
         'testDefaultLifeTime' => 'PhpFilesAdapter does not allow configuring a default lifetime.',
     ];
 

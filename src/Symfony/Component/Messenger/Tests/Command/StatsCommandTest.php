@@ -68,6 +68,23 @@ class StatsCommandTest extends TestCase
         $this->assertStringContainsString('! [NOTE] Unable to get message count for the following transports: "simple".', $display);
     }
 
+    public function testWithoutArgumentJsonFormat()
+    {
+        $tester = new CommandTester($this->command);
+        $tester->execute(['--format' => 'json']);
+        $display = $tester->getDisplay();
+
+        $this->assertJsonStringEqualsJsonString('{
+    "transports": {
+        "message_countable": {"count": 6},
+        "another_message_countable": {"count": 6}
+    },
+    "uncountable_transports": [
+        "simple"
+    ]
+}', $display);
+    }
+
     public function testWithOneExistingMessageCountableTransport()
     {
         $tester = new CommandTester($this->command);
@@ -80,6 +97,19 @@ class StatsCommandTest extends TestCase
         $this->assertStringNotContainsString(' ! [NOTE] Unable to get message count for the following transports: "simple".', $display);
     }
 
+    public function testWithOneExistingMessageCountableTransportJsonFormat()
+    {
+        $tester = new CommandTester($this->command);
+        $tester->execute(['transport_names' => ['message_countable'], '--format' => 'json']);
+        $display = $tester->getDisplay();
+
+        $this->assertJsonStringEqualsJsonString('{
+    "transports": {
+        "message_countable": {"count": 6}
+    }
+}', $display);
+    }
+
     public function testWithMultipleExistingMessageCountableTransport()
     {
         $tester = new CommandTester($this->command);
@@ -90,6 +120,20 @@ class StatsCommandTest extends TestCase
         $this->assertStringContainsString('message_countable           6', $display);
         $this->assertStringContainsString('another_message_countable   6', $display);
         $this->assertStringNotContainsString('! [NOTE] Unable to get message count for the following transports: "simple".', $display);
+    }
+
+    public function testWithMultipleExistingMessageCountableTransportJsonFormat()
+    {
+        $tester = new CommandTester($this->command);
+        $tester->execute(['transport_names' => ['message_countable', 'another_message_countable'], '--format' => 'json']);
+        $display = $tester->getDisplay();
+
+        $this->assertJsonStringEqualsJsonString('{
+    "transports": {
+        "message_countable": {"count": 6},
+        "another_message_countable": {"count": 6}
+    }
+}', $display);
     }
 
     public function testWithNotMessageCountableTransport()
@@ -143,5 +187,73 @@ class StatsCommandTest extends TestCase
         $this->assertStringContainsString('message_countable', $stdout);
         $this->assertStringNotContainsString('[WARNING]', $stderr);
         $this->assertStringNotContainsString('Transport', $stderr);
+    }
+
+    public function testWithMarkupInTransportNameJsonFormat()
+    {
+        $messageCountableTransport = $this->createStub(MessageCountAwareInterface::class);
+        $messageCountableTransport->method('getMessageCount')->willReturn(3);
+
+        $serviceLocator = $this->createStub(ServiceLocator::class);
+        $serviceLocator->method('get')->willReturn($messageCountableTransport);
+        $serviceLocator->method('has')->willReturn(true);
+
+        $command = new StatsCommand($serviceLocator, ['transport<info>']);
+        $tester = new CommandTester($command);
+        $tester->execute(['--format' => 'json'], ['decorated' => true]);
+        $display = $tester->getDisplay();
+
+        $this->assertSame(0, $tester->getStatusCode());
+        $data = json_decode($display, true);
+        $this->assertIsArray($data);
+        $this->assertSame(['count' => 3], $data['transports']['transport<info>']);
+    }
+
+    public function testWithMarkupInTransportNameTextFormat()
+    {
+        $messageCountableTransport = $this->createStub(MessageCountAwareInterface::class);
+        $messageCountableTransport->method('getMessageCount')->willReturn(3);
+
+        $serviceLocator = $this->createStub(ServiceLocator::class);
+        $serviceLocator->method('get')->willReturn($messageCountableTransport);
+        $serviceLocator->method('has')->willReturn(true);
+
+        $command = new StatsCommand($serviceLocator, ['transport<info>']);
+        $tester = new CommandTester($command);
+        $tester->execute([], ['decorated' => false]);
+
+        $this->assertSame(0, $tester->getStatusCode());
+        $this->assertStringContainsString('transport<info>', $tester->getDisplay());
+    }
+
+    public function testWithMarkupInTransportNameTextFormatWarningAndNote()
+    {
+        $serviceLocator = $this->createStub(ServiceLocator::class);
+        $serviceLocator->method('get')->willReturn($this->createStub(TransportInterface::class));
+        $serviceLocator->method('has')->willReturnCallback(static fn (string $transportName) => 'uncountable<info>' === $transportName);
+
+        $command = new StatsCommand($serviceLocator, ['missing<info>', 'uncountable<info>']);
+        $tester = new CommandTester($command);
+        $tester->execute([], ['decorated' => false]);
+        $display = $tester->getDisplay();
+
+        $this->assertStringContainsString('[WARNING] The "missing<info>" transport does not exist.', $display);
+        $this->assertStringContainsString('"uncountable<info>".', $display);
+    }
+
+    public function testWithInvalidUtf8InTransportNameJsonFormat()
+    {
+        $messageCountableTransport = $this->createStub(MessageCountAwareInterface::class);
+        $messageCountableTransport->method('getMessageCount')->willReturn(3);
+
+        $serviceLocator = $this->createStub(ServiceLocator::class);
+        $serviceLocator->method('get')->willReturn($messageCountableTransport);
+        $serviceLocator->method('has')->willReturn(true);
+
+        $command = new StatsCommand($serviceLocator, ["transport\xFF"]);
+        $tester = new CommandTester($command);
+        $tester->execute(['--format' => 'json'], ['decorated' => false]);
+
+        $this->assertSame(['transports' => ["transport\u{FFFD}" => ['count' => 3]]], json_decode($tester->getDisplay(), true, 512, \JSON_THROW_ON_ERROR));
     }
 }

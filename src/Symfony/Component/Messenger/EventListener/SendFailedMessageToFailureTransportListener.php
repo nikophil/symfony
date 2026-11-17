@@ -15,6 +15,7 @@ use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\Messenger\Event\WorkerMessageFailedEvent;
+use Symfony\Component\Messenger\Event\WorkerMessageSkipEvent;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
 use Symfony\Component\Messenger\Stamp\SentToFailureTransportStamp;
@@ -33,10 +34,7 @@ class SendFailedMessageToFailureTransportListener implements EventSubscriberInte
     ) {
     }
 
-    /**
-     * @return void
-     */
-    public function onMessageFailed(WorkerMessageFailedEvent $event)
+    public function onMessageFailed(WorkerMessageFailedEvent $event): void
     {
         if ($event->willRetry()) {
             return;
@@ -74,10 +72,31 @@ class SendFailedMessageToFailureTransportListener implements EventSubscriberInte
         $failureSender->send($envelope);
     }
 
+    public function onMessageSkip(WorkerMessageSkipEvent $event): void
+    {
+        $envelope = $event->getEnvelope();
+        $senderName = $event->getReceiverName();
+
+        if ($envelope->last(SentToFailureTransportStamp::class)) {
+            $envelope = $envelope->with(new SentToFailureTransportStamp($senderName));
+        } elseif (false !== $transportName = array_search($senderName, $this->failureTransportsByName, true)) {
+            // a message that was not sent to the failure transport after failing goes back to the failure transport it was received from,
+            // whose sender is keyed by the transports that fail to it
+            $senderName = $transportName;
+        }
+
+        if (!$this->failureSenders->has($senderName)) {
+            return;
+        }
+
+        $this->failureSenders->get($senderName)->send($envelope->with(new DelayStamp(0)));
+    }
+
     public static function getSubscribedEvents(): array
     {
         return [
             WorkerMessageFailedEvent::class => ['onMessageFailed', -100],
+            WorkerMessageSkipEvent::class => ['onMessageSkip', -100],
         ];
     }
 }

@@ -53,15 +53,37 @@ class AmazonSqsReceiverTest extends TestCase
         $sqsEnvelop = $this->createSqsEnvelope();
         $connection = $this->createMock(Connection::class);
         $connection->method('get')->willReturn($sqsEnvelop);
-        $connection->expects($this->once())->method('delete');
+        $connection->expects($this->once())->method('reject');
 
         $receiver = new AmazonSqsReceiver($connection, $serializer);
         iterator_to_array($receiver->get());
     }
 
+    public function testKeepalive()
+    {
+        $serializer = $this->createSerializer();
+
+        $connection = $this->createMock(Connection::class);
+        $connection->expects($this->once())->method('keepalive')->with('123', 10);
+
+        $receiver = new AmazonSqsReceiver($connection, $serializer);
+        $receiver->keepalive(new Envelope(new DummyMessage('foo'), [new AmazonSqsReceivedStamp('123')]), 10);
+    }
+
+    public function testReject()
+    {
+        $serializer = $this->createSerializer();
+
+        $connection = $this->createMock(Connection::class);
+        $connection->expects($this->once())->method('reject')->with('123');
+
+        $receiver = new AmazonSqsReceiver($connection, $serializer);
+        $receiver->reject(new Envelope(new DummyMessage('foo'), [new AmazonSqsReceivedStamp('123')]));
+    }
+
     public function testItConvertsNetworkExceptionDuringGetIntoTransportException()
     {
-        $connection = $this->createMock(Connection::class);
+        $connection = $this->createStub(Connection::class);
         $connection->method('get')->willThrowException(new NetworkException('Could not contact remote server.'));
 
         $receiver = new AmazonSqsReceiver($connection, $this->createSerializer());
@@ -74,7 +96,7 @@ class AmazonSqsReceiverTest extends TestCase
 
     public function testItConvertsNetworkExceptionDuringAckIntoTransportException()
     {
-        $connection = $this->createMock(Connection::class);
+        $connection = $this->createStub(Connection::class);
         $connection->method('delete')->willThrowException(new NetworkException('Could not contact remote server.'));
 
         $receiver = new AmazonSqsReceiver($connection, $this->createSerializer());
@@ -98,8 +120,8 @@ class AmazonSqsReceiverTest extends TestCase
 
     public function testItConvertsNetworkExceptionDuringRejectIntoTransportException()
     {
-        $connection = $this->createMock(Connection::class);
-        $connection->method('delete')->willThrowException(new NetworkException('Could not contact remote server.'));
+        $connection = $this->createStub(Connection::class);
+        $connection->method('reject')->willThrowException(new NetworkException('Could not contact remote server.'));
 
         $receiver = new AmazonSqsReceiver($connection, $this->createSerializer());
 
@@ -111,7 +133,7 @@ class AmazonSqsReceiverTest extends TestCase
 
     public function testItConvertsNetworkExceptionDuringGetMessageCountIntoTransportException()
     {
-        $connection = $this->createMock(Connection::class);
+        $connection = $this->createStub(Connection::class);
         $connection->method('getMessageCount')->willThrowException(new NetworkException('Could not contact remote server.'));
 
         $receiver = new AmazonSqsReceiver($connection, $this->createSerializer());
@@ -124,7 +146,7 @@ class AmazonSqsReceiverTest extends TestCase
 
     public function testItConvertsUnparsableResponseIntoTransportException()
     {
-        $connection = $this->createMock(Connection::class);
+        $connection = $this->createStub(Connection::class);
         $connection->method('get')->willThrowException(new UnparsableResponse('Could not parse response as array.'));
 
         $receiver = new AmazonSqsReceiver($connection, $this->createSerializer());
@@ -137,10 +159,8 @@ class AmazonSqsReceiverTest extends TestCase
 
     private function createSerializer(): Serializer
     {
-        $serializer = new Serializer(
+        return new Serializer(
             new SerializerComponent\Serializer([new ObjectNormalizer()], ['json' => new JsonEncoder()])
         );
-
-        return $serializer;
     }
 }

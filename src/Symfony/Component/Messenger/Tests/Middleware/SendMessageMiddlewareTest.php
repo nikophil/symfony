@@ -11,10 +11,11 @@
 
 namespace Symfony\Component\Messenger\Tests\Middleware;
 
-use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Event\MessageSentToTransportsEvent;
 use Symfony\Component\Messenger\Event\SendMessageToTransportsEvent;
 use Symfony\Component\Messenger\Exception\NoSenderForMessageException;
 use Symfony\Component\Messenger\Middleware\SendMessageMiddleware;
@@ -44,7 +45,7 @@ class SendMessageMiddlewareTest extends MiddlewareTestCase
 
         $this->assertInstanceOf(SentStamp::class, $stamp = $envelope->last(SentStamp::class), 'it adds a sent stamp');
         $this->assertSame('my_sender', $stamp->getSenderAlias());
-        $this->assertStringMatchesFormat('Mock_SenderInterface_%s', $stamp->getSenderClass());
+        $this->assertSame($sender::class, $stamp->getSenderClass());
     }
 
     public function testItSendsTheMessageToMultipleSenders()
@@ -170,9 +171,17 @@ class SendMessageMiddlewareTest extends MiddlewareTestCase
         $sender2 = $this->createMock(SenderInterface::class);
 
         $dispatcher = $this->createMock(EventDispatcherInterface::class);
-        $dispatcher->expects($this->once())
+        $expectedEvents = [
+            new SendMessageToTransportsEvent($envelope, $senders = ['foo' => $sender1, 'bar' => $sender2]),
+            new MessageSentToTransportsEvent($envelope, $senders),
+        ];
+        $dispatcher->expects($this->exactly(2))
             ->method('dispatch')
-            ->with(new SendMessageToTransportsEvent($envelope, ['foo' => $sender1, 'bar' => $sender2]));
+            ->willReturnCallback(function (object $event) use (&$expectedEvents) {
+                $expectedEvent = array_shift($expectedEvents);
+
+                $this->assertEquals($expectedEvent, $event);
+            });
 
         $sendersLocator = $this->createSendersLocator([DummyMessage::class => ['foo', 'bar']], ['foo' => $sender1, 'bar' => $sender2]);
         $middleware = new SendMessageMiddleware($sendersLocator, $dispatcher);
@@ -215,9 +224,17 @@ class SendMessageMiddlewareTest extends MiddlewareTestCase
         $sender = $this->createMock(SenderInterface::class);
 
         $dispatcher = $this->createMock(EventDispatcherInterface::class);
-        $dispatcher->expects($this->once())
+        $expectedEvents = [
+            new SendMessageToTransportsEvent($envelope, $senders = ['foo' => $sender]),
+            new MessageSentToTransportsEvent($envelope, $senders),
+        ];
+        $dispatcher->expects($this->exactly(2))
             ->method('dispatch')
-            ->with(new SendMessageToTransportsEvent($envelope, ['foo' => $sender]));
+            ->willReturnCallback(function (object $event) use (&$expectedEvents) {
+                $expectedEvent = array_shift($expectedEvents);
+
+                $this->assertEquals($expectedEvent, $event);
+            });
 
         $sendersLocator = $this->createSendersLocator([DummyMessage::class => ['foo']], ['foo' => $sender]);
         $middleware = new SendMessageMiddleware($sendersLocator, $dispatcher);
@@ -229,13 +246,11 @@ class SendMessageMiddlewareTest extends MiddlewareTestCase
 
     private function createSendersLocator(array $sendersMap, array $senders): SendersLocator
     {
-        $container = $this->createMock(ContainerInterface::class);
-        $container->expects($this->any())
-            ->method('has')
-            ->willReturnCallback(static fn ($id) => isset($senders[$id]));
-        $container->expects($this->any())
-            ->method('get')
-            ->willReturnCallback(static fn ($id) => $senders[$id]);
+        $container = new Container();
+
+        foreach ($senders as $id => $sender) {
+            $container->set($id, $sender);
+        }
 
         return new SendersLocator($sendersMap, $container);
     }

@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Messenger\Bridge\Amqp\Tests\Transport;
 
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Bridge\Amqp\Tests\Fixtures\DummyMessage;
 use Symfony\Component\Messenger\Bridge\Amqp\Transport\AmqpReceivedStamp;
@@ -22,11 +23,10 @@ use Symfony\Component\Messenger\Exception\TransportException;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
 use Symfony\Component\Messenger\Stamp\SentToFailureTransportStamp;
+use Symfony\Component\Messenger\Stamp\TransportMessageIdStamp;
 use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
 
-/**
- * @requires extension amqp
- */
+#[RequiresPhpExtension('amqp')]
 class AmqpSenderTest extends TestCase
 {
     public function testItSendsTheEncodedMessage()
@@ -34,8 +34,8 @@ class AmqpSenderTest extends TestCase
         $envelope = new Envelope(new DummyMessage('Oy'));
         $encoded = ['body' => '...', 'headers' => ['type' => DummyMessage::class]];
 
-        $serializer = $this->createStub(SerializerInterface::class);
-        $serializer->method('encode')->with($envelope)->willReturn($encoded);
+        $serializer = $this->createMock(SerializerInterface::class);
+        $serializer->expects($this->once())->method('encode')->with($envelope)->willReturn($encoded);
 
         $connection = $this->createMock(Connection::class);
         $connection->expects($this->once())->method('publish')->with($encoded['body'], $encoded['headers']);
@@ -49,8 +49,8 @@ class AmqpSenderTest extends TestCase
         $envelope = (new Envelope(new DummyMessage('Oy')))->with($stamp = new AmqpStamp('rk'));
         $encoded = ['body' => '...', 'headers' => ['type' => DummyMessage::class]];
 
-        $serializer = $this->createStub(SerializerInterface::class);
-        $serializer->method('encode')->with($envelope)->willReturn($encoded);
+        $serializer = $this->createMock(SerializerInterface::class);
+        $serializer->expects($this->once())->method('encode')->with($envelope)->willReturn($encoded);
 
         $connection = $this->createMock(Connection::class);
         $connection->expects($this->once())->method('publish')->with($encoded['body'], $encoded['headers'], 0, $stamp);
@@ -64,8 +64,8 @@ class AmqpSenderTest extends TestCase
         $envelope = new Envelope(new DummyMessage('Oy'));
         $encoded = ['body' => '...'];
 
-        $serializer = $this->createStub(SerializerInterface::class);
-        $serializer->method('encode')->with($envelope)->willReturn($encoded);
+        $serializer = $this->createMock(SerializerInterface::class);
+        $serializer->expects($this->once())->method('encode')->with($envelope)->willReturn($encoded);
 
         $connection = $this->createMock(Connection::class);
         $connection->expects($this->once())->method('publish')->with($encoded['body'], []);
@@ -79,8 +79,8 @@ class AmqpSenderTest extends TestCase
         $envelope = new Envelope(new DummyMessage('Oy'));
         $encoded = ['body' => '...', 'headers' => ['type' => DummyMessage::class, 'Content-Type' => 'application/json']];
 
-        $serializer = $this->createStub(SerializerInterface::class);
-        $serializer->method('encode')->with($envelope)->willReturn($encoded);
+        $serializer = $this->createMock(SerializerInterface::class);
+        $serializer->expects($this->once())->method('encode')->with($envelope)->willReturn($encoded);
 
         $connection = $this->createMock(Connection::class);
         unset($encoded['headers']['Content-Type']);
@@ -96,8 +96,8 @@ class AmqpSenderTest extends TestCase
         $envelope = (new Envelope(new DummyMessage('Oy')))->with($stamp = new AmqpStamp('rk', \AMQP_NOPARAM, ['content_type' => 'custom']));
         $encoded = ['body' => '...', 'headers' => ['type' => DummyMessage::class, 'Content-Type' => 'application/json']];
 
-        $serializer = $this->createStub(SerializerInterface::class);
-        $serializer->method('encode')->with($envelope)->willReturn($encoded);
+        $serializer = $this->createMock(SerializerInterface::class);
+        $serializer->expects($this->once())->method('encode')->with($envelope)->willReturn($encoded);
 
         $connection = $this->createMock(Connection::class);
         unset($encoded['headers']['Content-Type']);
@@ -113,14 +113,57 @@ class AmqpSenderTest extends TestCase
         $envelope = new Envelope(new DummyMessage('Oy'));
         $encoded = ['body' => '...', 'headers' => ['type' => DummyMessage::class]];
 
-        $serializer = $this->createStub(SerializerInterface::class);
-        $serializer->method('encode')->with($envelope)->willReturn($encoded);
+        $serializer = $this->createMock(SerializerInterface::class);
+        $serializer->expects($this->once())->method('encode')->with($envelope)->willReturn($encoded);
 
-        $connection = $this->createStub(Connection::class);
-        $connection->method('publish')->with($encoded['body'], $encoded['headers'])->willThrowException(new \AMQPException());
+        $connection = $this->createMock(Connection::class);
+        $connection->expects($this->once())->method('publish')->with($encoded['body'], $encoded['headers'])->willThrowException(new \AMQPException());
 
         $sender = new AmqpSender($connection, $serializer);
         $sender->send($envelope);
+    }
+
+    public function testTransportMessageIdStampIsCreatedIfMessageIdIsSet()
+    {
+        $id = '01946fcb-4bcb-7aa7-9727-dac1c0374443';
+        $stamp = new AmqpStamp(null, \AMQP_NOPARAM, ['message_id' => $id]);
+
+        $envelope = (new Envelope(new DummyMessage('Oy')))->with($stamp);
+        $encoded = ['body' => '...', 'headers' => ['type' => DummyMessage::class]];
+
+        $serializer = $this->createMock(SerializerInterface::class);
+        $serializer->expects($this->once())->method('encode')->with($envelope)->willReturn($encoded);
+
+        $connection = $this->createMock(Connection::class);
+
+        $connection->expects($this->once())->method('publish')->with($encoded['body'], $encoded['headers'], 0, $stamp);
+
+        $sender = new AmqpSender($connection, $serializer);
+        $returnedEnvelope = $sender->send($envelope);
+
+        $transportMessageIdStamp = $returnedEnvelope->last(TransportMessageIdStamp::class);
+        $this->assertSame($id, $transportMessageIdStamp->getId());
+    }
+
+    public function testTransportMessageIdStampIsNotCreatedIfMessageIdIsNotSet()
+    {
+        $stamp = new AmqpStamp(null, \AMQP_NOPARAM, []);
+
+        $envelope = (new Envelope(new DummyMessage('Oy')))->with($stamp);
+        $encoded = ['body' => '...', 'headers' => ['type' => DummyMessage::class]];
+
+        $serializer = $this->createMock(SerializerInterface::class);
+        $serializer->expects($this->once())->method('encode')->with($envelope)->willReturn($encoded);
+
+        $connection = $this->createMock(Connection::class);
+
+        $connection->expects($this->once())->method('publish')->with($encoded['body'], $encoded['headers'], 0, $stamp);
+
+        $sender = new AmqpSender($connection, $serializer);
+        $returnedEnvelope = $sender->send($envelope);
+
+        $transportMessageIdStamp = $returnedEnvelope->last(TransportMessageIdStamp::class);
+        $this->assertNull($transportMessageIdStamp);
     }
 
     public function testDoNotUseRetryRoutingKeyWhenSendingToFailureTransport()

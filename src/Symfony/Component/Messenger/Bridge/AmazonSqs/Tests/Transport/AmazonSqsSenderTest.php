@@ -32,8 +32,8 @@ class AmazonSqsSenderTest extends TestCase
         $connection = $this->createMock(Connection::class);
         $connection->expects($this->once())->method('send')->with($encoded['body'], $encoded['headers']);
 
-        $serializer = $this->createStub(SerializerInterface::class);
-        $serializer->method('encode')->with($envelope)->willReturn($encoded);
+        $serializer = $this->createMock(SerializerInterface::class);
+        $serializer->expects($this->once())->method('encode')->with($envelope)->willReturn($encoded);
 
         $sender = new AmazonSqsSender($connection, $serializer);
         $sender->send($envelope);
@@ -50,8 +50,8 @@ class AmazonSqsSenderTest extends TestCase
         $connection->expects($this->once())->method('send')
             ->with($encoded['body'], $encoded['headers'], null, $stamp->getMessageGroupId(), $stamp->getMessageDeduplicationId());
 
-        $serializer = $this->createStub(SerializerInterface::class);
-        $serializer->method('encode')->with($envelope)->willReturn($encoded);
+        $serializer = $this->createMock(SerializerInterface::class);
+        $serializer->expects($this->once())->method('encode')->with($envelope)->willReturn($encoded);
 
         $sender = new AmazonSqsSender($connection, $serializer);
         $sender->send($envelope);
@@ -68,8 +68,8 @@ class AmazonSqsSenderTest extends TestCase
         $connection->expects($this->once())->method('send')
             ->with($encoded['body'], $encoded['headers'], null, null, null, $stamp->getTraceId());
 
-        $serializer = $this->createStub(SerializerInterface::class);
-        $serializer->method('encode')->with($envelope)->willReturn($encoded);
+        $serializer = $this->createMock(SerializerInterface::class);
+        $serializer->expects($this->once())->method('encode')->with($envelope)->willReturn($encoded);
 
         $sender = new AmazonSqsSender($connection, $serializer);
         $sender->send($envelope);
@@ -83,8 +83,8 @@ class AmazonSqsSenderTest extends TestCase
         $connection = $this->createMock(Connection::class);
         $connection->expects($this->once())->method('send')->with(base64_encode($encoded['body']), $encoded['headers']);
 
-        $serializer = $this->createStub(SerializerInterface::class);
-        $serializer->method('encode')->with($envelope)->willReturn($encoded);
+        $serializer = $this->createMock(SerializerInterface::class);
+        $serializer->expects($this->once())->method('encode')->with($envelope)->willReturn($encoded);
 
         $sender = new AmazonSqsSender($connection, $serializer);
         $sender->send($envelope);
@@ -95,11 +95,11 @@ class AmazonSqsSenderTest extends TestCase
         $envelope = new Envelope(new DummyMessage('Oy'));
         $encoded = ['body' => '...', 'headers' => ['type' => DummyMessage::class]];
 
-        $connection = $this->createMock(Connection::class);
+        $connection = $this->createStub(Connection::class);
         $connection->method('send')->willThrowException(new NetworkException('Could not contact remote server.'));
 
-        $serializer = $this->createStub(SerializerInterface::class);
-        $serializer->method('encode')->with($envelope)->willReturn($encoded);
+        $serializer = $this->createMock(SerializerInterface::class);
+        $serializer->expects($this->once())->method('encode')->with($envelope)->willReturn($encoded);
 
         $sender = new AmazonSqsSender($connection, $serializer);
 

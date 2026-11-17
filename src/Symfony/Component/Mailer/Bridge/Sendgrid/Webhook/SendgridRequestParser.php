@@ -43,7 +43,10 @@ final class SendgridRequestParser extends AbstractRequestParser
         ]);
     }
 
-    protected function doParse(Request $request, #[\SensitiveParameter] string $secret): ?AbstractMailerEvent
+    /**
+     * @return AbstractMailerEvent[]
+     */
+    protected function doParse(Request $request, #[\SensitiveParameter] string $secret): array
     {
         if ($secret) {
             if (!$request->headers->get('X-Twilio-Email-Event-Webhook-Signature')
@@ -75,7 +78,7 @@ final class SendgridRequestParser extends AbstractRequestParser
         }
 
         try {
-            return $this->converter->convert($content[0]);
+            return array_map($this->converter->convert(...), $content);
         } catch (ParseException $e) {
             throw new RejectWebhookException(406, $e->getMessage(), $e);
         }

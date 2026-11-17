@@ -18,6 +18,7 @@ use Symfony\Component\Console\Completion\CompletionInput;
 use Symfony\Component\Console\Completion\CompletionSuggestions;
 use Symfony\Component\Console\Exception\InvalidArgumentException;
 use Symfony\Component\Console\Exception\RuntimeException;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -39,6 +40,7 @@ use Twig\Source;
 #[AsCommand(name: 'lint:twig', description: 'Lint a Twig template and outputs encountered errors')]
 class LintCommand extends Command
 {
+    private array $excludes;
     private string $format;
 
     public function __construct(
@@ -48,15 +50,13 @@ class LintCommand extends Command
         parent::__construct();
     }
 
-    /**
-     * @return void
-     */
-    protected function configure()
+    protected function configure(): void
     {
         $this
             ->addOption('format', null, InputOption::VALUE_REQUIRED, \sprintf('The output format ("%s")', implode('", "', $this->getAvailableFormatOptions())))
             ->addOption('show-deprecations', null, InputOption::VALUE_NONE, 'Show deprecations as errors')
             ->addArgument('filename', InputArgument::IS_ARRAY, 'A file, a directory or "-" for reading from STDIN')
+            ->addOption('excludes', null, InputOption::VALUE_REQUIRED | InputOption::VALUE_IS_ARRAY, 'Excluded directories', [])
             ->setHelp(<<<'EOF'
                 The <info>%command.name%</info> command lints a template and outputs to STDOUT
                 the first encountered syntax error.
@@ -72,6 +72,9 @@ class LintCommand extends Command
                 Or of a whole directory:
 
                   <info>php %command.full_name% dirname</info>
+
+                The <info>--format</info> option specifies the format of the command output:
+
                   <info>php %command.full_name% dirname --format=json</info>
 
                 EOF
@@ -84,10 +87,11 @@ class LintCommand extends Command
         $io = new SymfonyStyle($input, $output);
         $filenames = $input->getArgument('filename');
         $showDeprecations = $input->getOption('show-deprecations');
+        $this->excludes = $input->getOption('excludes');
         $this->format = $input->getOption('format') ?? (GithubActionReporter::isGithubActionEnvironment() ? 'github' : 'txt');
 
         if (['-'] === $filenames) {
-            return $this->display($input, $output, $io, [$this->validate(file_get_contents('php://stdin'), uniqid('sf_', true))]);
+            return $this->display($input, $output, $io, [$this->validate(file_get_contents('php://stdin'), 'Standard Input', $showDeprecations)]);
         }
 
         if (!$filenames) {
@@ -105,38 +109,15 @@ class LintCommand extends Command
             }
         }
 
-        if ($showDeprecations) {
-            $prevErrorHandler = set_error_handler(static function ($level, $message, $file, $line) use (&$prevErrorHandler) {
-                if (\E_USER_DEPRECATED === $level) {
-                    $templateLine = 0;
-                    if (preg_match('/ at line (\d+)[ .]/', $message, $matches)) {
-                        $templateLine = $matches[1];
-                    }
-
-                    throw new Error($message, $templateLine);
-                }
-
-                return $prevErrorHandler ? $prevErrorHandler($level, $message, $file, $line) : false;
-            });
-        }
-
-        try {
-            $filesInfo = $this->getFilesInfo($filenames);
-        } finally {
-            if ($showDeprecations) {
-                restore_error_handler();
-            }
-        }
-
-        return $this->display($input, $output, $io, $filesInfo);
+        return $this->display($input, $output, $io, $this->getFilesInfo($filenames, $showDeprecations));
     }
 
-    private function getFilesInfo(array $filenames): array
+    private function getFilesInfo(array $filenames, bool $showDeprecations): array
     {
         $filesInfo = [];
         foreach ($filenames as $filename) {
             foreach ($this->findFiles($filename) as $file) {
-                $filesInfo[] = $this->validate(file_get_contents($file), $file);
+                $filesInfo[] = $this->validate(file_get_contents($file), $file, $showDeprecations);
             }
         }
 
@@ -148,14 +129,32 @@ class LintCommand extends Command
         if (is_file($filename)) {
             return [$filename];
         } elseif (is_dir($filename)) {
-            return Finder::create()->files()->in($filename)->name($this->namePatterns);
+            return Finder::create()->files()->in($filename)->name($this->namePatterns)->exclude($this->excludes);
         }
 
         throw new RuntimeException(\sprintf('File or directory "%s" is not readable.', $filename));
     }
 
-    private function validate(string $template, string $file): array
+    private function validate(string $template, string $file, bool $collectDeprecation): array
     {
+        $deprecations = [];
+        if ($collectDeprecation) {
+            $prevErrorHandler = set_error_handler(static function ($level, $message, $fileName, $line) use (&$prevErrorHandler, &$deprecations, $file) {
+                if (\E_USER_DEPRECATED === $level) {
+                    $templateLine = 0;
+                    if (preg_match('/ at line (\d+)[ .]/', $message, $matches)) {
+                        $templateLine = $matches[1];
+                    }
+
+                    $deprecations[] = ['message' => $message, 'file' => $file, 'line' => $templateLine];
+
+                    return true;
+                }
+
+                return $prevErrorHandler ? $prevErrorHandler($level, $message, $fileName, $line) : false;
+            });
+        }
+
         $realLoader = $this->twig->getLoader();
         try {
             $temporaryLoader = new ArrayLoader([$file => $template]);
@@ -167,9 +166,13 @@ class LintCommand extends Command
             $this->twig->setLoader($realLoader);
 
             return ['template' => $template, 'file' => $file, 'line' => $e->getTemplateLine(), 'valid' => false, 'exception' => $e];
+        } finally {
+            if ($collectDeprecation) {
+                restore_error_handler();
+            }
         }
 
-        return ['template' => $template, 'file' => $file, 'valid' => true];
+        return ['template' => $template, 'file' => $file, 'deprecations' => $deprecations, 'valid' => true];
     }
 
     private function display(InputInterface $input, OutputInterface $output, SymfonyStyle $io, array $files): int
@@ -186,10 +189,15 @@ class LintCommand extends Command
     {
         $errors = 0;
         $githubReporter = $errorAsGithubAnnotations ? new GithubActionReporter($output) : null;
+        $deprecations = array_merge(...array_column($filesInfo, 'deprecations'));
+
+        foreach ($deprecations as $deprecation) {
+            $this->renderDeprecation($io, $deprecation['line'], $deprecation['message'], $deprecation['file'], $githubReporter);
+        }
 
         foreach ($filesInfo as $info) {
             if ($info['valid'] && $output->isVerbose()) {
-                $io->comment('<info>OK</info>'.($info['file'] ? \sprintf(' in %s', $info['file']) : ''));
+                $io->comment('<info>OK</info>'.($info['file'] ? \sprintf(' in %s', OutputFormatter::escape($info['file'])) : ''));
             } elseif (!$info['valid']) {
                 ++$errors;
                 $this->renderException($io, $info['template'], $info['exception'], $info['file'], $githubReporter);
@@ -202,7 +210,7 @@ class LintCommand extends Command
             $io->warning(\sprintf('%d Twig files have valid syntax and %d contain errors.', \count($filesInfo) - $errors, $errors));
         }
 
-        return min($errors, 1);
+        return !$deprecations && !$errors ? 0 : 1;
     }
 
     private function displayJson(OutputInterface $output, array $filesInfo): int
@@ -219,9 +227,22 @@ class LintCommand extends Command
             }
         });
 
-        $output->writeln(json_encode($filesInfo, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES));
+        $output->writeln(json_encode($filesInfo, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
 
         return min($errors, 1);
+    }
+
+    private function renderDeprecation(SymfonyStyle $output, int $line, string $message, string $file, ?GithubActionReporter $githubReporter): void
+    {
+        $githubReporter?->error($message, $file, $line <= 0 ? null : $line);
+
+        if ($file) {
+            $output->text(\sprintf('<info> DEPRECATION </info> in %s (line %s)', OutputFormatter::escape($file), $line));
+        } else {
+            $output->text(\sprintf('<info> DEPRECATION </info> (line %s)', $line));
+        }
+
+        $output->text(\sprintf('<info> >> %s</info> ', OutputFormatter::escape($message)));
     }
 
     private function renderException(SymfonyStyle $output, string $template, Error $exception, ?string $file = null, ?GithubActionReporter $githubReporter = null): void
@@ -231,7 +252,7 @@ class LintCommand extends Command
         $githubReporter?->error($exception->getRawMessage(), $file, $line <= 0 ? null : $line);
 
         if ($file) {
-            $output->text(\sprintf('<error> ERROR </error> in %s (line %s)', $file, $line));
+            $output->text(\sprintf('<error> ERROR </error> in %s (line %s)', OutputFormatter::escape($file), $line));
         } else {
             $output->text(\sprintf('<error> ERROR </error> (line %s)', $line));
         }
@@ -239,7 +260,7 @@ class LintCommand extends Command
         // If the line is not known (this might happen for deprecations if we fail at detecting the line for instance),
         // we render the message without context, to ensure the message is displayed.
         if ($line <= 0) {
-            $output->text(\sprintf('<error> >> %s</error> ', $exception->getRawMessage()));
+            $output->text(\sprintf('<error> >> %s</error> ', OutputFormatter::escape($exception->getRawMessage())));
 
             return;
         }
@@ -249,10 +270,10 @@ class LintCommand extends Command
                 '%s %-6s %s',
                 $lineNumber === $line ? '<error> >> </error>' : '    ',
                 $lineNumber,
-                $code
+                OutputFormatter::escape($code)
             ));
             if ($lineNumber === $line) {
-                $output->text(\sprintf('<error> >> %s</error> ', $exception->getRawMessage()));
+                $output->text(\sprintf('<error> >> %s</error> ', OutputFormatter::escape($exception->getRawMessage())));
             }
         }
     }
@@ -280,6 +301,7 @@ class LintCommand extends Command
         }
     }
 
+    /** @return string[] */
     private function getAvailableFormatOptions(): array
     {
         return ['txt', 'json', 'github'];

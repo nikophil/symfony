@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Messenger\Tests\EventListener;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpKernel\DependencyInjection\ServicesResetter;
 use Symfony\Component\Messenger\Event\WorkerRunningEvent;
@@ -18,6 +19,7 @@ use Symfony\Component\Messenger\Event\WorkerStoppedEvent;
 use Symfony\Component\Messenger\EventListener\ResetServicesListener;
 use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\Worker;
+use Symfony\Contracts\Service\ResetInterface;
 
 class ResetServicesListenerTest extends TestCase
 {
@@ -27,13 +29,12 @@ class ResetServicesListenerTest extends TestCase
         yield [false];
     }
 
-    /**
-     * @dataProvider provideResetServices
-     */
+    #[DataProvider('provideResetServices')]
     public function testResetServices(bool $shouldReset)
     {
-        $servicesResetter = $this->createMock(ServicesResetter::class);
-        $servicesResetter->expects($shouldReset ? $this->once() : $this->never())->method('reset');
+        $resettableService = $this->createMock(ResetInterface::class);
+        $resettableService->expects($shouldReset ? $this->once() : $this->never())->method('reset');
+        $servicesResetter = new ServicesResetter(new \ArrayIterator(['foo' => $resettableService]), ['foo' => 'reset']);
 
         $event = new WorkerRunningEvent(new Worker([], new MessageBus()), !$shouldReset);
 
@@ -43,8 +44,9 @@ class ResetServicesListenerTest extends TestCase
 
     public function testResetServicesAtStop()
     {
-        $servicesResetter = $this->createMock(ServicesResetter::class);
-        $servicesResetter->expects($this->once())->method('reset');
+        $resettableService = $this->createMock(ResetInterface::class);
+        $resettableService->expects($this->once())->method('reset');
+        $servicesResetter = new ServicesResetter(new \ArrayIterator(['foo' => $resettableService]), ['foo' => 'reset']);
 
         $event = new WorkerStoppedEvent(new Worker([], new MessageBus()));
 

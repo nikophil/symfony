@@ -106,8 +106,9 @@ class DoctrinePingConnectionMiddlewareTest extends MiddlewareTestCase
     public function testInvalidEntityManagerThrowsException()
     {
         $this->connection->expects($this->never())->method('getDatabasePlatform');
-        $managerRegistry = $this->createStub(ManagerRegistry::class);
+        $managerRegistry = $this->createMock(ManagerRegistry::class);
         $managerRegistry
+            ->expects($this->once())
             ->method('getManager')
             ->with('unknown_manager')
             ->willThrowException(new \InvalidArgumentException());
@@ -121,13 +122,6 @@ class DoctrinePingConnectionMiddlewareTest extends MiddlewareTestCase
 
     public function testMiddlewareNoPingInNonWorkerContext()
     {
-        // This method has been removed in DBAL 3.0
-        if (method_exists(Connection::class, 'ping')) {
-            $this->connection->expects($this->never())
-                ->method('ping')
-                ->willReturn(false);
-        }
-
         $this->connection->expects($this->never())
             ->method('close')
         ;

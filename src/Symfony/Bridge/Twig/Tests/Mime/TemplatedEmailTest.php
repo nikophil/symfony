@@ -11,6 +11,7 @@
 
 namespace Symfony\Bridge\Twig\Tests\Mime;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bridge\Twig\Mime\TemplatedEmail;
 use Symfony\Component\Mime\Part\DataPart;
@@ -138,9 +139,7 @@ class TemplatedEmailTest extends TestCase
         $this->assertEquals($expected->getBody(), $n->getBody());
     }
 
-    /**
-     * @dataProvider provideTrampolineSlots
-     */
+    #[DataProvider('provideTrampolineSlots')]
     public function testUnserializeRejectsObjectInTypedStringProperty(int $slot)
     {
         $email = (new TemplatedEmail())

@@ -11,14 +11,16 @@
 
 namespace Symfony\Component\Translation\Tests\Util;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Translation\Util\XliffUtils;
 
 class XliffUtilsTest extends TestCase
 {
-    /**
-     * @dataProvider providePaths
-     */
+    #[DataProvider('providePaths')]
     public function testGetFileUrlEncodesPathSegments(string $path, string $expected)
     {
         $method = new \ReflectionMethod(XliffUtils::class, 'getFileUrl');
@@ -81,13 +83,9 @@ class XliffUtilsTest extends TestCase
         }
     }
 
-    /**
-     * @requires extension pcntl
-     *
-     * @runInSeparateProcess
-     *
-     * @preserveGlobalState disabled
-     */
+    #[RequiresPhpExtension('pcntl')]
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function testEntityLoaderTemporaryFileSurvivesFork()
     {
         $dom = new \DOMDocument();

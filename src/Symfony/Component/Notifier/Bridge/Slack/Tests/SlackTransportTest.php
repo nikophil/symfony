@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Notifier\Bridge\Slack\Tests;
 
+use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Notifier\Bridge\Slack\SlackOptions;
@@ -131,10 +132,8 @@ final class SlackTransportTest extends TransportTestCase
         $this->assertSame('1503435956.000247', $sentMessage->getMessageId());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testSendWithBooleanOptionValue(bool $value)
     {
         $channel = 'testChannel';

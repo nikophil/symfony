@@ -32,25 +32,21 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  */
 class TraceableResponse implements ResponseInterface, StreamableInterface
 {
-    private HttpClientInterface $client;
-    private ResponseInterface $response;
-    private mixed $content;
-    private ?StopwatchEvent $event;
-    // Declared after $response so that the event includes the time spent destructing it
-    private Canary $canary;
-
-    public function __construct(HttpClientInterface $client, ResponseInterface $response, &$content, ?StopwatchEvent $event = null)
-    {
-        $this->client = $client;
-        $this->response = $response;
-        $this->content = &$content;
-        $this->event = $event;
+    public function __construct(
+        private HttpClientInterface $client,
+        private ResponseInterface $response,
+        private mixed &$content = false,
+        private ?StopwatchEvent $event = null,
+    ) {
         $this->canary = new Canary(static function () use ($event) {
             if ($event?->isStarted()) {
                 $event->stop();
             }
         });
     }
+
+    // Declared after the constructor, which promotes $response, so that the event includes the time spent destructing it
+    private Canary $canary;
 
     public function __serialize(): array
     {

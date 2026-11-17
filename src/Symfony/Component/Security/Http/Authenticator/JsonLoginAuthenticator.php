@@ -21,6 +21,7 @@ use Symfony\Component\PropertyAccess\PropertyAccessorInterface;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
 use Symfony\Component\Security\Core\Authentication\Token\UsernamePasswordToken;
 use Symfony\Component\Security\Core\Exception\AuthenticationException;
+use Symfony\Component\Security\Core\Exception\BadCredentialsException;
 use Symfony\Component\Security\Core\User\PasswordUpgraderInterface;
 use Symfony\Component\Security\Core\User\UserProviderInterface;
 use Symfony\Component\Security\Http\Authentication\AuthenticationFailureHandlerInterface;
@@ -45,20 +46,18 @@ use Symfony\Contracts\Translation\TranslatorInterface;
 class JsonLoginAuthenticator implements InteractiveAuthenticatorInterface
 {
     private array $options;
-    private HttpUtils $httpUtils;
-    private UserProviderInterface $userProvider;
     private PropertyAccessorInterface $propertyAccessor;
-    private ?AuthenticationSuccessHandlerInterface $successHandler;
-    private ?AuthenticationFailureHandlerInterface $failureHandler;
     private ?TranslatorInterface $translator = null;
 
-    public function __construct(HttpUtils $httpUtils, UserProviderInterface $userProvider, ?AuthenticationSuccessHandlerInterface $successHandler = null, ?AuthenticationFailureHandlerInterface $failureHandler = null, array $options = [], ?PropertyAccessorInterface $propertyAccessor = null)
-    {
+    public function __construct(
+        private HttpUtils $httpUtils,
+        private UserProviderInterface $userProvider,
+        private ?AuthenticationSuccessHandlerInterface $successHandler = null,
+        private ?AuthenticationFailureHandlerInterface $failureHandler = null,
+        array $options = [],
+        ?PropertyAccessorInterface $propertyAccessor = null,
+    ) {
         $this->options = array_merge(['username_path' => 'username', 'password_path' => 'password'], $options);
-        $this->httpUtils = $httpUtils;
-        $this->successHandler = $successHandler;
-        $this->failureHandler = $failureHandler;
-        $this->userProvider = $userProvider;
         $this->propertyAccessor = $propertyAccessor ?: PropertyAccess::createPropertyAccessor();
     }
 
@@ -155,6 +154,10 @@ class JsonLoginAuthenticator implements InteractiveAuthenticatorInterface
             throw new BadRequestHttpException(\sprintf('The key "%s" must be provided.', $this->options['username_path']), $e);
         }
 
+        if ('' === $credentials['username']) {
+            throw new BadCredentialsException(\sprintf('The key "%s" must not be empty.', $this->options['username_path']));
+        }
+
         try {
             $credentials['password'] = $this->propertyAccessor->getValue($data, $this->options['password_path']);
             $this->propertyAccessor->setValue($data, $this->options['password_path'], null);
@@ -166,8 +169,8 @@ class JsonLoginAuthenticator implements InteractiveAuthenticatorInterface
             throw new BadRequestHttpException(\sprintf('The key "%s" must be provided.', $this->options['password_path']), $e);
         }
 
-        if ('' === $credentials['username'] || '' === $credentials['password']) {
-            trigger_deprecation('symfony/security', '6.2', 'Passing an empty string as username or password parameter is deprecated.');
+        if ('' === $credentials['password']) {
+            throw new BadCredentialsException(\sprintf('The key "%s" must not be empty.', $this->options['password_path']));
         }
 
         return $credentials;

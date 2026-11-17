@@ -11,18 +11,17 @@
 
 namespace Symfony\Component\Translation\Tests\Formatter;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
+use PHPUnit\Framework\TestCase;
 use Symfony\Component\Translation\Exception\InvalidArgumentException;
 use Symfony\Component\Translation\Formatter\IntlFormatter;
 use Symfony\Component\Translation\Formatter\IntlFormatterInterface;
 
-/**
- * @requires extension intl
- */
-class IntlFormatterTest extends \PHPUnit\Framework\TestCase
+#[RequiresPhpExtension('intl')]
+class IntlFormatterTest extends TestCase
 {
-    /**
-     * @dataProvider provideDataForFormat
-     */
+    #[DataProvider('provideDataForFormat')]
     public function testFormat($expected, $message, $arguments)
     {
         $this->assertEquals($expected, trim((new IntlFormatter())->formatIntl($message, 'en', $arguments)));
@@ -90,12 +89,20 @@ class IntlFormatterTest extends \PHPUnit\Framework\TestCase
         ];
     }
 
-    public function testPercentsAndBracketsAreTrimmed()
+    #[DataProvider('percentAndBracketsAreTrimmedProvider')]
+    public function testPercentsAndBracketsAreTrimmed(string $expected, string $message, array $parameters)
     {
         $formatter = new IntlFormatter();
         $this->assertInstanceof(IntlFormatterInterface::class, $formatter);
-        $this->assertSame('Hello Fab', $formatter->formatIntl('Hello {name}', 'en', ['name' => 'Fab']));
-        $this->assertSame('Hello Fab', $formatter->formatIntl('Hello {name}', 'en', ['%name%' => 'Fab']));
-        $this->assertSame('Hello Fab', $formatter->formatIntl('Hello {name}', 'en', ['{{ name }}' => 'Fab']));
+        $this->assertSame($expected, $formatter->formatIntl($message, 'en', $parameters));
+    }
+
+    public static function percentAndBracketsAreTrimmedProvider(): array
+    {
+        return [
+            ['Hello Fab', 'Hello {name}', ['name' => 'Fab']],
+            ['Hello Fab', 'Hello {name}', ['%name%' => 'Fab']],
+            ['Hello Fab', 'Hello {name}', ['{{ name }}' => 'Fab']],
+        ];
     }
 }

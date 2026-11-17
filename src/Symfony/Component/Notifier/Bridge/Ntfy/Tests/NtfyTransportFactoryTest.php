@@ -12,14 +12,14 @@
 namespace Symfony\Component\Notifier\Bridge\Ntfy\Tests;
 
 use Symfony\Component\Notifier\Bridge\Ntfy\NtfyTransportFactory;
-use Symfony\Component\Notifier\Test\TransportFactoryTestCase;
+use Symfony\Component\Notifier\Test\AbstractTransportFactoryTestCase;
 use Symfony\Component\Notifier\Transport\Dsn;
 use Symfony\Component\Notifier\Transport\TransportFactoryInterface;
 
 /**
  * @author Mickael Perraud <mikaelkael.fr@gmail.com>
  */
-final class NtfyTransportFactoryTest extends TransportFactoryTestCase
+final class NtfyTransportFactoryTest extends AbstractTransportFactoryTestCase
 {
     public function createFactory(): TransportFactoryInterface
     {

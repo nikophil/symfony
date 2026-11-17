@@ -11,16 +11,89 @@
 
 namespace Symfony\Component\Mime\Tests\Part;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Mime\Encoder\ContentEncoderInterface;
 use Symfony\Component\Mime\Exception\InvalidArgumentException;
+use Symfony\Component\Mime\Exception\RuntimeException;
 use Symfony\Component\Mime\Header\Headers;
 use Symfony\Component\Mime\Header\ParameterizedHeader;
 use Symfony\Component\Mime\Header\UnstructuredHeader;
 use Symfony\Component\Mime\Part\File;
 use Symfony\Component\Mime\Part\TextPart;
 
+class TextPartTestToStringGadget
+{
+    public static bool $fired = false;
+
+    public function __toString(): string
+    {
+        self::$fired = true;
+
+        return '';
+    }
+}
+
 class TextPartTest extends TestCase
 {
+    #[DataProvider('provideTrampolineKeys')]
+    public function testUnserializeRejectsObjectInTypedStringProperty(string $key)
+    {
+        $template = (new TextPart('body content'))->__serialize();
+        $template[$key] = new TextPartTestToStringGadget();
+        $payload = \sprintf('O:%d:"%s":%d:{', \strlen(TextPart::class), TextPart::class, \count($template));
+        foreach ($template as $k => $v) {
+            $payload .= serialize($k).serialize($v);
+        }
+        $payload .= '}';
+        TextPartTestToStringGadget::$fired = false;
+
+        try {
+            unserialize($payload);
+            $this->fail('Expected BadMethodCallException.');
+        } catch (\BadMethodCallException $e) {
+        }
+
+        $this->assertFalse(TextPartTestToStringGadget::$fired, '__toString gadget must not fire during unserialize');
+    }
+
+    public static function provideTrampolineKeys(): iterable
+    {
+        yield ['charset'];
+        yield ['subtype'];
+        yield ['disposition'];
+        yield ['name'];
+        yield ['encoding'];
+    }
+
+    #[DataProvider('provideNonStringValues')]
+    public function testUnserializeRejectsNonStringValue(string $key, mixed $value)
+    {
+        $template = (new TextPart('body content'))->__serialize();
+        $template[$key] = $value;
+        $payload = \sprintf('O:%d:"%s":%d:{', \strlen(TextPart::class), TextPart::class, \count($template));
+        foreach ($template as $k => $v) {
+            $payload .= serialize($k).serialize($v);
+        }
+
+        $this->expectException(\BadMethodCallException::class);
+
+        unserialize($payload.'}');
+    }
+
+    public static function provideNonStringValues(): iterable
+    {
+        foreach (['charset', 'subtype', 'disposition', 'name', 'encoding'] as $key) {
+            yield $key.' int' => [$key, 123];
+            yield $key.' object' => [$key, new \stdClass()];
+        }
+
+        yield 'subtype null' => ['subtype', null];
+        yield 'encoding null' => ['encoding', null];
+    }
+
     public function testConstructor()
     {
         $p = new TextPart('content');
@@ -98,6 +171,65 @@ class TextPartTest extends TestCase
         ), $p->getPreparedHeaders());
     }
 
+    public function testCustomEncoderNeedsToRegisterFirst()
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('The encoding must be one of "quoted-printable", "base64", "8bit", "upper_encoder" ("this_encoding_does_not_exist" given).');
+
+        $upperEncoder = $this->createStub(ContentEncoderInterface::class);
+        $upperEncoder->method('getName')->willReturn('upper_encoder');
+
+        TextPart::addEncoder($upperEncoder);
+        new TextPart('content', 'utf-8', 'plain', 'this_encoding_does_not_exist');
+    }
+
+    public function testOverwriteDefaultEncoder()
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('You are not allowed to change the default encoders ("quoted-printable", "base64", and "8bit").');
+
+        $base64Encoder = $this->createStub(ContentEncoderInterface::class);
+        $base64Encoder->method('getName')->willReturn('base64');
+
+        TextPart::addEncoder($base64Encoder);
+    }
+
+    public function testCustomEncoding()
+    {
+        TextPart::addEncoder(new class implements ContentEncoderInterface {
+            public function encodeByteStream($stream, int $maxLineLength = 0): iterable
+            {
+                $filter = stream_filter_append($stream, 'string.toupper', \STREAM_FILTER_READ);
+                if (!\is_resource($filter)) {
+                    throw new RuntimeException('Unable to set the upper content encoder to the filter.');
+                }
+
+                while (!feof($stream)) {
+                    yield fread($stream, 16372);
+                }
+                stream_filter_remove($filter);
+            }
+
+            public function getName(): string
+            {
+                return 'upper_encoder';
+            }
+
+            public function encodeString(string $string, ?string $charset = 'utf-8', int $firstLineOffset = 0, int $maxLineLength = 0): string
+            {
+                return strtoupper($string);
+            }
+        });
+
+        $p = new TextPart('content', 'utf-8', 'plain', 'upper_encoder');
+        $this->assertEquals('CONTENT', $p->bodyToString());
+        $this->assertEquals('CONTENT', implode('', iterator_to_array($p->bodyToIterable())));
+        $this->assertEquals(new Headers(
+            new ParameterizedHeader('Content-Type', 'text/plain', ['charset' => 'utf-8']),
+            new UnstructuredHeader('Content-Transfer-Encoding', 'upper_encoder')
+        ), $p->getPreparedHeaders());
+    }
+
     public function testSerialize()
     {
         $r = fopen('php://memory', 'r+', false);
@@ -110,5 +242,57 @@ class TextPartTest extends TestCase
         $n = unserialize(serialize($p));
         $this->assertEquals($expected->toString(), $p->toString());
         $this->assertEquals($expected->toString(), $n->toString());
+    }
+
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideSubclassesImplementingSleep')]
+    public function testSerializeSubclassImplementingSleep(string $class)
+    {
+        $part = (new $class('content', 'state'))->setDisposition('inline')->setName('file.html');
+        $part->getHeaders()->addTextHeader('X-Foo', 'bar');
+
+        $this->expectUserDeprecationMessage(\sprintf('Since symfony/mime 7.4: Passing extra keys to "%s::__unserialize()" is deprecated, populate properties in "%s::__unserialize()" instead.', TextPart::class, $class));
+
+        $unserialized = unserialize(serialize($part));
+
+        $this->assertSame('state', $unserialized->getState());
+        $this->assertSame($part->toString(), $unserialized->toString());
+    }
+
+    public static function provideSubclassesImplementingSleep(): iterable
+    {
+        yield [TextPartTestSleepPart::class];
+        yield [TextPartTestWakeupPart::class];
+    }
+}
+
+class TextPartTestSleepPart extends TextPart
+{
+    protected ?string $state = null;
+
+    public function __construct(string $body, string $state)
+    {
+        parent::__construct($body, 'utf-8', 'html');
+
+        $this->state = $state;
+    }
+
+    public function getState(): ?string
+    {
+        return $this->state;
+    }
+
+    public function __sleep(): array
+    {
+        return [...parent::__sleep(), 'state'];
+    }
+}
+
+class TextPartTestWakeupPart extends TextPartTestSleepPart
+{
+    public function __wakeup(): void
+    {
+        parent::__wakeup();
     }
 }

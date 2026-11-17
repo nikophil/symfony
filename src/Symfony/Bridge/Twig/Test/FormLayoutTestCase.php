@@ -19,6 +19,7 @@ use Symfony\Component\Form\FormView;
 use Symfony\Component\Form\Test\FormIntegrationTestCase;
 use Symfony\Component\Security\Csrf\CsrfTokenManager;
 use Twig\Environment;
+use Twig\Extension\ExtensionInterface;
 use Twig\Loader\FilesystemLoader;
 
 /**
@@ -85,15 +86,27 @@ abstract class FormLayoutTestCase extends FormIntegrationTestCase
         }
     }
 
+    /**
+     * @return string[]
+     */
     abstract protected function getTemplatePaths(): array;
 
+    /**
+     * @return ExtensionInterface[]
+     */
     abstract protected function getTwigExtensions(): array;
 
+    /**
+     * @return array<string, mixed>
+     */
     protected function getTwigGlobals(): array
     {
         return [];
     }
 
+    /**
+     * @return string[]
+     */
     abstract protected function getThemes(): array;
 
     protected function renderForm(FormView $view, array $vars = []): string

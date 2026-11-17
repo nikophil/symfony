@@ -30,12 +30,8 @@ class ChannelListenerTest extends TestCase
         $accessMap = new AccessMap();
         $accessMap->add(new SchemeRequestMatcher('https'), [], 'http');
 
-        $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
-
         $listener = new ChannelListener($accessMap);
-        $listener($event);
-
-        $this->assertNull($event->getResponse());
+        $this->assertFalse($listener->supports($request));
     }
 
     public function testHandleWithSecuredRequestAndHttpsChannel()
@@ -45,12 +41,8 @@ class ChannelListenerTest extends TestCase
         $accessMap = new AccessMap();
         $accessMap->add(new SchemeRequestMatcher('http'), [], 'https');
 
-        $event = new RequestEvent($this->createMock(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
-
         $listener = new ChannelListener($accessMap);
-        $listener($event);
-
-        $this->assertNull($event->getResponse());
+        $this->assertFalse($listener->supports($request));
     }
 
     public function testHandleWithNotSecuredRequestAndHttpsChannel()
@@ -63,7 +55,9 @@ class ChannelListenerTest extends TestCase
         $event = new RequestEvent($this->createStub(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
 
         $listener = new ChannelListener($accessMap);
-        $listener($event);
+        $this->assertTrue($listener->supports($request));
+
+        $listener->authenticate($event);
 
         $response = $event->getResponse();
         $this->assertInstanceOf(RedirectResponse::class, $response);
@@ -80,7 +74,9 @@ class ChannelListenerTest extends TestCase
         $event = new RequestEvent($this->createStub(HttpKernelInterface::class), $request, HttpKernelInterface::MAIN_REQUEST);
 
         $listener = new ChannelListener($accessMap);
-        $listener($event);
+        $this->assertTrue($listener->supports($request));
+
+        $listener->authenticate($event);
 
         $response = $event->getResponse();
         $this->assertInstanceOf(RedirectResponse::class, $response);

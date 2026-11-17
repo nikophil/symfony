@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Messenger\Bridge\AmazonSqs\Transport;
 
+use AsyncAws\Core\Result;
+use AsyncAws\Core\Waiter;
 use AsyncAws\Sqs\Enum\MessageSystemAttributeName;
 use AsyncAws\Sqs\Enum\QueueAttributeName;
 use AsyncAws\Sqs\Result\ReceiveMessageResult;
@@ -39,6 +41,8 @@ class Connection
         'wait_time' => 20,
         'poll_timeout' => 0.1,
         'visibility_timeout' => null,
+        'delete_on_rejection' => true,
+        'retry_delay' => 0,
         'auto_setup' => true,
         'access_key' => null,
         'secret_key' => null,
@@ -46,6 +50,8 @@ class Connection
         'endpoint' => 'https://sqs.eu-west-1.amazonaws.com',
         'region' => 'eu-west-1',
         'queue_name' => 'messages',
+        'queue_attributes' => null,
+        'queue_tags' => null,
         'account' => null,
         'sslmode' => null,
         'debug' => null,
@@ -56,13 +62,14 @@ class Connection
     private ?ReceiveMessageResult $currentResponse = null;
     /** @var array[] */
     private array $buffer = [];
-    private ?string $queueUrl;
 
-    public function __construct(array $configuration, ?SqsClient $client = null, ?string $queueUrl = null)
-    {
+    public function __construct(
+        array $configuration,
+        ?SqsClient $client = null,
+        private ?string $queueUrl = null,
+    ) {
         $this->configuration = array_replace_recursive(self::DEFAULT_OPTIONS, $configuration);
         $this->client = $client ?? new SqsClient([]);
-        $this->queueUrl = $queueUrl;
     }
 
     public function __serialize(): array
@@ -92,6 +99,8 @@ class Connection
      * * endpoint: absolute URL to the SQS service (Default: https://sqs.eu-west-1.amazonaws.com)
      * * region: name of the AWS region (Default: eu-west-1)
      * * queue_name: name of the queue (Default: messages)
+     * * queue_attributes: attributes of the queue, array<QueueAttributeName::*, string>
+     * * queue_tags: tags of the queue, array<string, string>
      * * account: identifier of the AWS account
      * * access_key: AWS access key
      * * secret_key: AWS secret key
@@ -100,6 +109,8 @@ class Connection
      * * wait_time: long polling duration in seconds (Default: 20)
      * * poll_timeout: amount of seconds the transport should wait for new message
      * * visibility_timeout: amount of seconds the message won't be visible
+     * * delete_on_rejection: Whether to delete message on rejection or allow SQS to handle retries. (Default: true).
+     * * retry_delay: amount of seconds the message won't be visible before retry. (Default: 0).
      * * sslmode: Can be "disable" to use http for a custom endpoint
      * * auto_setup: Whether the queue should be created automatically during send / get (Default: true)
      * * debug: Log all HTTP requests and responses as LoggerInterface::DEBUG (Default: false)
@@ -133,8 +144,12 @@ class Connection
             'wait_time' => filter_var($options['wait_time'], \FILTER_VALIDATE_INT, \FILTER_NULL_ON_FAILURE) ?? throw new InvalidArgumentException('Option "wait_time" of the Amazon SQS Messenger transport must be an integer.'),
             'poll_timeout' => $options['poll_timeout'],
             'visibility_timeout' => null !== $options['visibility_timeout'] ? filter_var($options['visibility_timeout'], \FILTER_VALIDATE_INT, \FILTER_NULL_ON_FAILURE) ?? throw new InvalidArgumentException('Option "visibility_timeout" of the Amazon SQS Messenger transport must be an integer.') : null,
+            'delete_on_rejection' => filter_var($options['delete_on_rejection'], \FILTER_VALIDATE_BOOL, \FILTER_NULL_ON_FAILURE) ?? throw new InvalidArgumentException('Option "delete_on_rejection" of the Amazon SQS Messenger transport must be a boolean.'),
+            'retry_delay' => filter_var($options['retry_delay'], \FILTER_VALIDATE_INT, \FILTER_NULL_ON_FAILURE) ?? throw new InvalidArgumentException('Option "retry_delay" of the Amazon SQS Messenger transport must be an integer.'),
             'auto_setup' => filter_var($options['auto_setup'], \FILTER_VALIDATE_BOOL, \FILTER_NULL_ON_FAILURE) ?? throw new InvalidArgumentException('Option "auto_setup" of the Amazon SQS Messenger transport must be a boolean.'),
             'queue_name' => (string) $options['queue_name'],
+            'queue_attributes' => $options['queue_attributes'],
+            'queue_tags' => $options['queue_tags'],
         ];
 
         $clientConfiguration = [
@@ -152,7 +167,7 @@ class Connection
 
         $isAwsHost = false;
         if ('default' !== ($params['host'] ?? 'default')) {
-            $clientConfiguration['endpoint'] = \sprintf('%s://%s%s', ($query['sslmode'] ?? null) === 'disable' ? 'http' : 'https', $params['host'], ($params['port'] ?? null) ? ':'.$params['port'] : '');
+            $clientConfiguration['endpoint'] = \sprintf('%s://%s%s', ($options['sslmode'] ?? null) === 'disable' ? 'http' : 'https', $params['host'], ($params['port'] ?? null) ? ':'.$params['port'] : '');
             // Every AWS partition that serves SQS under amazonaws: aws, aws-cn and aws-eusc
             if (preg_match(';^sqs\.([^\.]++)\.amazonaws\.(?:com(?:\.cn)?|eu)$;', $params['host'], $matches)) {
                 $clientConfiguration['region'] = $matches[1];
@@ -163,7 +178,7 @@ class Connection
         }
 
         $parsedPath = explode('/', ltrim($params['path'] ?? '/', '/'));
-        if (\count($parsedPath) > 0 && !empty($queueName = end($parsedPath))) {
+        if ($queueName = end($parsedPath)) {
             $configuration['queue_name'] = $queueName;
         }
         $configuration['account'] = 2 === \count($parsedPath) ? $parsedPath[0] : $options['account'] ?? self::DEFAULT_OPTIONS['account'];
@@ -184,15 +199,17 @@ class Connection
 
     public function get(): ?array
     {
-        if ($this->configuration['auto_setup']) {
-            $this->setup();
-        }
+        return $this->holdSignals(function () {
+            if ($this->configuration['auto_setup']) {
+                $this->setup();
+            }
 
-        foreach ($this->getNextMessages() as $message) {
-            return $message;
-        }
+            foreach ($this->getNextMessages() as $message) {
+                return $message;
+            }
 
-        return null;
+            return null;
+        });
     }
 
     /**
@@ -209,7 +226,7 @@ class Connection
      */
     private function getPendingMessages(): \Generator
     {
-        while (!empty($this->buffer)) {
+        while ($this->buffer) {
             yield array_shift($this->buffer);
         }
     }
@@ -281,53 +298,93 @@ class Connection
 
     public function setup(): void
     {
-        // Set to false to disable setup more than once
-        $this->configuration['auto_setup'] = false;
-        if ($this->client->queueExists([
-            'QueueName' => $this->configuration['queue_name'],
-            'QueueOwnerAWSAccountId' => $this->configuration['account'],
-        ])->isSuccess()) {
-            return;
-        }
+        $this->holdSignals(function () {
+            // Set to false to disable setup more than once
+            $this->configuration['auto_setup'] = false;
+            if ($this->client->queueExists([
+                'QueueName' => $this->configuration['queue_name'],
+                'QueueOwnerAWSAccountId' => $this->configuration['account'],
+            ])->isSuccess()) {
+                return;
+            }
 
-        if (null !== $this->configuration['account']) {
-            throw new InvalidArgumentException(\sprintf('The Amazon SQS queue "%s" does not exist (or you don\'t have permissions on it), and can\'t be created when an account is provided.', $this->configuration['queue_name']));
-        }
+            if (null !== $this->configuration['account']) {
+                throw new InvalidArgumentException(\sprintf('The Amazon SQS queue "%s" does not exist (or you don\'t have permissions on it), and can\'t be created when an account is provided.', $this->configuration['queue_name']));
+            }
 
-        $parameters = ['QueueName' => $this->configuration['queue_name']];
-
-        if (self::isFifoQueue($this->configuration['queue_name'])) {
-            $parameters['Attributes'] = [
-                'FifoQueue' => 'true',
+            $parameters = [
+                'QueueName' => $this->configuration['queue_name'],
+                'Attributes' => $this->configuration['queue_attributes'],
+                'tags' => $this->configuration['queue_tags'],
             ];
-        }
 
-        $this->client->createQueue($parameters);
-        $exists = $this->client->queueExists(['QueueName' => $this->configuration['queue_name']]);
-        // Blocking call to wait for the queue to be created
-        $exists->wait();
-        if (!$exists->isSuccess()) {
-            throw new TransportException(\sprintf('Failed to create the Amazon SQS queue "%s".', $this->configuration['queue_name']));
-        }
-        $this->queueUrl = null;
+            if (self::isFifoQueue($this->configuration['queue_name'])) {
+                $parameters['Attributes'][QueueAttributeName::FIFO_QUEUE] = 'true';
+            }
+
+            $this->client->createQueue($parameters);
+            $exists = $this->client->queueExists(['QueueName' => $this->configuration['queue_name']]);
+            // Blocking call to wait for the queue to be created
+            $exists->wait();
+            if (!$exists->isSuccess()) {
+                throw new TransportException(\sprintf('Failed to create the Amazon SQS queue "%s".', $this->configuration['queue_name']));
+            }
+            $this->queueUrl = null;
+        });
     }
 
     public function delete(string $id): void
     {
-        $this->client->deleteMessage([
+        $this->holdSignals(fn () => $this->client->deleteMessage([
             'QueueUrl' => $this->getQueueUrl(),
             'ReceiptHandle' => $id,
-        ]);
+        ]));
+    }
+
+    public function reject(string $id): void
+    {
+        if ($this->configuration['delete_on_rejection']) {
+            $this->delete($id);
+        } else {
+            $this->holdSignals(fn () => $this->client->changeMessageVisibility([
+                'QueueUrl' => $this->getQueueUrl(),
+                'ReceiptHandle' => $id,
+                'VisibilityTimeout' => $this->configuration['retry_delay'],
+            ]));
+        }
+    }
+
+    /**
+     * @param int|null $seconds the minimum duration the message should be kept alive
+     */
+    public function keepalive(string $id, ?int $seconds = null): void
+    {
+        $visibilityTimeout = $this->configuration['visibility_timeout'];
+        if (null !== $visibilityTimeout && null !== $seconds && $visibilityTimeout < $seconds) {
+            throw new TransportException(\sprintf('SQS visibility_timeout (%ds) cannot be smaller than the keepalive interval (%ds).', $visibilityTimeout, $seconds));
+        }
+
+        // the timeout the queue applies on its own is not known here, so a transport that
+        // configures none hides the message for the time it takes to reach the next keepalive
+        $visibilityTimeout ??= $seconds;
+
+        if (null === $visibilityTimeout) {
+            throw new TransportException('Cannot keep an Amazon SQS message alive without a "visibility_timeout" option on the transport.');
+        }
+
+        $this->holdSignals(fn () => $this->client->changeMessageVisibility([
+            'QueueUrl' => $this->getQueueUrl(),
+            'ReceiptHandle' => $id,
+            'VisibilityTimeout' => $visibilityTimeout,
+        ]));
     }
 
     public function getMessageCount(): int
     {
-        $response = $this->client->getQueueAttributes([
+        $attributes = $this->holdSignals(fn () => $this->client->getQueueAttributes([
             'QueueUrl' => $this->getQueueUrl(),
             'AttributeNames' => [QueueAttributeName::APPROXIMATE_NUMBER_OF_MESSAGES],
-        ]);
-
-        $attributes = $response->getAttributes();
+        ])->getAttributes());
 
         return (int) ($attributes[QueueAttributeName::APPROXIMATE_NUMBER_OF_MESSAGES] ?? 0);
     }
@@ -379,38 +436,40 @@ class Connection
         }
 
         if (self::isFifoQueue($this->configuration['queue_name'])) {
-            $parameters['MessageGroupId'] = null !== $messageGroupId ? $messageGroupId : __METHOD__;
-            $parameters['MessageDeduplicationId'] = null !== $messageDeduplicationId ? $messageDeduplicationId : sha1(json_encode(['body' => $body, 'headers' => $headers]));
+            $parameters['MessageGroupId'] = $messageGroupId ?? __METHOD__;
+            $parameters['MessageDeduplicationId'] = $messageDeduplicationId ?? sha1(json_encode(['body' => $body, 'headers' => $headers]));
             unset($parameters['DelaySeconds']);
         }
 
-        $this->client->sendMessage($parameters);
+        $this->holdSignals(fn () => $this->client->sendMessage($parameters));
     }
 
     public function reset(): void
     {
-        if (null !== $this->currentResponse) {
-            try {
-                // fetch current response in order to requeue in transit messages
-                if (!$this->fetchMessage()) {
-                    $this->currentResponse->cancel();
+        $this->holdSignals(function () {
+            if (null !== $this->currentResponse) {
+                try {
+                    // fetch current response in order to requeue in transit messages
+                    if (!$this->fetchMessage()) {
+                        $this->currentResponse->cancel();
+                        $this->currentResponse = null;
+                    }
+                } catch (\Throwable) {
+                    // discard the in-flight response that cannot be reused so the connection stays usable
+                    $response = $this->currentResponse;
                     $this->currentResponse = null;
+                    $response->cancel();
                 }
-            } catch (\Throwable) {
-                // discard the in-flight response that cannot be reused so the connection stays usable
-                $response = $this->currentResponse;
-                $this->currentResponse = null;
-                $response->cancel();
             }
-        }
 
-        foreach ($this->getPendingMessages() as $message) {
-            $this->client->changeMessageVisibility([
-                'QueueUrl' => $this->getQueueUrl(),
-                'ReceiptHandle' => $message['id'],
-                'VisibilityTimeout' => 0,
-            ]);
-        }
+            foreach ($this->getPendingMessages() as $message) {
+                $this->client->changeMessageVisibility([
+                    'QueueUrl' => $this->getQueueUrl(),
+                    'ReceiptHandle' => $message['id'],
+                    'VisibilityTimeout' => 0,
+                ]);
+            }
+        });
     }
 
     private function getQueueUrl(): string
@@ -419,14 +478,48 @@ class Connection
             return $this->queueUrl;
         }
 
-        return $this->queueUrl = $this->client->getQueueUrl([
+        return $this->queueUrl = $this->holdSignals(fn () => $this->client->getQueueUrl([
             'QueueName' => $this->configuration['queue_name'],
             'QueueOwnerAWSAccountId' => $this->configuration['account'],
-        ])->getQueueUrl();
+        ])->getQueueUrl());
     }
 
     private static function isFifoQueue(string $queueName): bool
     {
         return str_ends_with($queueName, self::AWS_SQS_FIFO_SUFFIX);
+    }
+
+    /**
+     * Runs $command with asynchronous signal dispatching suspended.
+     *
+     * The keepalive alarm of messenger:consume is raised at any point of the program. When it is
+     * dispatched while a request of this connection is in flight, the keepalive reenters the HTTP
+     * client, which refuses the call. Holding the signals here and dispatching them once the
+     * request is over sends the keepalive a moment later instead. Nesting is free: the inner call
+     * finds the signals already held and leaves them to the outer one.
+     *
+     * async-aws sends the request when its result is resolved or freed, not when the client method
+     * returns, so a result that $command does not read is resolved here, while the signals are held.
+     *
+     * @param-immediately-invoked-callable $command
+     */
+    private function holdSignals(callable $command): mixed
+    {
+        $asyncSignals = \function_exists('pcntl_async_signals') && \function_exists('pcntl_signal_dispatch') && pcntl_async_signals(false);
+
+        try {
+            $result = $command();
+
+            if ($result instanceof Result || $result instanceof Waiter) {
+                $result->resolve();
+            }
+
+            return $result;
+        } finally {
+            if ($asyncSignals) {
+                pcntl_async_signals(true);
+                pcntl_signal_dispatch();
+            }
+        }
     }
 }

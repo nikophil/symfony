@@ -11,6 +11,7 @@
 
 namespace Symfony\Bridge\Twig\Tests\Translation;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bridge\Twig\Extension\TranslationExtension;
 use Symfony\Bridge\Twig\Translation\TwigExtractor;
@@ -23,9 +24,7 @@ class TwigExtractorTest extends TestCase
 {
     public const CUSTOM_DOMAIN = 'domain';
 
-    /**
-     * @dataProvider getExtractData
-     */
+    #[DataProvider('getExtractData')]
     public function testExtract($template, $messages)
     {
         $twig = new Environment(new ArrayLoader(), [
@@ -92,9 +91,7 @@ class TwigExtractorTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider resourcesWithSyntaxErrorsProvider
-     */
+    #[DataProvider('resourcesWithSyntaxErrorsProvider')]
     public function testExtractSyntaxError($resources, array $messages)
     {
         $twig = new Environment(new ArrayLoader());
@@ -115,9 +112,7 @@ class TwigExtractorTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider resourceProvider
-     */
+    #[DataProvider('resourceProvider')]
     public function testExtractWithFiles($resource)
     {
         $loader = new ArrayLoader([]);

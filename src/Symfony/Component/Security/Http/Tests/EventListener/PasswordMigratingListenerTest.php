@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Security\Http\Tests\EventListener;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\PasswordHasher\Hasher\PasswordHasherFactory;
@@ -41,16 +42,14 @@ class PasswordMigratingListenerTest extends TestCase
         $this->user = new InMemoryUser('John', 'old-hash');
         $encoder = $this->createStub(PasswordHasherInterface::class);
         $encoder->method('needsRehash')->willReturn(true);
-        $encoder->method('hash')->with('pa$$word', null)->willReturn('new-hash');
+        $encoder->method('hash')->willReturn('new-hash');
         $this->hasherFactory = new PasswordHasherFactory([
             InMemoryUser::class => $encoder,
         ]);
         $this->listener = new PasswordMigratingListener($this->hasherFactory);
     }
 
-    /**
-     * @dataProvider provideUnsupportedEvents
-     */
+    #[DataProvider('provideUnsupportedEvents')]
     public function testUnsupportedEvents($event)
     {
         $hasherFactory = $this->createMock(PasswordHasherFactoryInterface::class);
@@ -152,8 +151,6 @@ class DummyTestMigratingUserProvider extends TestMigratingUserProvider
 abstract class TestPasswordAuthenticatedUser implements UserInterface, PasswordAuthenticatedUserInterface
 {
     abstract public function getPassword(): ?string;
-
-    abstract public function getSalt(): ?string;
 }
 
 class DummyTestPasswordAuthenticatedUser extends TestPasswordAuthenticatedUser
@@ -163,21 +160,13 @@ class DummyTestPasswordAuthenticatedUser extends TestPasswordAuthenticatedUser
         return null;
     }
 
-    public function getSalt(): ?string
-    {
-        return null;
-    }
-
     public function getRoles(): array
     {
         return [];
     }
 
+    #[\Deprecated]
     public function eraseCredentials(): void
-    {
-    }
-
-    public function getUsername(): string
     {
     }
 

@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\HttpClient\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\CurlHttpClient;
 use Symfony\Component\HttpClient\Exception\ServerException;
@@ -31,6 +32,8 @@ use Symfony\Contracts\HttpClient\Test\TestHttpServer;
 
 class RetryableHttpClientTest extends TestCase
 {
+    use TestServerPortTrait;
+
     public function testRetryOnError()
     {
         $client = new RetryableHttpClient(
@@ -291,7 +294,7 @@ class RetryableHttpClientTest extends TestCase
 
             // Retrying on 200 makes the test server receive the body twice
             $client = new RetryableHttpClient(new CurlHttpClient(), new GenericRetryStrategy([200], 0), 1);
-            $response = $client->request('POST', 'http://localhost:8057/post', ['body' => $body]);
+            $response = $client->request('POST', 'http://localhost:'.self::port().'/post', ['body' => $body]);
 
             $this->assertSame(['foo' => '0123456789', 'REQUEST_METHOD' => 'POST'], $response->toArray(), $type);
             $this->assertSame(1, $response->getInfo('retry_count'), $type);
@@ -324,7 +327,7 @@ class RetryableHttpClientTest extends TestCase
 
         foreach ($bodies as $type => $body) {
             $client = new RetryableHttpClient(new CurlHttpClient(), new GenericRetryStrategy([], 0), 1);
-            $response = $client->request('POST', 'post', ['base_uri' => ['http://does.not.exists/', 'http://localhost:8057/'], 'body' => $body]);
+            $response = $client->request('POST', 'post', ['base_uri' => ['http://does.not.exists/', 'http://localhost:'.self::port().'/'], 'body' => $body]);
 
             $this->assertSame(['foo' => '0123456789', 'REQUEST_METHOD' => 'POST'], $response->toArray(), $type);
         }
@@ -369,7 +372,7 @@ class RetryableHttpClientTest extends TestCase
             $this->assertSame('Could not resolve host "does.not.exists".', $e->getMessage());
         }
         $this->assertCount(2, $logger->logs);
-        $this->assertSame('Try #{count} after {delay}ms: Could not resolve host "does.not.exists".', $logger->logs[0]);
+        $this->assertSame('Try #1 after 0ms: Could not resolve host "does.not.exists".', $logger->logs[0]);
     }
 
     public function testCancelOnTimeout()
@@ -428,6 +431,27 @@ class RetryableHttpClientTest extends TestCase
         $this->assertSame((int) ($retryAfter * 1000), $delay);
     }
 
+    #[DataProvider('provideRetryAfterDates')]
+    public function testRetryAfterHttpDate(string $retryAfter, int $delay)
+    {
+        $mockClient = new MockHttpClient([
+            new MockResponse('', ['http_code' => 503, 'response_headers' => ['Retry-After' => $retryAfter]]),
+            new MockResponse(''),
+        ]);
+        $client = new RetryableHttpClient($mockClient, new GenericRetryStrategy(GenericRetryStrategy::DEFAULT_RETRY_STATUS_CODES, 100, 1, 0, 0), 1, $logger = new TestLogger());
+
+        $client->request('GET', 'http://example.com/foo-bar')->getContent();
+
+        $this->assertSame([\sprintf('Try #1 after %dms, status code: 503', $delay)], $logger->logs);
+    }
+
+    public static function provideRetryAfterDates(): iterable
+    {
+        yield 'HTTP-date in the past' => ['Thu, 01 Jan 1970 00:00:00 GMT', 0];
+        yield 'not an HTTP-date' => ['yesterday', 100];
+        yield 'mismatched weekday name' => ['Fri, 01 Jan 1970 00:00:00 GMT', 100];
+    }
+
     public function testRetryOnErrorAssertContent()
     {
         $client = new RetryableHttpClient(
@@ -468,7 +492,7 @@ class RetryableHttpClientTest extends TestCase
             }
         };
         $client = new RetryableHttpClient($client, $strategy);
-        $response = $client->request('GET', 'http://localhost:8057/timeout-header', ['timeout' => 0.1]);
+        $response = $client->request('GET', 'http://localhost:'.self::port().'/timeout-header', ['timeout' => 0.1]);
 
         try {
             $response->getStatusCode();
@@ -484,7 +508,7 @@ class RetryableHttpClientTest extends TestCase
         TestHttpServer::start();
 
         $client = new RetryableHttpClient(HttpClient::create(), new GenericRetryStrategy([404], 1000, 1.0, 0, 0.0), 1);
-        $response = $client->request('GET', 'http://localhost:8057/404', ['timeout' => 0.5]);
+        $response = $client->request('GET', 'http://localhost:'.self::port().'/404', ['timeout' => 0.5]);
 
         $time = hrtime(true);
         $this->assertSame(404, $response->getStatusCode());
@@ -497,7 +521,7 @@ class RetryableHttpClientTest extends TestCase
         TestHttpServer::start();
 
         $client = new RetryableHttpClient(HttpClient::create());
-        $response = $client->request('GET', 'http://localhost:8057/custom?status=503&headers[]=Retry-After:10', ['max_duration' => 1, 'timeout' => 0.5]);
+        $response = $client->request('GET', 'http://localhost:'.self::port().'/custom?status=503&headers[]=Retry-After:10', ['max_duration' => 1, 'timeout' => 0.5]);
 
         $time = hrtime(true);
 
@@ -505,7 +529,7 @@ class RetryableHttpClientTest extends TestCase
             $response->getStatusCode();
             $this->fail(TransportException::class.' expected');
         } catch (TransportException $e) {
-            $this->assertStringStartsWith('Max duration was reached for "http://localhost:8057/custom', $e->getMessage());
+            $this->assertStringStartsWith('Max duration was reached for "http://localhost:'.self::port().'/custom', $e->getMessage());
         }
 
         $this->assertLessThan(5, (hrtime(true) - $time) / 1E9);
@@ -516,7 +540,7 @@ class RetryableHttpClientTest extends TestCase
         TestHttpServer::start();
 
         $client = new RetryableHttpClient(HttpClient::create(), new GenericRetryStrategy([404], 400, 1.0, 0, 0.0), 5);
-        $response = $client->request('GET', 'http://localhost:8057/404', ['max_duration' => 1]);
+        $response = $client->request('GET', 'http://localhost:'.self::port().'/404', ['max_duration' => 1]);
 
         $time = hrtime(true);
 
@@ -524,7 +548,7 @@ class RetryableHttpClientTest extends TestCase
             $response->getStatusCode();
             $this->fail(TransportException::class.' expected');
         } catch (TransportException $e) {
-            $this->assertSame('Max duration was reached for "http://localhost:8057/404".', $e->getMessage());
+            $this->assertSame('Max duration was reached for "http://localhost:'.self::port().'/404".', $e->getMessage());
         }
 
         $this->assertLessThan(5, $response->getInfo('retry_count'));
@@ -741,7 +765,7 @@ class RetryableHttpClientTest extends TestCase
             }
         };
 
-        $response = $client->request('GET', 'http://localhost:8057/timeout-header', ['timeout' => 0.1]);
+        $response = $client->request('GET', 'http://localhost:'.self::port().'/timeout-header', ['timeout' => 0.1]);
 
         try {
             $response->getStatusCode();
@@ -818,7 +842,7 @@ class RetryableHttpClientTest extends TestCase
             }
         };
 
-        $response = $client->request('GET', 'http://localhost:8057/timeout-header', ['timeout' => 0.1]);
+        $response = $client->request('GET', 'http://localhost:'.self::port().'/timeout-header', ['timeout' => 0.1]);
 
         try {
             $response->getStatusCode();
@@ -868,7 +892,7 @@ class RetryableHttpClientTest extends TestCase
             }
         };
 
-        $response = $client->request('GET', 'http://localhost:8057/timeout-header', ['timeout' => 0.1]);
+        $response = $client->request('GET', 'http://localhost:'.self::port().'/timeout-header', ['timeout' => 0.1]);
 
         try {
             $response->getStatusCode();

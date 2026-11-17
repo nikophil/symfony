@@ -1,0 +1,651 @@
+<?php
+
+/*
+ * This file is part of the Symfony package.
+ *
+ * (c) Fabien Potencier <fabien@symfony.com>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace Symfony\Component\JsonStreamer\Tests;
+
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\Container;
+use Symfony\Component\JsonStreamer\Exception\InvalidStreamException;
+use Symfony\Component\JsonStreamer\Exception\UnexpectedValueException;
+use Symfony\Component\JsonStreamer\JsonStreamReader;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Enum\DummyBackedEnum;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Mapping\SyntheticPropertyMetadataLoader;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\ClassicDummy;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithBackedEnumValueTransformer;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithConcreteInheritedGenerics;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithDateTimes;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithGenerics;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithIterable;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithNameAttributes;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithNestedGenerics;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithNonNullableProperties;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithNullableProperties;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithNullablePropertiesAndDefaults;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithNullableRepeatedDummies;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithNumericStreamedNames;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithPhpDoc;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithQuotes;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithScalarProperties;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithSyntheticProperties;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\DummyWithValueTransformerAttributes;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\ValueTransformer\DivideStringAndCastToIntValueTransformer;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\ValueTransformer\StringToBooleanValueTransformer;
+use Symfony\Component\TypeInfo\Type;
+use Symfony\Component\TypeInfo\TypeIdentifier;
+
+class JsonStreamReaderTest extends TestCase
+{
+    private string $streamReadersDir;
+    private string $lazyGhostsDir;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->streamReadersDir = \sprintf('%s/symfony_json_streamer_test/stream_reader', sys_get_temp_dir());
+        $this->lazyGhostsDir = \sprintf('%s/symfony_json_streamer_test/lazy_ghost', sys_get_temp_dir());
+
+        if (is_dir($this->streamReadersDir)) {
+            array_map('unlink', glob($this->streamReadersDir.'/*'));
+            rmdir($this->streamReadersDir);
+        }
+
+        if (is_dir($this->lazyGhostsDir)) {
+            array_map('unlink', glob($this->lazyGhostsDir.'/*'));
+            rmdir($this->lazyGhostsDir);
+        }
+    }
+
+    public function testReadScalar()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, null, 'null', Type::nullable(Type::int()));
+        $this->assertRead($reader, true, 'true', Type::bool());
+        $this->assertRead($reader, [['foo' => 1, 'bar' => 2], ['foo' => 3]], '[{"foo": 1, "bar": 2}, {"foo": 3}]', Type::builtin(TypeIdentifier::ARRAY));
+        $this->assertRead($reader, [['foo' => 1, 'bar' => 2], ['foo' => 3]], '[{"foo": 1, "bar": 2}, {"foo": 3}]', Type::builtin(TypeIdentifier::ITERABLE));
+        $this->assertRead($reader, (object) ['foo' => 'bar'], '{"foo": "bar"}', Type::object());
+        $this->assertRead($reader, DummyBackedEnum::ONE, '1', Type::enum(DummyBackedEnum::class, Type::string()));
+    }
+
+    public function testRejectsUnknownPropertyWithInvalidUnicodeEscapeFromStream()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+        $resource = fopen('php://temp', 'w');
+        fwrite($resource, '{"id":1,"extra":"\uD800"}');
+        rewind($resource);
+
+        $this->expectException(InvalidStreamException::class);
+
+        $reader->read($resource, Type::object(ClassicDummy::class))->id;
+    }
+
+    public function testReadCollection()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead(
+            $reader,
+            [true, false],
+            '{"0": true, "1": false}',
+            Type::array(Type::bool()),
+        );
+
+        $this->assertRead(
+            $reader,
+            [true, false],
+            '[true, false]',
+            Type::array(Type::bool()),
+        );
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertSame([1, 2], array_map(static fn (ClassicDummy $d): int => $d->id, $read));
+        }, '[{"id":1,"name":"a"},{"id":2,"name":"b"}]', Type::array(Type::object(ClassicDummy::class)));
+
+        $this->assertRead(
+            $reader,
+            [true, false],
+            '[true, false]',
+            Type::list(Type::bool()),
+        );
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertIsIterable($read);
+            $this->assertSame([true, false], iterator_to_array($read));
+        }, '{"0": true, "1": false}', Type::iterable(Type::bool()));
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertIsIterable($read);
+            $this->assertSame([true, false], iterator_to_array($read));
+        }, '[true, false]', Type::iterable(Type::bool()));
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertIsIterable($read);
+            $this->assertSame([true, false], iterator_to_array($read));
+        }, '[true, false]', Type::iterable(Type::bool(), Type::int()));
+    }
+
+    public function testReadArrayShapeWithQuotedKey()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+        $type = Type::arrayShape(["it's" => Type::int(), "a\\'b" => Type::int()]);
+
+        $this->assertRead($reader, ["it's" => 1, "a\\'b" => 2], '{"it\'s": 1, "a\\\\\'b": 2}', $type);
+    }
+
+    public function testReadObjectWithQuotedStreamedNameAndValueTransformerId()
+    {
+        $reader = JsonStreamReader::create(["divide'it" => new DivideStringAndCastToIntValueTransformer()], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithQuotes::class, $read);
+            $this->assertSame(5, $read->name);
+            $this->assertSame(10, $read->transformed);
+        }, '{"it\'s \\\\\' quoted": 5, "transformed": "20"}', Type::object(DummyWithQuotes::class), ['scale' => 1]);
+    }
+
+    public function testReadTypeWithUnsupportedCharacters()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+        $type = Type::arrayShape(['foo*/bar' => Type::int()]);
+
+        $this->assertRead($reader, ['foo*/bar' => 1], '{"foo*/bar": 1}', $type);
+    }
+
+    public function testReadObject()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(ClassicDummy::class, $read);
+            $this->assertSame(10, $read->id);
+            $this->assertSame('dummy name', $read->name);
+        }, '{"id": 10, "name": "dummy name"}', Type::object(ClassicDummy::class));
+    }
+
+    public function testReadObjectWithGenerics()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithGenerics::class, $read);
+            $this->assertSame(10, $read->dummies[0]->id);
+            $this->assertSame('dummy name', $read->dummies[0]->name);
+        }, '{"dummies":[{"id":10,"name":"dummy name"}]}', Type::generic(Type::object(DummyWithGenerics::class), Type::object(ClassicDummy::class)));
+    }
+
+    public function testReadObjectWithConcreteInheritedGenerics()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithConcreteInheritedGenerics::class, $read);
+            $this->assertSame(1, $read->extra);
+            $this->assertInstanceOf(ClassicDummy::class, $read->dummies[0]);
+            $this->assertSame(10, $read->dummies[0]->id);
+            $this->assertSame('dummy name', $read->dummies[0]->name);
+        }, '{"extra":1,"dummies":[{"id":10,"name":"dummy name"}]}', Type::object(DummyWithConcreteInheritedGenerics::class));
+    }
+
+    public function testReadObjectWithNestedGenerics()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithNestedGenerics::class, $read);
+            $this->assertInstanceOf(ClassicDummy::class, $read->dummies->dummies[0]);
+            $this->assertSame(1, $read->dummies->dummies[0]->id);
+            $this->assertInstanceOf(ClassicDummy::class, $read->dummiesList[0]->dummies[0]);
+            $this->assertSame(2, $read->dummiesList[0]->dummies[0]->id);
+            $this->assertInstanceOf(ClassicDummy::class, $read->nullableDummies->dummies[0]);
+            $this->assertSame(3, $read->nullableDummies->dummies[0]->id);
+            $this->assertInstanceOf(DummyWithGenerics::class, $read->nestedDummies->dummies[0]);
+            $this->assertInstanceOf(ClassicDummy::class, $read->nestedDummies->dummies[0]->dummies[0]);
+            $this->assertSame(4, $read->nestedDummies->dummies[0]->dummies[0]->id);
+            $this->assertInstanceOf(DummyWithNameAttributes::class, $read->namedDummies->dummies[0]);
+            $this->assertSame(5, $read->namedDummies->dummies[0]->id);
+        }, '{"dummies":{"dummies":[{"id":1}]},"dummiesList":[{"dummies":[{"id":2}]}],"nullableDummies":{"dummies":[{"id":3}]},"nestedDummies":{"dummies":[{"dummies":[{"id":4}]}]},"namedDummies":{"dummies":[{"@id":5}]}}', Type::object(DummyWithNestedGenerics::class));
+    }
+
+    public function testReadObjectWithStreamedName()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithNameAttributes::class, $read);
+            $this->assertSame(10, $read->id);
+        }, '{"@id": 10}', Type::object(DummyWithNameAttributes::class));
+    }
+
+    public function testReadObjectWithNumericStreamedNames()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithNumericStreamedNames::class, $read);
+            $this->assertSame([10, 20, 'twelve'], [$read->first, $read->second, $read->third]);
+        }, '{"0": 10, "1": 20, "12": "twelve"}', Type::object(DummyWithNumericStreamedNames::class));
+    }
+
+    public function testReadObjectWithValueTransformer()
+    {
+        $reader = JsonStreamReader::create(
+            valueTransformers: [
+                StringToBooleanValueTransformer::class => new StringToBooleanValueTransformer(),
+                DivideStringAndCastToIntValueTransformer::class => new DivideStringAndCastToIntValueTransformer(),
+            ],
+            streamReadersDir: $this->streamReadersDir,
+            lazyGhostsDir: $this->lazyGhostsDir,
+        );
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithValueTransformerAttributes::class, $read);
+            $this->assertSame(10, $read->id);
+            $this->assertTrue($read->active);
+            $this->assertSame('LOWERCASE NAME', $read->name);
+            $this->assertSame([0, 1], $read->range);
+        }, '{"id": "20", "active": "true", "name": "lowercase name", "range": "0..1"}', Type::object(DummyWithValueTransformerAttributes::class), ['scale' => 1]);
+    }
+
+    public function testReadObjectWithValueTransformerAndMissingProperty()
+    {
+        $reader = JsonStreamReader::create([
+            StringToBooleanValueTransformer::class => new StringToBooleanValueTransformer(),
+            DivideStringAndCastToIntValueTransformer::class => new DivideStringAndCastToIntValueTransformer(),
+        ], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithValueTransformerAttributes::class, $read);
+            $this->assertSame(1, $read->id);
+            $this->assertTrue($read->active);
+            $this->assertSame('DUMMY', $read->name);
+            $this->assertSame([0, 1], $read->range);
+        }, '{"active": "true", "range": "0..1"}', Type::object(DummyWithValueTransformerAttributes::class), ['scale' => 1]);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertSame(1, $read->id);
+            $this->assertFalse($read->active);
+            $this->assertSame('DUMMY', $read->name);
+            $this->assertSame([10, 20], $read->range);
+        }, '{}', Type::object(DummyWithValueTransformerAttributes::class), ['scale' => 1]);
+    }
+
+    public function testReadObjectWithValueTransformerAndNullProperty()
+    {
+        $reader = JsonStreamReader::create([
+            StringToBooleanValueTransformer::class => new StringToBooleanValueTransformer(),
+            DivideStringAndCastToIntValueTransformer::class => new DivideStringAndCastToIntValueTransformer(),
+        ], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->expectException(UnexpectedValueException::class);
+        $this->expectExceptionMessage(\sprintf('Unexpected "null" value for "%s::$name".', DummyWithValueTransformerAttributes::class));
+
+        $reader->read('{"id": "20", "active": "true", "name": null, "range": "0..1"}', Type::object(DummyWithValueTransformerAttributes::class), ['scale' => 1]);
+    }
+
+    public function testReadObjectWithBackedEnumValueTransformerAndMissingProperty()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertSame('DEFAULT', $read->enum);
+            $this->assertSame('DEFAULT', $read->nullableEnum);
+            $this->assertFalse((new \ReflectionProperty($read, 'requiredEnum'))->isInitialized($read));
+        }, '{}', Type::object(DummyWithBackedEnumValueTransformer::class));
+    }
+
+    public function testReadObjectWithBackedEnumValueTransformerAndMissingNullableProperty()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertSame('TWO', $read->enum);
+            $this->assertSame('DEFAULT', $read->nullableEnum);
+            $this->assertSame('TWO', $read->requiredEnum);
+        }, '{"enum": 2, "requiredEnum": 2}', Type::object(DummyWithBackedEnumValueTransformer::class));
+    }
+
+    public function testReadObjectWithBackedEnumValueTransformerAndMissingRequiredProperty()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertSame('TWO', $read->enum);
+            $this->assertSame('TWO', $read->nullableEnum);
+            $this->assertFalse((new \ReflectionProperty($read, 'requiredEnum'))->isInitialized($read));
+        }, '{"enum": 2, "nullableEnum": 2}', Type::object(DummyWithBackedEnumValueTransformer::class));
+    }
+
+    public function testReadObjectWithBackedEnumValueTransformer()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertSame('TWO', $read->enum);
+            $this->assertSame('TWO', $read->nullableEnum);
+            $this->assertSame('TWO', $read->requiredEnum);
+        }, '{"enum": 2, "nullableEnum": 2, "requiredEnum": 2}', Type::object(DummyWithBackedEnumValueTransformer::class));
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertSame('TWO', $read->enum);
+            $this->assertNull($read->nullableEnum);
+            $this->assertSame('TWO', $read->requiredEnum);
+        }, '{"enum": 2, "nullableEnum": null, "requiredEnum": 2}', Type::object(DummyWithBackedEnumValueTransformer::class));
+    }
+
+    public function testReadObjectWithPhpDoc()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithPhpDoc::class, $read);
+            $this->assertIsArray($read->arrayOfDummies);
+            $this->assertContainsOnlyInstancesOf(DummyWithNameAttributes::class, $read->arrayOfDummies);
+            $this->assertArrayHasKey('key', $read->arrayOfDummies);
+        }, '{"arrayOfDummies":{"key":{"@id":10,"name":"dummy"}}}', Type::object(DummyWithPhpDoc::class));
+    }
+
+    public function testReadObjectPropertyMatchingTheLegacyMissingValueMarker()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir);
+
+        $this->assertSame('_symfony_missing_value', $reader->read('{"name": "_symfony_missing_value"}', Type::object(ClassicDummy::class))->name);
+    }
+
+    public function testReadObjectWithNullableProperties()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithNullableProperties::class, $read);
+            $this->assertNull($read->name);
+            $this->assertNull($read->enum);
+        }, '{"name":null,"enum":null}', Type::object(DummyWithNullableProperties::class));
+    }
+
+    public function testReadObjectWithExplicitNullOnNullableProperties()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertNull($read->name);
+            $this->assertNull($read->enum);
+            $this->assertNull($read->mixed);
+            $this->assertNull($read->list);
+        }, '{"name":null,"enum":null,"mixed":null,"list":null}', Type::object(DummyWithNullablePropertiesAndDefaults::class));
+    }
+
+    #[DataProvider('throwWhenReadingNullOnNonNullablePropertyDataProvider')]
+    public function testThrowWhenReadingNullOnNonNullableProperty(string $property)
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+        $json = \sprintf('{"%s":null}', $property);
+
+        $resource = fopen('php://temp', 'w');
+        fwrite($resource, $json);
+        rewind($resource);
+
+        foreach ([$json, $resource] as $input) {
+            try {
+                // objects read from a stream are lazy, so the property must be accessed
+                $reader->read($input, Type::object(DummyWithNonNullableProperties::class))->{$property};
+                $this->fail(\sprintf('Expected "%s" to be thrown.', UnexpectedValueException::class));
+            } catch (UnexpectedValueException $e) {
+                $this->assertSame(\sprintf('Unexpected "null" value for "%s::$%s".', DummyWithNonNullableProperties::class, $property), $e->getMessage());
+            }
+        }
+    }
+
+    /**
+     * @return iterable<array{0: string}>
+     */
+    public static function throwWhenReadingNullOnNonNullablePropertyDataProvider(): iterable
+    {
+        yield ['name'];
+        yield ['union'];
+        yield ['enum'];
+        yield ['dummy'];
+        yield ['date'];
+        yield ['list'];
+    }
+
+    #[DataProvider('throwWhenReadingNullOnNonNullableTypeDataProvider')]
+    public function testThrowWhenReadingNullOnNonNullableType(Type $type)
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $resource = fopen('php://temp', 'w');
+        fwrite($resource, 'null');
+        rewind($resource);
+
+        foreach (['null', $resource] as $input) {
+            try {
+                $reader->read($input, $type);
+                $this->fail(\sprintf('Expected "%s" to be thrown.', UnexpectedValueException::class));
+            } catch (UnexpectedValueException $e) {
+                $this->assertSame(\sprintf('Unexpected "null" value for "%s".', $type), $e->getMessage());
+            }
+        }
+    }
+
+    /**
+     * @return iterable<array{0: Type}>
+     */
+    public static function throwWhenReadingNullOnNonNullableTypeDataProvider(): iterable
+    {
+        yield [Type::int()];
+        yield [Type::list(Type::int())];
+        yield [Type::object(ClassicDummy::class)];
+        yield [Type::object(\DateTimeImmutable::class)];
+    }
+
+    public function testThrowWhenReadingObjectFromNonArrayString()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->expectException(UnexpectedValueException::class);
+        $this->expectExceptionMessage(\sprintf('Unexpected "string" value for "%s".', ClassicDummy::class));
+
+        $reader->read('"foo"', Type::object(ClassicDummy::class));
+    }
+
+    #[DataProvider('throwWhenReadingMistypedScalarPropertyDataProvider')]
+    public function testThrowWhenReadingMistypedScalarProperty(string $json)
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $resource = fopen('php://temp', 'w');
+        fwrite($resource, $json);
+        rewind($resource);
+
+        foreach ([$json, $resource] as $input) {
+            try {
+                // objects read from a stream are lazy, so a property must be accessed
+                $reader->read($input, Type::object(DummyWithScalarProperties::class))->name;
+                $this->fail(\sprintf('Expected "%s" to be thrown.', UnexpectedValueException::class));
+            } catch (UnexpectedValueException $e) {
+                $this->assertInstanceOf(\TypeError::class, $e->getPrevious());
+            }
+        }
+    }
+
+    /**
+     * @return iterable<array{0: string}>
+     */
+    public static function throwWhenReadingMistypedScalarPropertyDataProvider(): iterable
+    {
+        yield ['{"active":"no"}'];
+        yield ['{"active":1}'];
+        yield ['{"count":"99"}'];
+        yield ['{"count":7.9}'];
+        yield ['{"count":true}'];
+        yield ['{"ratio":"1.5"}'];
+        yield ['{"name":123}'];
+        yield ['{"name":true}'];
+    }
+
+    public function testReadIntegerIntoFloatProperty()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertSame(2.0, $read->ratio);
+        }, '{"ratio":2}', Type::object(DummyWithScalarProperties::class));
+    }
+
+    public function testReadObjectWithNullableRepeatedObjects()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithNullableRepeatedDummies::class, $read);
+            $this->assertSame(1, $read->first->id);
+            $this->assertSame(2, $read->second->id);
+        }, '{"first":{"id":1,"name":"a"},"second":{"id":2,"name":"b"}}', Type::object(DummyWithNullableRepeatedDummies::class));
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertNull($read->first);
+            $this->assertSame(2, $read->second->id);
+        }, '{"first":null,"second":{"id":2,"name":"b"}}', Type::object(DummyWithNullableRepeatedDummies::class));
+    }
+
+    public function testReadObjectWithDateTimes()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithDateTimes::class, $read);
+            $this->assertEquals(new \DateTimeImmutable('2024-11-20'), $read->interface);
+            $this->assertEquals(new \DateTimeImmutable('2025-11-20'), $read->immutable);
+            $this->assertEquals(new \DateTimeImmutable('2026-11-20'), $read->union);
+        }, '{"interface":"2024-11-20","immutable":"2025-11-20","union":"2026-11-20"}', Type::object(DummyWithDateTimes::class));
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithDateTimes::class, $read);
+            $this->assertEquals(new \DateTimeImmutable('2024-11-20'), $read->interface);
+            $this->assertEquals(new \DateTimeImmutable('2025-11-20'), $read->immutable);
+            $this->assertEquals(10, $read->union);
+        }, '{"interface":"2024-11-20","immutable":"2025-11-20","union":10}', Type::object(DummyWithDateTimes::class));
+    }
+
+    public function testReadUnion()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithNameAttributes::class, $read);
+            $this->assertSame(10, $read->id);
+            $this->assertSame('dummy', $read->name);
+        }, '{"@id": 10, "name": "dummy"}', Type::union(Type::int(), Type::list(Type::enum(DummyBackedEnum::class)), Type::object(DummyWithNameAttributes::class)));
+
+        $this->assertRead($reader, [DummyBackedEnum::ONE, DummyBackedEnum::TWO], '[1, 2]', Type::union(Type::int(), Type::list(Type::enum(DummyBackedEnum::class)), Type::object(DummyWithNameAttributes::class)));
+    }
+
+    public function testReadUnionWithRepeatedObjectListType()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+        $type = Type::union(Type::object(ClassicDummy::class), Type::list(Type::object(ClassicDummy::class)));
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(ClassicDummy::class, $read[0]);
+            $this->assertSame(10, $read[0]->id);
+            $this->assertSame('dummy', $read[0]->name);
+        }, '[{"id":10,"name":"dummy"}]', $type);
+    }
+
+    public function testReadUnionWithRepeatedObjectDictType()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+        $type = Type::union(Type::object(ClassicDummy::class), Type::dict(Type::object(ClassicDummy::class)));
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(ClassicDummy::class, $read['key']);
+            $this->assertSame(10, $read['key']->id);
+            $this->assertSame('dummy', $read['key']->name);
+        }, '{"key":{"id":10,"name":"dummy"}}', $type);
+    }
+
+    public function testReadObjectWithSyntheticProperties()
+    {
+        $reader = new JsonStreamReader(new Container(), new SyntheticPropertyMetadataLoader(), $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (mixed $read) {
+            $this->assertInstanceOf(DummyWithSyntheticProperties::class, $read);
+            $this->assertSame([], get_object_vars($read));
+        }, '{"synthetic":true}', Type::object(DummyWithSyntheticProperties::class));
+    }
+
+    public function testCreateStreamReaderFile()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $reader->read('true', Type::bool());
+
+        $this->assertFileExists($this->streamReadersDir);
+        $this->assertCount(1, glob($this->streamReadersDir.'/*'));
+    }
+
+    public function testCreateStreamReaderFileOnlyIfNotExists()
+    {
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        if (!file_exists($this->streamReadersDir)) {
+            mkdir($this->streamReadersDir, 0o777, true);
+        }
+
+        file_put_contents(
+            \sprintf('%s%s%s.json.php', $this->streamReadersDir, \DIRECTORY_SEPARATOR, hash('xxh128', (string) Type::bool())),
+            '<?php return static function () { return "CACHED"; };'
+        );
+
+        $this->assertSame('CACHED', $reader->read('true', Type::bool()));
+    }
+
+    public function testReadNestedStream()
+    {
+        $longText = str_repeat('A', 8192);
+        $json = <<<JSON
+            {
+              "customProperty": "text",
+              "dummies": [
+                {
+                  "id": 1,
+                  "name": "{$longText}"
+                },
+                {
+                  "id": 2,
+                  "name": "{$longText}"
+                }
+              ],
+              "a": ["{$longText}", "{$longText}"]
+            }
+            JSON;
+
+        $reader = JsonStreamReader::create([], $this->streamReadersDir, $this->lazyGhostsDir);
+
+        $this->assertRead($reader, function (DummyWithIterable $read) {
+            $this->assertEquals(2, iterator_count($read->dummies));
+        }, $json, Type::object(DummyWithIterable::class));
+    }
+
+    private function assertRead(JsonStreamReader $reader, mixed $readOrAssert, string $json, Type $type, array $options = []): void
+    {
+        $assert = \is_callable($readOrAssert, true) ? $readOrAssert : fn (mixed $read) => $this->assertEquals($readOrAssert, $read);
+
+        $assert($reader->read($json, $type, $options));
+
+        $resource = fopen('php://temp', 'w');
+        fwrite($resource, $json);
+        rewind($resource);
+        $assert($reader->read($resource, $type, $options));
+    }
+}

@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\VarDumper\Tests\Command\Descriptor;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Output\BufferedOutput;
@@ -116,9 +117,7 @@ class CliDescriptorTest extends TestCase
         $this->assertStringNotContainsString("\033[31m", $dump);
     }
 
-    /**
-     * @dataProvider provideContext
-     */
+    #[DataProvider('provideContext')]
     public function testDescribe(array $context, string $expectedOutput, bool $decorated = false)
     {
         $output = new BufferedOutput();
@@ -188,7 +187,8 @@ class CliDescriptorTest extends TestCase
                 %A
                   source   \033]8;;phpstorm://open?file=/Users/ogi/symfony/src/Symfony/Component/VarDumper/Tests/Command/Descriptor/CliDescriptorTest.php&line=30\033\CliDescriptorTest.php on line 30\033]8;;\033%A
                 %A
-                TXT, true,
+                TXT,
+            true,
         ];
 
         yield 'cli' => [

@@ -13,6 +13,7 @@ namespace Symfony\Component\HttpClient;
 
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpClient\Internal\ArrayBodyCaster;
+use Symfony\Component\HttpClient\Internal\HttpDateTrait;
 use Symfony\Component\HttpClient\Response\AsyncContext;
 use Symfony\Component\HttpClient\Response\AsyncResponse;
 use Symfony\Component\HttpClient\Retry\GenericRetryStrategy;
@@ -31,21 +32,22 @@ use Symfony\Contracts\Service\ResetInterface;
 class RetryableHttpClient implements HttpClientInterface, ResetInterface
 {
     use AsyncDecoratorTrait;
+    use HttpDateTrait;
 
     private RetryStrategyInterface $strategy;
-    private int $maxRetries;
-    private ?LoggerInterface $logger;
     private array $baseUris = [];
 
     /**
      * @param int $maxRetries The maximum number of times to retry
      */
-    public function __construct(HttpClientInterface $client, ?RetryStrategyInterface $strategy = null, int $maxRetries = 3, ?LoggerInterface $logger = null)
-    {
+    public function __construct(
+        HttpClientInterface $client,
+        ?RetryStrategyInterface $strategy = null,
+        private int $maxRetries = 3,
+        private ?LoggerInterface $logger = null,
+    ) {
         $this->client = $client;
         $this->strategy = $strategy ?? new GenericRetryStrategy();
-        $this->maxRetries = $maxRetries;
-        $this->logger = $logger;
     }
 
     public function withOptions(array $options): static
@@ -180,8 +182,9 @@ class RetryableHttpClient implements HttpClientInterface, ResetInterface
                 return (int) ($after * 1000);
             }
 
-            if (false !== $time = strtotime($after)) {
-                return max(0, $time - time()) * 1000;
+            if (null !== $time = self::parseHttpDate($after)) {
+                // on 32-bit PHP, a delay of more than 24 days doesn't fit in an integer of milliseconds
+                return min(max(0, $time - time()) * 1000, \PHP_INT_MAX);
             }
         }
 

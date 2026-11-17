@@ -16,12 +16,15 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\Mailer\Bridge\MailPace\Transport\MailPaceApiTransport;
 use Symfony\Component\Mailer\Bridge\MailPace\Transport\MailPaceSmtpTransport;
 use Symfony\Component\Mailer\Bridge\MailPace\Transport\MailPaceTransportFactory;
-use Symfony\Component\Mailer\Test\TransportFactoryTestCase;
+use Symfony\Component\Mailer\Test\AbstractTransportFactoryTestCase;
+use Symfony\Component\Mailer\Test\IncompleteDsnTestTrait;
 use Symfony\Component\Mailer\Transport\Dsn;
 use Symfony\Component\Mailer\Transport\TransportFactoryInterface;
 
-final class MailPaceTransportFactoryTest extends TransportFactoryTestCase
+final class MailPaceTransportFactoryTest extends AbstractTransportFactoryTestCase
 {
+    use IncompleteDsnTestTrait;
+
     public function getFactory(): TransportFactoryInterface
     {
         return new MailPaceTransportFactory(null, new MockHttpClient(), new NullLogger());
@@ -96,5 +99,16 @@ final class MailPaceTransportFactoryTest extends TransportFactoryTestCase
     public static function incompleteDsnProvider(): iterable
     {
         yield [new Dsn('mailpace+api', 'default')];
+    }
+
+    public function testSmtpTransportRequiresTls()
+    {
+        $factory = $this->getFactory();
+
+        foreach (['mailpace', 'mailpace+smtp', 'mailpace+smtps'] as $scheme) {
+            $this->assertTrue($factory->create(new Dsn($scheme, 'default', self::USER))->isTlsRequired());
+        }
+
+        $this->assertFalse($factory->create(new Dsn('mailpace+smtp', 'default', self::USER, null, null, ['require_tls' => 'false']))->isTlsRequired());
     }
 }

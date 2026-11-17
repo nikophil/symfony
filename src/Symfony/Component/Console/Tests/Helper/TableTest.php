@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Console\Tests\Helper;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Exception\InvalidArgumentException;
 use Symfony\Component\Console\Exception\RuntimeException;
@@ -39,9 +40,7 @@ class TableTest extends TestCase
         unset($this->stream);
     }
 
-    /**
-     * @dataProvider renderProvider
-     */
+    #[DataProvider('renderProvider')]
     public function testRender($headers, $rows, $style, $expected, $decorated = false)
     {
         $table = new Table($output = $this->getOutputStream($decorated));
@@ -55,9 +54,7 @@ class TableTest extends TestCase
         $this->assertEquals($expected, $this->getOutputContent($output));
     }
 
-    /**
-     * @dataProvider renderProvider
-     */
+    #[DataProvider('renderProvider')]
     public function testRenderAddRows($headers, $rows, $style, $expected, $decorated = false)
     {
         $table = new Table($output = $this->getOutputStream($decorated));
@@ -71,9 +68,7 @@ class TableTest extends TestCase
         $this->assertEquals($expected, $this->getOutputContent($output));
     }
 
-    /**
-     * @dataProvider renderProvider
-     */
+    #[DataProvider('renderProvider')]
     public function testRenderAddRowsOneByOne($headers, $rows, $style, $expected, $decorated = false)
     {
         $table = new Table($output = $this->getOutputStream($decorated));
@@ -112,6 +107,135 @@ class TableTest extends TestCase
                     | 960-425-059-0 | The Lord of the Rings    | J. R. R. Tolkien |
                     | 80-902734-1-6 | And Then There Were None | Agatha Christie  |
                     +---------------+--------------------------+------------------+
+
+                    TABLE,
+            ],
+            [
+                ['ISBN', 'Title', 'Author'],
+                $books,
+                'markdown',
+                <<<'TABLE'
+                    | ISBN          | Title                    | Author           |
+                    |---------------|--------------------------|------------------|
+                    | 99921-58-10-7 | Divine Comedy            | Dante Alighieri  |
+                    | 9971-5-0210-0 | A Tale of Two Cities     | Charles Dickens  |
+                    | 960-425-059-0 | The Lord of the Rings    | J. R. R. Tolkien |
+                    | 80-902734-1-6 | And Then There Were None | Agatha Christie  |
+
+                    TABLE,
+            ],
+            [
+                ['Name', 'Description'],
+                [
+                    ['pipe', 'A | B'],
+                    ['newline', "Line 1\nLine 2"],
+                    ['crlf', "Line 1\r\nLine 2"],
+                    ['cr', "Line 1\rLine 2"],
+                    ['backslash', "Line 1\\\nLine 2"],
+                    [new TableCell('A | B', ['colspan' => 2])],
+                ],
+                'markdown',
+                <<<'TABLE'
+                    | Name      | Description        |
+                    |-----------|--------------------|
+                    | pipe      | A \| B             |
+                    | newline   | Line 1<br>Line 2   |
+                    | crlf      | Line 1<br>Line 2   |
+                    | cr        | Line 1<br>Line 2   |
+                    | backslash | Line 1\\<br>Line 2 |
+                    | A \| B    |                    |
+
+                    TABLE,
+            ],
+            [
+                [],
+                [
+                    ['Divine Comedy', 'Dante Alighieri'],
+                    ['A Tale of Two Cities', 'Charles Dickens'],
+                ],
+                'markdown',
+                <<<'TABLE'
+                    |                      |                 |
+                    |----------------------|-----------------|
+                    | Divine Comedy        | Dante Alighieri |
+                    | A Tale of Two Cities | Charles Dickens |
+
+                    TABLE,
+            ],
+            [
+                ['ISBN', 'Title'],
+                [],
+                'markdown',
+                <<<'TABLE'
+                    | ISBN | Title |
+                    |------|-------|
+
+                    TABLE,
+            ],
+            [
+                [new TableCell('Books', ['colspan' => 2])],
+                [
+                    ['Divine Comedy', 'Dante Alighieri'],
+                    ['A Tale of Two Cities', 'Charles Dickens'],
+                ],
+                'markdown',
+                <<<'TABLE'
+                    | Books                |                 |
+                    |----------------------|-----------------|
+                    | Divine Comedy        | Dante Alighieri |
+                    | A Tale of Two Cities | Charles Dickens |
+
+                    TABLE,
+            ],
+            [
+                ['Col 1', 'Col 2', 'Col 3'],
+                [
+                    [new TableCell('spans two', ['colspan' => 2]), 'c'],
+                    ['a', new TableCell('spans two', ['colspan' => 2])],
+                    [new TableCell('two by two', ['rowspan' => 2, 'colspan' => 2]), 'c'],
+                    ['c'],
+                ],
+                'markdown',
+                <<<'TABLE'
+                    | Col 1      | Col 2     | Col 3 |
+                    |------------|-----------|-------|
+                    | spans two  |           | c     |
+                    | a          | spans two |       |
+                    | two by two |           | c     |
+                    |            |           | c     |
+
+                    TABLE,
+            ],
+            [
+                [
+                    [new TableCell('Books', ['colspan' => 2])],
+                    ['Title', 'Author'],
+                ],
+                [
+                    ['Divine Comedy', 'Dante Alighieri'],
+                    ['A Tale of Two Cities', 'Charles Dickens'],
+                ],
+                'markdown',
+                <<<'TABLE'
+                    | Books                |                 |
+                    |----------------------|-----------------|
+                    | Title                | Author          |
+                    | Divine Comedy        | Dante Alighieri |
+                    | A Tale of Two Cities | Charles Dickens |
+
+                    TABLE,
+            ],
+            [
+                [
+                    [new TableCell('Main title', ['colspan' => 3])],
+                    ['ISBN', 'Title', 'Author'],
+                ],
+                [],
+                'markdown',
+                <<<'TABLE'
+                    | Main title |       |        |
+                    |------------|-------|--------|
+                    | ISBN       | Title | Author |
 
                     TABLE,
             ],
@@ -1845,9 +1969,7 @@ class TableTest extends TestCase
         Table::getStyleDefinition('absent');
     }
 
-    /**
-     * @dataProvider renderSetTitle
-     */
+    #[DataProvider('renderSetTitle')]
     public function testSetTitle($headerTitle, $footerTitle, $style, $expected)
     {
         (new Table($output = $this->getOutputStream()))
@@ -1885,7 +2007,20 @@ class TableTest extends TestCase
                     +---------------+--------- Page 1/2 -------+------------------+
 
                     TABLE,
-                true,
+            ],
+            'markdown style' => [
+                'Books',
+                'Page 1/2',
+                'markdown',
+                <<<'TABLE'
+                    | ISBN          | Title                    | Author           |
+                    |---------------|--------------------------|------------------|
+                    | 99921-58-10-7 | Divine Comedy            | Dante Alighieri  |
+                    | 9971-5-0210-0 | A Tale of Two Cities     | Charles Dickens  |
+                    | 960-425-059-0 | The Lord of the Rings    | J. R. R. Tolkien |
+                    | 80-902734-1-6 | And Then There Were None | Agatha Christie  |
+
+                    TABLE,
             ],
             'header contains multiple lines' => [
                 'Multiline'."\n".'header'."\n".'here',
@@ -2205,6 +2340,28 @@ class TableTest extends TestCase
         $this->assertEquals($expected, $this->getOutputContent($output));
     }
 
+    public function testColumnMaxWidthsWithMarkdownStyle()
+    {
+        (new Table($output = $this->getOutputStream()))
+            ->setStyle('markdown')
+            ->setHeaders(['Name', 'Value'])
+            ->setColumnMaxWidth(1, 5)
+            ->setRows([['pipe', 'abcd|efgh'], ['newline', "abc\ndefgh"]])
+            ->render()
+        ;
+
+        $expected =
+            <<<'TABLE'
+                | Name    | Value          |
+                |---------|----------------|
+                | pipe    | abcd\|<br>efgh |
+                | newline | abc<br>defgh   |
+
+                TABLE;
+
+        $this->assertSame($expected, $this->getOutputContent($output));
+    }
+
     public function testBoxedStyleWithColspan()
     {
         $boxed = new TableStyle();
@@ -2280,9 +2437,7 @@ class TableTest extends TestCase
         yield [$headers, $rows, $expected];
     }
 
-    /**
-     * @dataProvider provideRenderHorizontalTests
-     */
+    #[DataProvider('provideRenderHorizontalTests')]
     public function testRenderHorizontal(array $headers, array $rows, string $expected)
     {
         $table = new Table($output = $this->getOutputStream());
@@ -2294,6 +2449,29 @@ class TableTest extends TestCase
         $table->render();
 
         $this->assertEquals($expected, $this->getOutputContent($output));
+    }
+
+    public function testRenderHorizontalWithMarkdownStyle()
+    {
+        (new Table($output = $this->getOutputStream()))
+            ->setStyle('markdown')
+            ->setHeaders(['foo', 'bar', 'baz'])
+            ->setRows([['one', 'two', 'tree'], ['1', '2', '3']])
+            ->setHorizontal()
+            ->render()
+        ;
+
+        $expected =
+            <<<'TABLE'
+                |     |      |   |
+                |-----|------|---|
+                | foo | one  | 1 |
+                | bar | two  | 2 |
+                | baz | tree | 3 |
+
+                TABLE;
+
+        $this->assertSame($expected, $this->getOutputContent($output));
     }
 
     protected function getOutputStream($decorated = false)
@@ -2677,6 +2855,26 @@ class TableTest extends TestCase
             'compact',
         ];
 
+        yield 'Markdown style' => [
+            <<<EOTXT
+                |                              |
+                |------------------------------|
+                |   ISBN: 99921-58-10-7        |
+                |  Title: Divine Comedy        |
+                | Author: Dante Alighieri      |
+                |  Price: 9.95                 |
+                |------------------------------|
+                |   ISBN: 9971-5-0210-0        |
+                |  Title: A Tale of Two Cities |
+                | Author: Charles Dickens      |
+                |  Price: 139.25               |
+
+                EOTXT,
+            ['ISBN', 'Title', 'Author', 'Price'],
+            $books,
+            'markdown',
+        ];
+
         yield 'symfony-style-guide style' => [
             <<<EOTXT
                  ------------------------------ 
@@ -2772,9 +2970,7 @@ class TableTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider provideRenderVerticalTests
-     */
+    #[DataProvider('provideRenderVerticalTests')]
     public function testVerticalRender(string $expectedOutput, array $headers, array $rows, string $style = 'default', string $headerTitle = '', string $footerTitle = '')
     {
         $table = new Table($output = $this->getOutputStream());
@@ -2796,9 +2992,7 @@ class TableTest extends TestCase
         $this->assertEquals($expectedOutput, $this->getOutputContent($output));
     }
 
-    /**
-     * @dataProvider provideCellStyles
-     */
+    #[DataProvider('provideCellStyles')]
     public function testCellStyles(string $expected, array $headers, array $rows, bool $decorated, string $layout = 'default', int $maxWidth = 0)
     {
         $table = new Table($output = $this->getOutputStream($decorated));

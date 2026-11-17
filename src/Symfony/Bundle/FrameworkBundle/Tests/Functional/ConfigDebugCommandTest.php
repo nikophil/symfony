@@ -11,6 +11,9 @@
 
 namespace Symfony\Bundle\FrameworkBundle\Tests\Functional;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Bundle\FrameworkBundle\Command\ConfigDebugCommand;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Tests\Functional\Bundle\TestBundle\EnvVarLoader\StatefulEnvVarLoader;
@@ -20,15 +23,11 @@ use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Console\Tester\CommandCompletionTester;
 use Symfony\Component\Console\Tester\CommandTester;
 
-/**
- * @group functional
- */
+#[Group('functional')]
 class ConfigDebugCommandTest extends AbstractWebTestCase
 {
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testShowList(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -45,10 +44,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $this->assertStringContainsString('  test_dump', $tester->getDisplay());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testDumpKernelExtension(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -59,10 +56,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $this->assertStringContainsString('    foo: bar', $tester->getDisplay());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testDumpBundleName(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -72,10 +67,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $this->assertStringContainsString('custom: foo', $tester->getDisplay());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testDumpWithBundleRegisteringServicesInBuild(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -85,10 +78,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $this->assertStringContainsString('secret: test', $tester->getDisplay());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testDumpBundleOption(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -98,10 +89,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $this->assertStringContainsString('foo', $tester->getDisplay());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testDumpWithoutTitleIsValidJson(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -111,10 +100,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $this->assertJson($tester->getDisplay());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testDumpWithUnsupportedFormat(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -128,10 +115,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         ]);
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testParametersValuesAreResolved(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -142,10 +127,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $this->assertStringContainsString('secret: test', $tester->getDisplay());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testParametersValuesAreFullyResolved(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -158,10 +141,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $this->assertStringContainsString('ide: '.($debug ? ($_ENV['SYMFONY_IDE'] ?? $_SERVER['SYMFONY_IDE'] ?? 'null') : 'null'), $tester->getDisplay());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testDefaultParameterValueIsResolvedIfConfigIsExisting(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -172,10 +153,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $this->assertStringContainsString(\sprintf("dsn: 'file:%s/profiler'", $kernelCacheDir), $tester->getDisplay());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testDumpExtensionConfigWithoutBundle(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -185,10 +164,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $this->assertStringContainsString('enabled: true', $tester->getDisplay());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testDumpUndefinedBundleOption(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -197,10 +174,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $this->assertStringContainsString('Unable to find configuration for "test.foo"', $tester->getDisplay());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testDumpWithPrefixedEnv(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -209,10 +184,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $this->assertStringContainsString("cookie_httponly: '%env(bool:COOKIE_HTTPONLY)%'", $tester->getDisplay());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testDumpFallsBackToDefaultConfigAndResolvesParameterValue(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -222,10 +195,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $this->assertStringContainsString('foo: bar', $tester->getDisplay());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testDumpFallsBackToDefaultConfigAndResolvesEnvPlaceholder(bool $debug)
     {
         $tester = $this->createCommandTester($debug);
@@ -235,10 +206,8 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $this->assertStringContainsString("baz: '%env(BAZ)%'", $tester->getDisplay());
     }
 
-    /**
-     * @testWith [true]
-     *           [false]
-     */
+    #[TestWith([true])]
+    #[TestWith([false])]
     public function testDumpThrowsExceptionWhenDefaultConfigFallbackIsImpossible(bool $debug)
     {
         $this->expectException(\LogicException::class);
@@ -248,14 +217,12 @@ class ConfigDebugCommandTest extends AbstractWebTestCase
         $tester->execute(['name' => 'ExtensionWithoutConfigTestBundle']);
     }
 
-    /**
-     * @dataProvider provideCompletionSuggestions
-     */
+    #[DataProvider('provideCompletionSuggestions')]
     public function testComplete(bool $debug, array $input, array $expectedSuggestions)
     {
         $application = $this->createApplication($debug);
 
-        $application->add(new ConfigDebugCommand());
+        $application->addCommand(new ConfigDebugCommand());
         $tester = new CommandCompletionTester($application->get('debug:config'));
         $suggestions = $tester->complete($input);
 

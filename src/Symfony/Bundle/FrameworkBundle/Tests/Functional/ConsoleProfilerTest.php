@@ -86,7 +86,7 @@ class ConsoleProfilerTest extends AbstractWebTestCase
         $application = new Application(static::$kernel);
         $application->setAutoExit(false);
         $application->setCatchExceptions(false);
-        $application->add($command);
+        $application->addCommand($command);
 
         return $application;
     }

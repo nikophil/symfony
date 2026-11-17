@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Translation\Bridge\Loco\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -32,9 +33,9 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
 
 class LocoProviderTest extends ProviderTestCase
 {
-    public static function createProvider(HttpClientInterface $client, LoaderInterface $loader, LoggerInterface $logger, string $defaultLocale, string $endpoint, ?TranslatorBagInterface $translatorBag = null): ProviderInterface
+    public static function createProvider(HttpClientInterface $client, LoaderInterface $loader, LoggerInterface $logger, string $defaultLocale, string $endpoint, ?TranslatorBagInterface $translatorBag = null, ?string $restrictToStatus = null): ProviderInterface
     {
-        return new LocoProvider($client, $loader, $logger, $defaultLocale, $endpoint, $translatorBag ?? new TranslatorBag());
+        return new LocoProvider($client, $loader, $logger, $defaultLocale, $endpoint, $translatorBag ?? new TranslatorBag(), $restrictToStatus);
     }
 
     public static function toStringProvider(): iterable
@@ -700,9 +701,7 @@ class LocoProviderTest extends ProviderTestCase
         $provider->write($translatorBag);
     }
 
-    /**
-     * @dataProvider getResponsesForOneLocaleAndOneDomain
-     */
+    #[DataProvider('getResponsesForOneLocaleAndOneDomain')]
     public function testReadForOneLocaleAndOneDomain(string $locale, string $domain, string $responseContent, TranslatorBag $expectedTranslatorBag)
     {
         $this->loader = $this->createMock(LoaderInterface::class);
@@ -725,9 +724,7 @@ class LocoProviderTest extends ProviderTestCase
         $this->assertEquals($expectedTranslatorBag->getCatalogues(), $translatorBag->getCatalogues());
     }
 
-    /**
-     * @dataProvider getResponsesForManyLocalesAndManyDomains
-     */
+    #[DataProvider('getResponsesForManyLocalesAndManyDomains')]
     public function testReadForManyLocalesAndManyDomains(array $locales, array $domains, array $responseContents, TranslatorBag $expectedTranslatorBag)
     {
         $responses = [];
@@ -766,9 +763,7 @@ class LocoProviderTest extends ProviderTestCase
         $this->assertEquals($expectedTranslatorBag->getCatalogues(), $translatorBag->getCatalogues());
     }
 
-    /**
-     * @dataProvider getResponsesForReadWithLastModified
-     */
+    #[DataProvider('getResponsesForReadWithLastModified')]
     public function testReadWithLastModified(array $locales, array $domains, array $responseContents, array $lastModifieds, TranslatorBag $expectedTranslatorBag)
     {
         $responses = [];
@@ -1198,5 +1193,34 @@ class LocoProviderTest extends ProviderTestCase
         );
 
         $this->translatorBag = $provider->read(['*'], ['fr']);
+    }
+
+    public function testReadWithRestrictToStatus()
+    {
+        $this->loader = $this->createMock(LoaderInterface::class);
+        $this->loader
+            ->expects($this->once())
+            ->method('load')
+            ->willReturn(new MessageCatalogue('fr'));
+
+        $provider = self::createProvider(
+            new MockHttpClient([
+                function (string $method, string $url, array $options = []): ResponseInterface {
+                    $this->assertSame('GET', $method);
+                    $this->assertSame('https://localise.biz/api/export/locale/de.xlf?filter=messages&status=translated%2Cprovisional', $url);
+                    $this->assertSame(['filter' => 'messages', 'status' => 'translated,provisional'], $options['query']);
+
+                    return new MockResponse('<?xml version="1.0" encoding="UTF-8"?>');
+                },
+            ], 'https://localise.biz/api/'),
+            $this->getLoader(),
+            $this->getLogger(),
+            $this->getDefaultLocale(),
+            'localise.biz/api/',
+            null,
+            'translated,provisional'
+        );
+
+        $this->translatorBag = $provider->read(['messages'], ['de']);
     }
 }

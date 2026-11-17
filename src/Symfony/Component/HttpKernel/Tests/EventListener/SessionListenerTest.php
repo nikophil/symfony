@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\HttpKernel\Tests\EventListener;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Container;
@@ -38,11 +40,8 @@ use Symfony\Component\HttpKernel\KernelInterface;
 
 class SessionListenerTest extends TestCase
 {
-    /**
-     * @dataProvider provideSessionOptions
-     *
-     * @runInSeparateProcess
-     */
+    #[DataProvider('provideSessionOptions')]
+    #[RunInSeparateProcess]
     public function testSessionCookieOptions(array $phpSessionOptions, array $sessionOptions, array $expectedSessionOptions)
     {
         $session = $this->createStub(Session::class);
@@ -140,9 +139,7 @@ class SessionListenerTest extends TestCase
         ];
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testPhpBridgeAlreadyStartedSession()
     {
         session_start();
@@ -159,9 +156,7 @@ class SessionListenerTest extends TestCase
         $this->assertSame($sessionId, $request->getSession()->getId());
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testSessionCookieWrittenNoCookieGiven()
     {
         $request = new Request();
@@ -185,9 +180,7 @@ class SessionListenerTest extends TestCase
         $this->assertFalse($sessionCookie->isCleared());
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testSessionCookieNotWrittenCookieGiven()
     {
         $sessionId = $this->createValidSessionId();
@@ -214,9 +207,7 @@ class SessionListenerTest extends TestCase
         $this->assertCount(0, $cookies);
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testSessionIdKeptByPhpFromAPreviousRequestIsIgnored()
     {
         $previousSessionId = $this->createValidSessionId();
@@ -234,9 +225,7 @@ class SessionListenerTest extends TestCase
         $this->assertSame('REQUEST-SESSION-ID', $request->getSession()->getId());
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testNewSessionIdIsNotOverwritten()
     {
         $newSessionId = $this->createValidSessionId();
@@ -283,9 +272,7 @@ class SessionListenerTest extends TestCase
         $this->assertSame($newSessionId, $sessionCookie->getValue());
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testSessionCookieClearedWhenInvalidated()
     {
         $sessionId = $this->createValidSessionId();
@@ -315,9 +302,7 @@ class SessionListenerTest extends TestCase
         $this->assertTrue($sessionCookie->isCleared());
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testSessionCookieNotClearedWhenOtherVariablesSet()
     {
         $sessionId = $this->createValidSessionId();
@@ -341,9 +326,7 @@ class SessionListenerTest extends TestCase
         $this->assertCount(0, $cookies);
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testSessionCookieSetWhenOtherNativeVariablesSet()
     {
         $request = new Request();
@@ -394,14 +377,12 @@ class SessionListenerTest extends TestCase
         $sessionFactory = $this->createMock(SessionFactory::class);
         $sessionFactory->expects($this->once())->method('createSession')->willReturn($session);
 
-        $requestStack = $this->createMock(RequestStack::class);
-
         $sessionStorage = $this->createMock(NativeSessionStorage::class);
         $sessionStorage->expects($this->never())->method('setOptions')->with(['cookie_secure' => true]);
 
         $container = new Container();
         $container->set('session_factory', $sessionFactory);
-        $container->set('request_stack', $requestStack);
+        $container->set('request_stack', new RequestStack());
 
         $request = new Request();
         $listener = new SessionListener($container);
@@ -918,9 +899,7 @@ class SessionListenerTest extends TestCase
         (new SessionListener($container, true))->onSessionUsage();
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testReset()
     {
         session_start();
@@ -934,14 +913,12 @@ class SessionListenerTest extends TestCase
 
         (new SessionListener($container, true))->reset();
 
-        $this->assertEmpty($_SESSION);
-        $this->assertEmpty(session_id());
+        $this->assertSame([], $_SESSION);
+        $this->assertSame('', session_id());
         $this->assertSame(\PHP_SESSION_NONE, session_status());
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testResetUnclosedSession()
     {
         session_start();
@@ -955,8 +932,8 @@ class SessionListenerTest extends TestCase
 
         (new SessionListener($container, true))->reset();
 
-        $this->assertEmpty($_SESSION);
-        $this->assertEmpty(session_id());
+        $this->assertSame([], $_SESSION);
+        $this->assertSame('', session_id());
         $this->assertSame(\PHP_SESSION_NONE, session_status());
     }
 

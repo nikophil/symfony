@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Translation\Bridge\Phrase\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Cache\CacheItemInterface;
 use Psr\Cache\CacheItemPoolInterface;
@@ -50,9 +51,7 @@ class PhraseProviderTest extends TestCase
     private array $readConfig;
     private array $writeConfig;
 
-    /**
-     * @dataProvider toStringProvider
-     */
+    #[DataProvider('toStringProvider')]
     public function testToString(?string $endpoint, string $expected)
     {
         $provider = $this->createProvider(endpoint: $endpoint);
@@ -60,9 +59,7 @@ class PhraseProviderTest extends TestCase
         self::assertSame($expected, (string) $provider);
     }
 
-    /**
-     * @dataProvider readProvider
-     */
+    #[DataProvider('readProvider')]
     public function testRead(string $locale, string $localeId, string $domain, string $responseContent, TranslatorBag $expectedTranslatorBag)
     {
         $item = $this->createMock(CacheItemInterface::class);
@@ -79,7 +76,9 @@ class PhraseProviderTest extends TestCase
                 return true;
             }));
 
+        $this->cache = $this->createMock(CacheItemPoolInterface::class);
         $this->getCache()
+            ->expects($this->once())
             ->method('getItem')
             ->with(self::callback(function ($v) use ($locale, $domain) {
                 $this->assertStringStartsWith($locale.'.'.$domain.'.', $v);
@@ -110,9 +109,7 @@ class PhraseProviderTest extends TestCase
         $this->assertSame($expectedTranslatorBag->getCatalogues(), $translatorBag->getCatalogues());
     }
 
-    /**
-     * @dataProvider readProvider
-     */
+    #[DataProvider('readProvider')]
     public function testReadCached(string $locale, string $localeId, string $domain, string $responseContent, TranslatorBag $expectedTranslatorBag)
     {
         $item = $this->createMock(CacheItemInterface::class);
@@ -292,9 +289,7 @@ class PhraseProviderTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider cacheKeyProvider
-     */
+    #[DataProvider('cacheKeyProvider')]
     public function testCacheKeyOptionsSort(array $options, string $expectedKey)
     {
         $this->cache = $this->createMock(CacheItemPoolInterface::class);
@@ -324,9 +319,7 @@ class PhraseProviderTest extends TestCase
         $provider->read(['messages'], ['en_GB']);
     }
 
-    /**
-     * @dataProvider cacheItemProvider
-     */
+    #[DataProvider('cacheItemProvider')]
     public function testGetCacheItem(mixed $cachedValue, bool $hasMatchHeader)
     {
         $item = $this->createMock(CacheItemInterface::class);
@@ -369,15 +362,15 @@ class PhraseProviderTest extends TestCase
     public static function cacheItemProvider(): \Generator
     {
         yield 'null value' => [
-            'cached_value' => null,
-            'has_header' => false,
+            'cachedValue' => null,
+            'hasMatchHeader' => false,
         ];
 
         $item = ['etag' => 'W\Foo', 'modified' => 'foo', 'content' => 'bar'];
 
         yield 'correct value' => [
-            'cached_value' => $item,
-            'has_header' => true,
+            'cachedValue' => $item,
+            'hasMatchHeader' => true,
         ];
     }
 
@@ -392,7 +385,7 @@ class PhraseProviderTest extends TestCase
                     'enclose_in_cdata' => '1',
                 ],
             ],
-            'expected_key' => 'en_GB.messages.099584009f94b788bd46580c17f49c0b22c55e16',
+            'expectedKey' => 'en_GB.messages.099584009f94b788bd46580c17f49c0b22c55e16',
         ];
 
         yield 'sortorder two' => [
@@ -404,19 +397,13 @@ class PhraseProviderTest extends TestCase
                 ],
                 'tags' => [],
             ],
-            'expected_key' => 'en_GB.messages.099584009f94b788bd46580c17f49c0b22c55e16',
+            'expectedKey' => 'en_GB.messages.099584009f94b788bd46580c17f49c0b22c55e16',
         ];
     }
 
-    /**
-     * @dataProvider readProviderExceptionsProvider
-     */
+    #[DataProvider('readProviderExceptionsProvider')]
     public function testReadProviderExceptions(int $statusCode, string $expectedExceptionMessage, string $expectedLoggerMessage)
     {
-        $this->expectException(ProviderExceptionInterface::class);
-        $this->expectExceptionCode(0);
-        $this->expectExceptionMessage($expectedExceptionMessage);
-
         $this->logger = $this->createMock(LoggerInterface::class);
         $this->getLogger()
             ->expects(self::once())
@@ -442,18 +429,16 @@ class PhraseProviderTest extends TestCase
             ],
         ]), endpoint: 'api.phrase.com/api/v2');
 
-        $provider->read(['messages'], ['en_GB']);
-    }
-
-    /**
-     * @dataProvider initLocalesExceptionsProvider
-     */
-    public function testInitLocalesExceptions(int $statusCode, string $expectedExceptionMessage, string $expectedLoggerMessage)
-    {
         $this->expectException(ProviderExceptionInterface::class);
         $this->expectExceptionCode(0);
         $this->expectExceptionMessage($expectedExceptionMessage);
 
+        $provider->read(['messages'], ['en_GB']);
+    }
+
+    #[DataProvider('initLocalesExceptionsProvider')]
+    public function testInitLocalesExceptions(int $statusCode, string $expectedExceptionMessage, string $expectedLoggerMessage)
+    {
         $this->logger = $this->createMock(LoggerInterface::class);
         $this->getLogger()
             ->expects(self::once())
@@ -477,6 +462,10 @@ class PhraseProviderTest extends TestCase
                 'User-Agent' => 'myProject',
             ],
         ]), endpoint: 'api.phrase.com/api/v2');
+
+        $this->expectException(ProviderExceptionInterface::class);
+        $this->expectExceptionCode(0);
+        $this->expectExceptionMessage($expectedExceptionMessage);
 
         $provider->read(['messages'], ['en_GB']);
     }
@@ -694,15 +683,9 @@ class PhraseProviderTest extends TestCase
         $provider->read(['messages'], ['en_GB']);
     }
 
-    /**
-     * @dataProvider createLocalesExceptionsProvider
-     */
+    #[DataProvider('createLocalesExceptionsProvider')]
     public function testCreateLocaleExceptions(int $statusCode, string $expectedExceptionMessage, string $expectedLoggerMessage)
     {
-        $this->expectException(ProviderExceptionInterface::class);
-        $this->expectExceptionCode(0);
-        $this->expectExceptionMessage($expectedExceptionMessage);
-
         $this->logger = $this->createMock(LoggerInterface::class);
         $this->getLogger()
             ->expects(self::once())
@@ -727,6 +710,10 @@ class PhraseProviderTest extends TestCase
                 'User-Agent' => 'myProject',
             ],
         ]), endpoint: 'api.phrase.com/api/v2');
+
+        $this->expectException(ProviderExceptionInterface::class);
+        $this->expectExceptionCode(0);
+        $this->expectExceptionMessage($expectedExceptionMessage);
 
         $provider->read(['messages'], ['nl_NL']);
     }
@@ -783,15 +770,9 @@ class PhraseProviderTest extends TestCase
         $provider->delete($bag);
     }
 
-    /**
-     * @dataProvider deleteExceptionsProvider
-     */
+    #[DataProvider('deleteExceptionsProvider')]
     public function testDeleteProviderExceptions(int $statusCode, string $expectedExceptionMessage, string $expectedLoggerMessage)
     {
-        $this->expectException(ProviderExceptionInterface::class);
-        $this->expectExceptionCode(0);
-        $this->expectExceptionMessage($expectedExceptionMessage);
-
         $this->logger = $this->createMock(LoggerInterface::class);
         $this->getLogger()
             ->expects(self::once())
@@ -823,12 +804,14 @@ class PhraseProviderTest extends TestCase
             ],
         ]));
 
+        $this->expectException(ProviderExceptionInterface::class);
+        $this->expectExceptionCode(0);
+        $this->expectExceptionMessage($expectedExceptionMessage);
+
         $provider->delete($bag);
     }
 
-    /**
-     * @dataProvider writeProvider
-     */
+    #[DataProvider('writeProvider')]
     public function testWrite(string $locale, string $localeId, string $domain, string $content, TranslatorBag $bag)
     {
         $this->getWriteConfig($domain, $localeId);
@@ -974,15 +957,9 @@ class PhraseProviderTest extends TestCase
         $provider->write($bag);
     }
 
-    /**
-     * @dataProvider writeExceptionsProvider
-     */
+    #[DataProvider('writeExceptionsProvider')]
     public function testWriteProviderExceptions(int $statusCode, string $expectedExceptionMessage, string $expectedLoggerMessage)
     {
-        $this->expectException(ProviderExceptionInterface::class);
-        $this->expectExceptionCode(0);
-        $this->expectExceptionMessage($expectedExceptionMessage);
-
         $this->logger = $this->createMock(LoggerInterface::class);
         $this->getLogger()
             ->expects(self::once())
@@ -1018,6 +995,10 @@ class PhraseProviderTest extends TestCase
                 'key.to.delete' => 'translated value',
             ],
         ]));
+
+        $this->expectException(ProviderExceptionInterface::class);
+        $this->expectExceptionCode(0);
+        $this->expectExceptionMessage($expectedExceptionMessage);
 
         $provider->write($bag);
     }
@@ -1060,7 +1041,7 @@ class PhraseProviderTest extends TestCase
             'locale' => 'en_GB',
             'localeId' => '13604ec993beefcdaba732812cdb828c',
             'domain' => 'messages',
-            'responseContent' => $expectedEnglishXliff,
+            'content' => $expectedEnglishXliff,
             'bag' => $bag,
         ];
 
@@ -1099,7 +1080,7 @@ class PhraseProviderTest extends TestCase
             'locale' => 'de',
             'localeId' => '5fea6ed5c21767730918a9400e420832',
             'domain' => 'validators',
-            'responseContent' => $expectedGermanXliff,
+            'content' => $expectedGermanXliff,
             'bag' => $bag,
         ];
     }
@@ -1190,9 +1171,9 @@ class PhraseProviderTest extends TestCase
 
         yield [
             'locale' => 'en_GB',
-            'locale_id' => '13604ec993beefcdaba732812cdb828c',
+            'localeId' => '13604ec993beefcdaba732812cdb828c',
             'domain' => 'messages',
-            'content' => <<<'XLIFF'
+            'responseContent' => <<<'XLIFF'
                 <?xml version="1.0" encoding="UTF-8"?>
                 <xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
                   <file original="global" datatype="plaintext" source-language="de" target-language="en-GB">
@@ -1210,7 +1191,7 @@ class PhraseProviderTest extends TestCase
                   </file>
                 </xliff>
                 XLIFF,
-            'expected bag' => $bag,
+            'expectedTranslatorBag' => $bag,
         ];
 
         $bag = new TranslatorBag();
@@ -1238,9 +1219,9 @@ class PhraseProviderTest extends TestCase
 
         yield [
             'locale' => 'de',
-            'locale_id' => '5fea6ed5c21767730918a9400e420832',
+            'localeId' => '5fea6ed5c21767730918a9400e420832',
             'domain' => 'validators',
-            'content' => <<<'XLIFF'
+            'responseContent' => <<<'XLIFF'
                 <?xml version="1.0" encoding="UTF-8"?>
                 <xliff xmlns="urn:oasis:names:tc:xliff:document:1.2" version="1.2">
                   <file original="file.ext" datatype="plaintext" source-language="de" target-language="de">
@@ -1258,7 +1239,7 @@ class PhraseProviderTest extends TestCase
                   </file>
                 </xliff>
                 XLIFF,
-            'expected bag' => $bag,
+            'expectedTranslatorBag' => $bag,
         ];
     }
 
@@ -1267,18 +1248,18 @@ class PhraseProviderTest extends TestCase
         return [
             'bad request' => [
                 'statusCode' => $statusCode,
-                'exceptionMessage' => $exceptionMessage,
-                'loggerMessage' => $loggerMessage,
+                'expectedExceptionMessage' => $exceptionMessage,
+                'expectedLoggerMessage' => $loggerMessage,
             ],
             'rate limit exceeded' => [
                 'statusCode' => 429,
-                'exceptionMessage' => 'Rate limit exceeded (1000). please wait 60 seconds.',
-                'loggerMessage' => $loggerMessage,
+                'expectedExceptionMessage' => 'Rate limit exceeded (1000). please wait 60 seconds.',
+                'expectedLoggerMessage' => $loggerMessage,
             ],
             'server unavailable' => [
                 'statusCode' => 503,
-                'exceptionMessage' => 'Provider server error.',
-                'loggerMessage' => $loggerMessage,
+                'expectedExceptionMessage' => 'Provider server error.',
+                'expectedLoggerMessage' => $loggerMessage,
             ],
         ];
     }

@@ -16,12 +16,15 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\Mailer\Bridge\Mailjet\Transport\MailjetApiTransport;
 use Symfony\Component\Mailer\Bridge\Mailjet\Transport\MailjetSmtpTransport;
 use Symfony\Component\Mailer\Bridge\Mailjet\Transport\MailjetTransportFactory;
-use Symfony\Component\Mailer\Test\TransportFactoryTestCase;
+use Symfony\Component\Mailer\Test\AbstractTransportFactoryTestCase;
+use Symfony\Component\Mailer\Test\IncompleteDsnTestTrait;
 use Symfony\Component\Mailer\Transport\Dsn;
 use Symfony\Component\Mailer\Transport\TransportFactoryInterface;
 
-class MailjetTransportFactoryTest extends TransportFactoryTestCase
+class MailjetTransportFactoryTest extends AbstractTransportFactoryTestCase
 {
+    use IncompleteDsnTestTrait;
+
     public function getFactory(): TransportFactoryInterface
     {
         return new MailjetTransportFactory(null, new MockHttpClient(), new NullLogger());
@@ -96,5 +99,16 @@ class MailjetTransportFactoryTest extends TransportFactoryTestCase
     public static function incompleteDsnProvider(): iterable
     {
         yield [new Dsn('mailjet+smtp', 'default')];
+    }
+
+    public function testSmtpTransportRequiresTls()
+    {
+        $factory = $this->getFactory();
+
+        foreach (['mailjet', 'mailjet+smtp', 'mailjet+smtps'] as $scheme) {
+            $this->assertTrue($factory->create(new Dsn($scheme, 'default', self::USER, self::PASSWORD))->isTlsRequired());
+        }
+
+        $this->assertFalse($factory->create(new Dsn('mailjet+smtp', 'default', self::USER, self::PASSWORD, null, ['require_tls' => 'false']))->isTlsRequired());
     }
 }

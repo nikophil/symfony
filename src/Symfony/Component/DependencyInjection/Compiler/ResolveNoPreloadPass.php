@@ -27,30 +27,33 @@ class ResolveNoPreloadPass extends AbstractRecursivePass
     protected bool $skipScalars = true;
 
     private array $resolvedIds = [];
+    private array $pendingIds = [];
 
-    /**
-     * @return void
-     */
-    public function process(ContainerBuilder $container)
+    public function process(ContainerBuilder $container): void
     {
         $this->container = $container;
 
         try {
             foreach ($container->getDefinitions() as $id => $definition) {
-                if ($definition->isPublic() && !$definition->isPrivate() && !isset($this->resolvedIds[$id])) {
+                if ($definition->isPublic() && !isset($this->resolvedIds[$id])) {
                     $this->resolvedIds[$id] = true;
-                    $this->processValue($definition, true);
+                    $this->pendingIds[] = $id;
                 }
             }
 
             foreach ($container->getAliases() as $alias) {
-                if ($alias->isPublic() && !$alias->isPrivate() && !isset($this->resolvedIds[$id = (string) $alias]) && $container->hasDefinition($id)) {
+                if ($alias->isPublic() && !isset($this->resolvedIds[$id = (string) $alias]) && $container->hasDefinition($id)) {
                     $this->resolvedIds[$id] = true;
-                    $this->processValue($container->getDefinition($id), true);
+                    $this->pendingIds[] = $id;
                 }
+            }
+
+            while (null !== $id = array_pop($this->pendingIds)) {
+                $this->processValue($container->getDefinition($id), true);
             }
         } finally {
             $this->resolvedIds = [];
+            $this->pendingIds = [];
             $this->container = null;
         }
 
@@ -68,9 +71,9 @@ class ResolveNoPreloadPass extends AbstractRecursivePass
         if ($value instanceof Reference && ContainerBuilder::IGNORE_ON_UNINITIALIZED_REFERENCE !== $value->getInvalidBehavior() && $this->container->hasDefinition($id = (string) $value)) {
             $definition = $this->container->getDefinition($id);
 
-            if (!isset($this->resolvedIds[$id]) && (!$definition->isPublic() || $definition->isPrivate())) {
+            if (!isset($this->resolvedIds[$id]) && $definition->isPrivate()) {
                 $this->resolvedIds[$id] = true;
-                $this->processValue($definition, true);
+                $this->pendingIds[] = $id;
             }
 
             return $value;

@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Messenger\Tests\Transport\Serialization;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\MessageDecodingFailedException;
@@ -18,8 +19,29 @@ use Symfony\Component\Messenger\Stamp\BusNameStamp;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 use Symfony\Component\Messenger\Stamp\HandledStamp;
 use Symfony\Component\Messenger\Stamp\NonSendableStampInterface;
+use Symfony\Component\Messenger\Tests\Fixtures\DummyLegacySerializable;
 use Symfony\Component\Messenger\Tests\Fixtures\DummyMessage;
+use Symfony\Component\Messenger\Tests\Fixtures\DummyMessageEnum;
+use Symfony\Component\Messenger\Tests\Fixtures\DummyMessageWithLegacySerializable;
+use Symfony\Component\Messenger\Tests\Fixtures\DummyStampHoldingAnObject;
+use Symfony\Component\Messenger\Tests\Fixtures\DummyUnloadedMessageEnum;
 use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
+
+// Force-load the deprecated-Serializable fixture under an error handler that swallows
+// the PHP deprecation it triggers at class-declaration time.
+$errorHandler = set_error_handler(static function (int $errno, string $errstr) use (&$errorHandler) {
+    if (\E_DEPRECATED === $errno && str_contains($errstr, 'Serializable interface')) {
+        return true;
+    }
+
+    return $errorHandler ? $errorHandler(...\func_get_args()) : false;
+});
+
+try {
+    class_exists(DummyLegacySerializable::class);
+} finally {
+    restore_error_handler();
+}
 
 class PhpSerializerTest extends TestCase
 {
@@ -76,6 +98,28 @@ class PhpSerializerTest extends TestCase
         $serializer->decode([
             'body' => 'x',
         ]);
+    }
+
+    public function testDecodingRejectsABodyWithCharactersOutsideTheBase64Alphabet()
+    {
+        $serializer = $this->createPhpSerializer();
+        $body = base64_encode($serializer->encode(new Envelope(new DummyMessage('Hello')))['body']);
+
+        $this->expectException(MessageDecodingFailedException::class);
+        $this->expectExceptionMessage('Could not decode the envelope body');
+
+        $serializer->decode(['body' => $body.'!']);
+    }
+
+    public function testDecodingAcceptsAWrappedBase64Body()
+    {
+        $serializer = $this->createPhpSerializer();
+        $body = base64_encode($serializer->encode(new Envelope(new DummyMessage('Hello')))['body']);
+
+        // transports may wrap the payload; base64_decode() skips whitespace in strict mode too
+        $envelope = $serializer->decode(['body' => chunk_split($body, 20, "\n")]);
+
+        $this->assertInstanceOf(DummyMessage::class, $envelope->getMessage());
     }
 
     public function testDecodingFailsWithBadClass()
@@ -199,9 +243,278 @@ class PhpSerializerTest extends TestCase
         $this->assertEquals($envelope, $serializer->decode($encoded));
     }
 
+    public function testGetMessageType()
+    {
+        $serializer = $this->createPhpSerializer();
+
+        $this->assertSame(DummyMessage::class, $serializer->getMessageType($serializer->encode(new Envelope(new DummyMessage('Hello')))));
+        // base64-encoded body (non-UTF8 payload)
+        $this->assertSame(DummyMessage::class, $serializer->getMessageType($serializer->encode(new Envelope(new DummyMessage("\xE9")))));
+        $this->assertSame(DummyMessageEnum::class, $serializer->getMessageType($serializer->encode(new Envelope(DummyMessageEnum::A))));
+    }
+
+    #[DataProvider('provideMessagesOfClassesThatAreNotLoaded')]
+    public function testGetMessageTypeDoesNotAutoloadClassesNamedByTheBody(string $message, string $expectedType)
+    {
+        $this->assertSame($expectedType, $this->getMessageTypeWithoutAutoloading($message));
+    }
+
+    public static function provideMessagesOfClassesThatAreNotLoaded(): iterable
+    {
+        yield 'object' => ['O:25:"Unknown\Missing\ClassName":0:{}', 'Unknown\Missing\ClassName'];
+        yield 'enum case' => ['E:33:"Unknown\Missing\EnumName:CaseName";', 'Unknown\Missing\EnumName'];
+        yield 'object holding an enum case' => ['O:25:"Unknown\Missing\ClassName":1:{s:4:"case";E:33:"Unknown\Missing\EnumName:CaseName";}', 'Unknown\Missing\ClassName'];
+    }
+
+    public function testGetMessageTypeOfAnEnumWhoseClassIsNotLoadedYet()
+    {
+        $this->assertFalse(enum_exists(DummyUnloadedMessageEnum::class, false));
+        $case = DummyUnloadedMessageEnum::class.':A';
+
+        $this->assertSame(DummyUnloadedMessageEnum::class, $this->getMessageTypeWithoutAutoloading('E:'.\strlen($case).':"'.$case.'";'));
+        $this->assertFalse(enum_exists(DummyUnloadedMessageEnum::class, false));
+    }
+
+    #[DataProvider('provideMessagesThatAStampHoldsToo')]
+    public function testGetMessageTypeOfAMessageThatAStampHoldsToo(string $body, string $expectedType)
+    {
+        $this->assertSame($expectedType, $this->getMessageTypeOfBodyWithoutAutoloading($body));
+    }
+
+    public static function provideMessagesThatAStampHoldsToo(): iterable
+    {
+        $message = new DummyMessage('hello');
+        $body = serialize(new Envelope($message, [new DummyStampHoldingAnObject($message)]));
+
+        yield 'carrying an enum case whose class is not loaded' => [str_replace('s:5:"hello"', 'E:33:"Unknown\Missing\EnumName:CaseName"', $body), DummyMessage::class];
+        yield 'carrying a string that contains "C:"' => [str_replace('s:5:"hello"', 's:6:"C:\foo"', $body), DummyMessage::class];
+
+        $body = serialize(new Envelope(DummyMessageEnum::A, [new DummyStampHoldingAnObject(DummyMessageEnum::A)]));
+
+        yield 'enum case whose class is not loaded' => [str_replace(serialize(DummyMessageEnum::A), 'E:33:"Unknown\Missing\EnumName:CaseName";', $body), 'Unknown\Missing\EnumName'];
+    }
+
+    public function testGetMessageTypeWithLegacySerializableProperty()
+    {
+        $serializer = $this->createPhpSerializer();
+
+        $envelope = new Envelope(new DummyMessageWithLegacySerializable(new DummyLegacySerializable('15.98')));
+        $encoded = $serializer->encode($envelope);
+
+        $errors = [];
+        set_error_handler(static function ($_, $msg) use (&$errors) {
+            $errors[] = $msg;
+
+            return true;
+        });
+
+        try {
+            $type = $serializer->getMessageType($encoded);
+        } finally {
+            restore_error_handler();
+        }
+
+        $this->assertSame(DummyMessageWithLegacySerializable::class, $type);
+        $this->assertSame([], $errors, 'getMessageType() should not emit PHP warnings.');
+    }
+
+    public function testGetMessageTypeReturnsNullForUndeterminableBody()
+    {
+        $serializer = $this->createPhpSerializer();
+
+        $this->assertNull($serializer->getMessageType([]));
+        $this->assertNull($serializer->getMessageType(['body' => '']));
+        $this->assertNull($serializer->getMessageType(['body' => 'definitely not serialized data']));
+        $this->assertNull($serializer->getMessageType(['body' => addslashes(serialize(123))]));
+        $this->assertNull($serializer->getMessageType(['body' => addslashes(serialize(new DummyMessage('Hello')))]));
+    }
+
+    #[DataProvider('provideAdversarialBodies')]
+    public function testGetMessageTypeRejectsOrMatchesPhpForAdversarialBody(string $body, ?string $expected)
+    {
+        $this->assertSame($expected, $this->createPhpSerializer()->getMessageType(['body' => addslashes($body)]));
+    }
+
+    public static function provideAdversarialBodies(): iterable
+    {
+        $stampsKey = 's:44:"'."\0".'Symfony\\Component\\Messenger\\Envelope'."\0".'stamps";';
+        $messageKey = 's:45:"'."\0".'Symfony\\Component\\Messenger\\Envelope'."\0".'message";';
+        $envelopePrefix = 'O:36:"Symfony\\Component\\Messenger\\Envelope"';
+
+        yield 'reversed property order: still finds message by key' => [
+            $envelopePrefix.':2:{'.$messageKey.'O:8:"stdClass":0:{}'.$stampsKey.'a:0:{}}',
+            'stdClass',
+        ];
+
+        yield 'duplicate message keys: returns last value (PHP semantics)' => [
+            $envelopePrefix.':3:{'.$stampsKey.'a:0:{}'.$messageKey.'O:5:"First":0:{}'.$messageKey.'O:6:"Second":0:{}}',
+            'Second',
+        ];
+
+        $enumClass = DummyMessageEnum::class;
+        $enumPayload = $enumClass.':A';
+        yield 'enum message: returns class name without case suffix' => [
+            $envelopePrefix.':2:{'.$stampsKey.'a:0:{}'.$messageKey.'E:'.\strlen($enumPayload).':"'.$enumPayload.'";}',
+            $enumClass,
+        ];
+
+        yield 'stamp string value containing message-key bytes: rejected as PHP rejects the malformed stamps' => (static function () use ($stampsKey, $messageKey, $envelopePrefix) {
+            $decoy = $messageKey.'O:5:"PWNED":0:{}';
+            $stamps = 'a:1:{i:0;s:'.\strlen($decoy).':"'.$decoy.'";}';
+
+            return [
+                $envelopePrefix.':2:{'.$stampsKey.$stamps.$messageKey.'O:6:"Honest":0:{}}',
+                null,
+            ];
+        })();
+
+        yield 'C: opaque payload containing message-key bytes: ignored' => (static function () use ($stampsKey, $messageKey, $envelopePrefix) {
+            $opaque = $messageKey.'O:8:"PWNED999":0:{}';
+            $stamps = 'a:1:{i:0;C:6:"FakeOp":'.\strlen($opaque).':{'.$opaque.'}}';
+
+            return [
+                $envelopePrefix.':2:{'.$stampsKey.$stamps.$messageKey.'O:7:"Honest1":0:{}}',
+                'Honest1',
+            ];
+        })();
+
+        // unserialize() reads the length of a property name as an integer, so a name written with
+        // leading zeros denotes the very same property and wins by the same last-wins rule. Each of
+        // these carries an opaque "C:" payload so the in-PHP scanner runs rather than the fast path.
+        $opaqueStamp = 'a:1:{i:0;C:6:"FakeOp":2:{ok}}';
+        $nonCanonicalKeys = [
+            'private, one leading zero' => 's:045:"'."\0".'Symfony\Component\Messenger\Envelope'."\0".'message";',
+            'private, two leading zeros' => 's:0045:"'."\0".'Symfony\Component\Messenger\Envelope'."\0".'message";',
+            'protected, leading zero' => 's:010:"'."\0*\0".'message";',
+            'public, leading zero' => 's:07:"message";',
+        ];
+
+        foreach ($nonCanonicalKeys as $label => $nonCanonicalKey) {
+            yield 'non-canonical message key length ('.$label.'): returns the value PHP keeps' => [
+                $envelopePrefix.':3:{'.$stampsKey.$opaqueStamp.$messageKey.'O:6:"First1":0:{}'.$nonCanonicalKey.'O:7:"Second1":0:{}}',
+                'Second1',
+            ];
+        }
+
+        yield 'trailing garbage after envelope: rejected' => [
+            $envelopePrefix.':2:{'.$stampsKey.'a:0:{}'.$messageKey.'O:8:"stdClass":0:{}}garbage',
+            null,
+        ];
+
+        yield 'wrong declared property count vs actual pairs: rejected' => [
+            $envelopePrefix.':3:{'.$stampsKey.'a:0:{}'.$messageKey.'O:8:"stdClass":0:{}}',
+            null,
+        ];
+
+        yield 'message value is a reference to the envelope itself: safely resolves to Envelope' => [
+            // PHP unserialize() resolves r:1; to the envelope itself; the resulting class
+            // name (Envelope) is harmless when fed back to SigningSerializer because
+            // Envelope is virtually never registered as a signed message type.
+            $envelopePrefix.':2:{'.$stampsKey.'a:0:{}'.$messageKey.'r:1;}',
+            Envelope::class,
+        ];
+
+        yield 'message value is a reference, after a C: payload: rejected as the values that the payload unserializes are numbered too' => [
+            $envelopePrefix.':2:{'.$stampsKey.$opaqueStamp.$messageKey.'r:3;}',
+            null,
+        ];
+
+        yield 'capital-S binary-string format (not produced by serialize()): rejected' => [
+            $envelopePrefix.':2:{'.$stampsKey.'a:0:{}S:45:"\\00Symfony\\\\Component\\\\Messenger\\\\Envelope\\00message";O:6:"Signed":0:{}}',
+            null,
+        ];
+
+        $messageWithAClassNameProperty = 'O:6:"Signed":2:{s:27:"__PHP_Incomplete_Class_Name";s:8:"stdClass";s:4:"data";%s}';
+
+        yield 'message property named like the class name of incomplete objects: returns the class of the message' => [
+            $envelopePrefix.':2:{'.$stampsKey.'a:0:{}'.$messageKey.\sprintf($messageWithAClassNameProperty, 'N;').'}',
+            'Signed',
+        ];
+
+        yield 'message property named like the class name of incomplete objects, next to a string that contains "C:": returns the class of the message' => [
+            $envelopePrefix.':2:{'.$stampsKey.'a:0:{}'.$messageKey.\sprintf($messageWithAClassNameProperty, 's:2:"C:";').'}',
+            'Signed',
+        ];
+
+        yield 'message property named like the class name of incomplete objects, next to an enum case whose class is not loaded: returns the class of the message' => [
+            $envelopePrefix.':2:{'.$stampsKey.'a:0:{}'.$messageKey.\sprintf($messageWithAClassNameProperty, 'E:33:"Unknown\Missing\EnumName:CaseName";').'}',
+            'Signed',
+        ];
+
+        yield 'message property named like the class name of incomplete objects, in the capital-S format: rejected' => [
+            $envelopePrefix.':2:{'.$stampsKey.'a:0:{}'.$messageKey.'O:6:"Signed":1:{S:27:"__PHP_Incomplete_Class_Nam\65";s:8:"stdClass";}}',
+            null,
+        ];
+
+        yield 'no message key in envelope: returns null' => [
+            $envelopePrefix.':1:{'.$stampsKey.'a:0:{}}',
+            null,
+        ];
+
+        $protectedMessageKey = 's:10:"'."\0*\0".'message";';
+        $publicMessageKey = 's:7:"message";';
+
+        yield 'protected-form message key: scanner recognizes it (PHP routes it to $message)' => [
+            $envelopePrefix.':2:{'.$stampsKey.'a:0:{}'.$protectedMessageKey.'O:8:"stdClass":0:{}}',
+            'stdClass',
+        ];
+
+        yield 'public-form message key: scanner recognizes it (PHP routes it to $message)' => [
+            $envelopePrefix.':2:{'.$stampsKey.'a:0:{}'.$publicMessageKey.'O:8:"stdClass":0:{}}',
+            'stdClass',
+        ];
+
+        yield 'private-form message key with unrelated class name: not recognized' => [
+            // PHP only routes "\0<ClassName>\0prop" to Envelope::$prop when <ClassName>
+            // matches the declaring class. So "\0Unrelated\0message" is just a stray
+            // dynamic-like property; Envelope::$message stays uninitialized.
+            $envelopePrefix.':2:{'.$stampsKey.'a:0:{}s:17:"'."\0".'Unrelated'."\0".'message";O:8:"stdClass":0:{}}',
+            null,
+        ];
+
+        yield 'signature bypass attempt: scanner must catch the public-form last-wins override' => [
+            // PHP last-wins → $message = Signed; scanner that ignored public-form key
+            // would return "Unsigned" and let SigningSerializer fall through.
+            $envelopePrefix.':3:{'.$stampsKey.'a:0:{}'.$messageKey.'O:8:"Unsigned":0:{}'.$publicMessageKey.'O:6:"Signed":0:{}}',
+            'Signed',
+        ];
+
+        // Deeply nested stamps: PHP unserialize() refuses past unserialize_max_depth (4096
+        // by default). The scanner must refuse rather than burning CPU descending recursively.
+        $deepNesting = str_repeat('a:1:{i:0;', 10_000).'s:0:"";'.str_repeat('}', 10_000);
+        yield 'deeply nested stamps (DoS guard)' => [
+            $envelopePrefix.':2:{'.$stampsKey.$deepNesting.$messageKey.'O:8:"stdClass":0:{}}',
+            null,
+        ];
+    }
+
     protected function createPhpSerializer(): PhpSerializer
     {
         return new PhpSerializer();
+    }
+
+    private function getMessageTypeWithoutAutoloading(string $message): ?string
+    {
+        return $this->getMessageTypeOfBodyWithoutAutoloading(str_replace('O:8:"stdClass":0:{}', $message, serialize(new Envelope(new \stdClass()))));
+    }
+
+    private function getMessageTypeOfBodyWithoutAutoloading(string $body): ?string
+    {
+        $requested = [];
+        $autoloader = static function (string $class) use (&$requested) {
+            $requested[] = $class;
+        };
+        spl_autoload_register($autoloader, true, true);
+
+        try {
+            $type = $this->createPhpSerializer()->getMessageType(['body' => addslashes($body)]);
+        } finally {
+            spl_autoload_unregister($autoloader);
+        }
+
+        $this->assertSame([], $requested, 'getMessageType() must not autoload any class.');
+
+        return $type;
     }
 
     private static function serializeEnvelope(array $properties): string

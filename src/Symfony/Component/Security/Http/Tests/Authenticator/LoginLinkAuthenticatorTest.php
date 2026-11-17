@@ -11,7 +11,9 @@
 
 namespace Symfony\Component\Security\Http\Tests\Authenticator;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\Exception\BadRequestException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Security\Core\User\InMemoryUser;
 use Symfony\Component\Security\Http\Authentication\AuthenticationFailureHandlerInterface;
@@ -39,9 +41,7 @@ class LoginLinkAuthenticatorTest extends TestCase
         $this->failureHandler = $this->createStub(AuthenticationFailureHandlerInterface::class);
     }
 
-    /**
-     * @dataProvider provideSupportData
-     */
+    #[DataProvider('provideSupportData')]
     public function testSupport(array $options, $request, bool $supported)
     {
         $this->setUpAuthenticator($options);
@@ -77,7 +77,6 @@ class LoginLinkAuthenticatorTest extends TestCase
 
     public function testUnsuccessfulAuthenticate()
     {
-        $this->expectException(InvalidLoginLinkAuthenticationException::class);
         $this->setUpAuthenticator();
 
         $request = Request::create('/login/link/check?stuff=1&user=weaverryan');
@@ -89,19 +88,22 @@ class LoginLinkAuthenticatorTest extends TestCase
 
         $passport = (new LoginLinkAuthenticator($loginLinkHandler, new HttpUtils(), $this->successHandler, $this->failureHandler, []))->authenticate($request);
 
+        $this->expectException(InvalidLoginLinkAuthenticationException::class);
+
         // trigger the user loader to try to load the user
         $passport->getBadge(UserBadge::class)->getUser();
     }
 
     public function testMissingUser()
     {
-        $this->expectException(InvalidLoginLinkAuthenticationException::class);
         $this->setUpAuthenticator();
 
         $request = Request::create('/login/link/check?stuff=1');
         $loginLinkHandler = $this->createMock(LoginLinkHandlerInterface::class);
         $loginLinkHandler->expects($this->never())
             ->method('consumeLoginLink');
+
+        $this->expectException(InvalidLoginLinkAuthenticationException::class);
 
         (new LoginLinkAuthenticator($loginLinkHandler, new HttpUtils(), $this->successHandler, $this->failureHandler, []))->authenticate($request);
     }
@@ -112,8 +114,7 @@ class LoginLinkAuthenticatorTest extends TestCase
         $loginLinkHandler = $this->createMock(LoginLinkHandlerInterface::class);
         $loginLinkHandler->expects($this->never())->method('consumeLoginLink');
 
-        $this->expectException(InvalidLoginLinkAuthenticationException::class);
-        $this->expectExceptionMessage('Invalid user from link.');
+        $this->expectException(BadRequestException::class);
 
         (new LoginLinkAuthenticator($loginLinkHandler, new HttpUtils(), $this->successHandler, $this->failureHandler, []))->authenticate($request);
     }

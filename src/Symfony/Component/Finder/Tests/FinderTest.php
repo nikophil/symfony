@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Finder\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\ExpectationFailedException;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Finder\Exception\DirectoryNotFoundException;
 use Symfony\Component\Finder\Finder;
@@ -299,9 +301,7 @@ class FinderTest extends Iterator\RealIteratorTestCase
         ]), $finder->in(self::$tmpDir)->getIterator());
     }
 
-    /**
-     * @dataProvider getRegexNameTestData
-     */
+    #[DataProvider('getRegexNameTestData')]
     public function testRegexName($regex)
     {
         $finder = $this->buildFinder();
@@ -1676,9 +1676,7 @@ class FinderTest extends Iterator\RealIteratorTestCase
         $this->assertFalse($finder->hasResults());
     }
 
-    /**
-     * @dataProvider getContainsTestData
-     */
+    #[DataProvider('getContainsTestData')]
     public function testContains($matchPatterns, $noMatchPatterns, $expected)
     {
         $finder = $this->buildFinder();
@@ -1807,9 +1805,7 @@ class FinderTest extends Iterator\RealIteratorTestCase
         ];
     }
 
-    /**
-     * @dataProvider getTestPathData
-     */
+    #[DataProvider('getTestPathData')]
     public function testPath($matchPatterns, $noMatchPatterns, array $expected)
     {
         $finder = $this->buildFinder();
@@ -1911,7 +1907,7 @@ class FinderTest extends Iterator\RealIteratorTestCase
                 $this->fail('Finder should throw an exception when opening a non-readable directory.');
             } catch (\Exception $e) {
                 $expectedExceptionClass = 'Symfony\\Component\\Finder\\Exception\\AccessDeniedException';
-                if ($e instanceof \PHPUnit\Framework\ExpectationFailedException) {
+                if ($e instanceof ExpectationFailedException) {
                     $this->fail(\sprintf("Expected exception:\n%s\nGot:\n%s\nWith comparison failure:\n%s", $expectedExceptionClass, 'PHPUnit\Framework\ExpectationFailedException', $e->getComparisonFailure()->getExpectedAsString()));
                 }
 

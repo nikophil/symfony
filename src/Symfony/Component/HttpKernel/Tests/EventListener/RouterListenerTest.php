@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\HttpKernel\Tests\EventListener;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -38,16 +39,7 @@ use Symfony\Component\Routing\RequestContext;
 
 class RouterListenerTest extends TestCase
 {
-    private RequestStack $requestStack;
-
-    protected function setUp(): void
-    {
-        $this->requestStack = $this->createMock(RequestStack::class);
-    }
-
-    /**
-     * @dataProvider getPortData
-     */
+    #[DataProvider('getPortData')]
     public function testPort($defaultHttpPort, $defaultHttpsPort, $uri, $expectedHttpPort, $expectedHttpsPort)
     {
         $urlMatcher = $this->createStub(UrlMatcherInterface::class);
@@ -59,7 +51,7 @@ class RouterListenerTest extends TestCase
             ->method('getContext')
             ->willReturn($context);
 
-        $listener = new RouterListener($urlMatcher, $this->requestStack);
+        $listener = new RouterListener($urlMatcher, new RequestStack());
         $event = $this->createRequestEventForUri($uri);
         $listener->onKernelRequest($event);
 
@@ -99,7 +91,7 @@ class RouterListenerTest extends TestCase
                        ->with($this->isInstanceOf(Request::class))
                        ->willReturn([]);
 
-        $listener = new RouterListener($requestMatcher, $this->requestStack, new RequestContext());
+        $listener = new RouterListener($requestMatcher, new RequestStack(), new RequestContext());
         $listener->onKernelRequest($event);
     }
 
@@ -111,13 +103,12 @@ class RouterListenerTest extends TestCase
 
         $requestMatcher = $this->createStub(RequestMatcherInterface::class);
         $requestMatcher
-                       ->method('matchRequest')
-                       ->with($this->isInstanceOf(Request::class))
-                       ->willReturn([]);
+            ->method('matchRequest')
+            ->willReturn([]);
 
         $context = new RequestContext();
 
-        $listener = new RouterListener($requestMatcher, $this->requestStack, new RequestContext());
+        $listener = new RouterListener($requestMatcher, new RequestStack(), new RequestContext());
         $listener->onKernelRequest($event);
 
         // sub-request with another HTTP method
@@ -130,9 +121,7 @@ class RouterListenerTest extends TestCase
         $this->assertEquals('GET', $context->getMethod());
     }
 
-    /**
-     * @dataProvider getLoggingParameterData
-     */
+    #[DataProvider('getLoggingParameterData')]
     public function testLoggingParameter($parameter, $log, $parameters)
     {
         $requestMatcher = $this->createMock(RequestMatcherInterface::class);
@@ -148,7 +137,7 @@ class RouterListenerTest extends TestCase
         $kernel = $this->createStub(HttpKernelInterface::class);
         $request = Request::create('http://localhost/');
 
-        $listener = new RouterListener($requestMatcher, $this->requestStack, new RequestContext(), $logger);
+        $listener = new RouterListener($requestMatcher, new RequestStack(), new RequestContext(), $logger);
         $listener->onKernelRequest(new RequestEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST));
     }
 
@@ -186,7 +175,7 @@ class RouterListenerTest extends TestCase
 
         $requestMatcher = $this->createMock(RequestMatcherInterface::class);
         $requestMatcher
-            ->expects($this->once())
+            ->expects($this->exactly(2))
             ->method('matchRequest')
             ->willThrowException(new NoConfigurationException())
         ;
@@ -197,6 +186,11 @@ class RouterListenerTest extends TestCase
         $kernel = new HttpKernel($dispatcher, new ControllerResolver(), $requestStack, new ArgumentResolver());
 
         $request = Request::create('http://localhost/');
+
+        $response = $kernel->handle($request);
+        $this->assertSame(404, $response->getStatusCode());
+        $this->assertStringContainsString('Welcome', $response->getContent());
+
         $response = $kernel->handle($request);
         $this->assertSame(404, $response->getStatusCode());
         $this->assertStringContainsString('Welcome', $response->getContent());
@@ -234,7 +228,7 @@ class RouterListenerTest extends TestCase
 
         $requestMatcher = $this->createStub(RequestMatcherInterface::class);
 
-        $listener = new RouterListener($requestMatcher, $this->requestStack, new RequestContext());
+        $listener = new RouterListener($requestMatcher, new RequestStack(), new RequestContext());
         try {
             $listener->onKernelRequest($event);
             self::fail(\sprintf('Expected "%s" or "%s" to be thrown.', BadRequestHttpException::class, BadRequestException::class));
@@ -266,7 +260,7 @@ class RouterListenerTest extends TestCase
 
         $event = new RequestEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST);
 
-        $listener = new RouterListener($urlMatcher, $this->requestStack);
+        $listener = new RouterListener($urlMatcher, new RequestStack());
         $listener->onKernelRequest($event);
     }
 
@@ -292,7 +286,108 @@ class RouterListenerTest extends TestCase
 
         $event = new RequestEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST);
 
-        $listener = new RouterListener($urlMatcher, $this->requestStack);
+        $listener = new RouterListener($urlMatcher, new RequestStack());
         $listener->onKernelRequest($event);
+    }
+
+    #[DataProvider('provideRouteMapping')]
+    public function testRouteMapping(array $expected, array $parameters)
+    {
+        $kernel = $this->createStub(HttpKernelInterface::class);
+        $request = Request::create('http://localhost/');
+        $event = new RequestEvent($kernel, $request, HttpKernelInterface::MAIN_REQUEST);
+
+        $requestMatcher = $this->createStub(RequestMatcherInterface::class);
+        $requestMatcher
+            ->method('matchRequest')
+            ->willReturn($parameters);
+
+        $listener = new RouterListener($requestMatcher, new RequestStack(), new RequestContext());
+        $listener->onKernelRequest($event);
+
+        $expected['_route_mapping'] = $parameters['_route_mapping'];
+        unset($parameters['_route_mapping']);
+        $expected['_route_params'] = $parameters;
+
+        $this->assertEquals($expected, $request->attributes->all());
+    }
+
+    public static function provideRouteMapping(): iterable
+    {
+        yield [
+            [
+                'conference' => 'vienna-2024',
+            ],
+            [
+                'slug' => 'vienna-2024',
+                '_route_mapping' => [
+                    'slug' => 'conference',
+                ],
+            ],
+        ];
+
+        yield [
+            [
+                'article' => [
+                    'id' => 'abc123',
+                    'date' => '2024-04-24',
+                    'slug' => 'symfony-rocks',
+                ],
+            ],
+            [
+                'id' => 'abc123',
+                'date' => '2024-04-24',
+                'slug' => 'symfony-rocks',
+                '_route_mapping' => [
+                    'id' => 'article',
+                    'date' => 'article',
+                    'slug' => 'article',
+                ],
+            ],
+        ];
+
+        yield [
+            [
+                'conference' => ['slug' => 'vienna-2024'],
+            ],
+            [
+                'slug' => 'vienna-2024',
+                '_route_mapping' => [
+                    'slug' => [
+                        'conference',
+                        'slug',
+                    ],
+                ],
+            ],
+        ];
+
+        yield [
+            [
+                'article' => [
+                    'id' => 'abc123',
+                    'date' => '2024-04-24',
+                    'slug' => 'symfony-rocks',
+                ],
+            ],
+            [
+                'id' => 'abc123',
+                'date' => '2024-04-24',
+                'slug' => 'symfony-rocks',
+                '_route_mapping' => [
+                    'id' => [
+                        'article',
+                        'id',
+                    ],
+                    'date' => [
+                        'article',
+                        'date',
+                    ],
+                    'slug' => [
+                        'article',
+                        'slug',
+                    ],
+                ],
+            ],
+        ];
     }
 }

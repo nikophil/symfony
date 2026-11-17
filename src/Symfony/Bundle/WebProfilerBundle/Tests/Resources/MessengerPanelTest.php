@@ -12,7 +12,7 @@
 namespace Symfony\Bundle\WebProfilerBundle\Tests\Resources;
 
 use PHPUnit\Framework\TestCase;
-use Symfony\Bridge\Twig\Extension\CodeExtension;
+use Symfony\Bundle\WebProfilerBundle\Profiler\CodeExtension;
 use Symfony\Bundle\WebProfilerBundle\Twig\WebProfilerExtension;
 use Symfony\Component\ErrorHandler\ErrorRenderer\FileLinkFormatter;
 use Symfony\Component\Messenger\DataCollector\MessengerDataCollector;

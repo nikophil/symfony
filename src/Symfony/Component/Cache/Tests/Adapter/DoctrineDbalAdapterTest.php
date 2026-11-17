@@ -15,21 +15,20 @@ use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Driver\AbstractMySQLDriver;
 use Doctrine\DBAL\Driver\Middleware;
+use Doctrine\DBAL\Driver\Middleware\AbstractDriverMiddleware;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Platforms\AbstractPlatform;
 use Doctrine\DBAL\Schema\DefaultSchemaManagerFactory;
 use Doctrine\DBAL\Schema\Schema;
-use Doctrine\DBAL\Schema\Table;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\Cache\Adapter\DoctrineDbalAdapter;
 use Symfony\Component\Cache\Exception\InvalidArgumentException;
-use Symfony\Component\Cache\Tests\Fixtures\DriverWrapper;
 
-/**
- * @requires extension pdo_sqlite
- *
- * @group time-sensitive
- */
+#[RequiresPhpExtension('pdo_sqlite')]
+#[Group('time-sensitive')]
 class DoctrineDbalAdapterTest extends AdapterTestCase
 {
     protected static string $dbFile;
@@ -63,7 +62,7 @@ class DoctrineDbalAdapterTest extends AdapterTestCase
         $middleware = $this->createStub(Middleware::class);
         $middleware
             ->method('wrap')
-            ->willReturn(new DriverWrapper($connection->getDriver()));
+            ->willReturn(new class($connection->getDriver()) extends AbstractDriverMiddleware {});
 
         $config = $this->getDbalConfig();
         $config->setMiddlewares([$middleware]);
@@ -112,7 +111,7 @@ class DoctrineDbalAdapterTest extends AdapterTestCase
 
         $connection = DriverManager::getConnection(['driver' => 'pdo_sqlite', 'path' => self::$dbFile], $this->getDbalConfig());
         if (method_exists(Schema::class, 'edit')) {
-            $schema = (new Schema())->edit()->addTable(new Table('cache_items'))->create();
+            $schema = (new Schema())->edit()->addTable(new \Doctrine\DBAL\Schema\Table('cache_items'))->create();
         } else {
             $schema = new Schema();
             $schema->createTable('cache_items');
@@ -124,9 +123,7 @@ class DoctrineDbalAdapterTest extends AdapterTestCase
         $this->assertSame([], $table->getColumns(), 'The table was not overwritten');
     }
 
-    /**
-     * @dataProvider provideDsnWithSQLite
-     */
+    #[DataProvider('provideDsnWithSQLite')]
     public function testDsnWithSQLite(string $dsn, ?string $file = null)
     {
         try {
@@ -150,11 +147,8 @@ class DoctrineDbalAdapterTest extends AdapterTestCase
         yield 'SQLite in memory' => ['sqlite://localhost/:memory:'];
     }
 
-    /**
-     * @requires extension pdo_pgsql
-     *
-     * @group integration
-     */
+    #[RequiresPhpExtension('pdo_pgsql')]
+    #[Group('integration')]
     public function testDsnWithPostgreSQL()
     {
         if (!$host = getenv('POSTGRES_HOST')) {
@@ -197,7 +191,7 @@ class DoctrineDbalAdapterTest extends AdapterTestCase
 
     public function testSavepointIsRolledBackOnFailure()
     {
-        $platform = $this->createMock(AbstractPlatform::class);
+        $platform = $this->createStub(AbstractPlatform::class);
         $platform->method('supportsSavepoints')->willReturn(true);
 
         $conn = $this->createMock(Connection::class);
@@ -256,12 +250,10 @@ class DoctrineDbalAdapterTest extends AdapterTestCase
         return $connection;
     }
 
-    private function getDbalConfig()
+    private function getDbalConfig(): Configuration
     {
         $config = new Configuration();
-        if (class_exists(DefaultSchemaManagerFactory::class)) {
-            $config->setSchemaManagerFactory(new DefaultSchemaManagerFactory());
-        }
+        $config->setSchemaManagerFactory(new DefaultSchemaManagerFactory());
 
         return $config;
     }

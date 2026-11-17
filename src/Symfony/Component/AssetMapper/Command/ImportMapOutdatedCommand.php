@@ -15,6 +15,9 @@ use Symfony\Component\AssetMapper\ImportMap\ImportMapUpdateChecker;
 use Symfony\Component\AssetMapper\ImportMap\PackageUpdateInfo;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Completion\CompletionInput;
+use Symfony\Component\Console\Completion\CompletionSuggestions;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -59,6 +62,11 @@ final class ImportMapOutdatedCommand extends Command
                 Or specific packages only:
 
                    <info>php %command.full_name% <packages></info>
+
+                The <info>--format</info> option specifies the format of the command output:
+
+                  <info>php %command.full_name% --format=json</info>
+
                 EOT
             );
     }
@@ -69,7 +77,13 @@ final class ImportMapOutdatedCommand extends Command
         $packages = $input->getArgument('packages');
         $packagesUpdateInfos = $this->updateChecker->getAvailableUpdates($packages);
         $packagesUpdateInfos = array_filter($packagesUpdateInfos, static fn ($packageUpdateInfo) => $packageUpdateInfo->hasUpdate());
-        if (0 === \count($packagesUpdateInfos)) {
+        if (!$packagesUpdateInfos) {
+            if ('json' === $input->getOption('format')) {
+                $io->writeln('[]');
+            } else {
+                $io->writeln('No updates found.');
+            }
+
             return Command::SUCCESS;
         }
 
@@ -81,16 +95,16 @@ final class ImportMapOutdatedCommand extends Command
         ], array_keys($packagesUpdateInfos), $packagesUpdateInfos);
 
         if ('json' === $input->getOption('format')) {
-            $io->writeln(json_encode($displayData, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES));
+            $io->writeln(json_encode($displayData, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
         } else {
             $table = $io->createTable();
             $table->setHeaders(['Package', 'Current', 'Latest']);
             foreach ($displayData as $datum) {
                 $color = self::COLOR_MAPPING[$datum['latest-status']] ?? 'default';
                 $table->addRow([
-                    \sprintf('<fg=%s>%s</>', $color, $datum['name']),
+                    \sprintf('<fg=%s>%s</>', $color, OutputFormatter::escape($datum['name'])),
                     $datum['current'],
-                    \sprintf('<fg=%s>%s</>', $color, $datum['latest']),
+                    \sprintf('<fg=%s>%s</>', $color, OutputFormatter::escape($datum['latest'])),
                 ]);
             }
             $table->render();
@@ -99,6 +113,14 @@ final class ImportMapOutdatedCommand extends Command
         return Command::FAILURE;
     }
 
+    public function complete(CompletionInput $input, CompletionSuggestions $suggestions): void
+    {
+        if ($input->mustSuggestOptionValuesFor('format')) {
+            $suggestions->suggestValues($this->getAvailableFormatOptions());
+        }
+    }
+
+    /** @return string[] */
     private function getAvailableFormatOptions(): array
     {
         return ['txt', 'json'];

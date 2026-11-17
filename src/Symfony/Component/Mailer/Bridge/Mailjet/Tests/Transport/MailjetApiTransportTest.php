@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Mailer\Bridge\Mailjet\Tests\Transport;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
@@ -27,9 +28,7 @@ class MailjetApiTransportTest extends TestCase
     protected const USER = 'u$er';
     protected const PASSWORD = 'pa$s';
 
-    /**
-     * @dataProvider getTransportData
-     */
+    #[DataProvider('getTransportData')]
     public function testToString(MailjetApiTransport $transport, string $expected)
     {
         $this->assertSame($expected, (string) $transport);
@@ -238,9 +237,7 @@ class MailjetApiTransportTest extends TestCase
         $transport->send($email);
     }
 
-    /**
-     * @dataProvider getMalformedResponse
-     */
+    #[DataProvider('getMalformedResponse')]
     public function testSendWithMalformedResponse(array $body)
     {
         $json = json_encode($body);

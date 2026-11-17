@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Security\Http\Tests\EventListener;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bridge\PhpUnit\ClockMock;
 use Symfony\Component\HttpFoundation\RateLimiter\PeekableRequestRateLimiterInterface;
@@ -83,9 +85,7 @@ class LoginThrottlingListenerTest extends TestCase
         $this->listener->checkPassport($this->createCheckPassportEvent($passport));
     }
 
-    /**
-     * @group time-sensitive
-     */
+    #[Group('time-sensitive')]
     public function testThresholdDoesNotCountTheRoundingOfTheRetryInstant()
     {
         ClockMock::withClockMock(1729990780.75);
@@ -93,7 +93,7 @@ class LoginThrottlingListenerTest extends TestCase
         $this->requestStack->push($this->createRequest());
 
         $limiter = $this->createMock(RequestRateLimiterInterface::class);
-        $limiter->method('consume')->willReturn(new RateLimit(0, \DateTimeImmutable::createFromFormat('U', '1729990841'), false, 3));
+        $limiter->expects($this->once())->method('consume')->willReturn(new RateLimit(0, \DateTimeImmutable::createFromFormat('U', '1729990841'), false, 3));
 
         $listener = new LoginThrottlingListener($this->requestStack, $limiter);
 
@@ -190,9 +190,7 @@ class LoginThrottlingListenerTest extends TestCase
         $this->listener->checkPassport($this->createCheckPassportEvent($passports[0]));
     }
 
-    /**
-     * @dataProvider provideStateless
-     */
+    #[DataProvider('provideStateless')]
     public function testSuccessfulLoginResetsThrottling(bool $stateless)
     {
         $this->listener = new LoginThrottlingListener($this->requestStack, $this->limiter, $stateless);
@@ -258,9 +256,7 @@ class LoginThrottlingListenerTest extends TestCase
         $this->listener->checkPassport($this->createCheckPassportEvent($this->createPassport('wouter')));
     }
 
-    /**
-     * @dataProvider provideStateless
-     */
+    #[DataProvider('provideStateless')]
     public function testSuccessfulLoginKeepsTheGlobalLimit(bool $stateless)
     {
         $this->listener = new LoginThrottlingListener($this->requestStack, $this->limiter, $stateless);
@@ -371,9 +367,7 @@ class LoginThrottlingListenerTest extends TestCase
         $listener->checkPassport($this->createCheckPassportEvent($passport));
     }
 
-    /**
-     * @group time-sensitive
-     */
+    #[Group('time-sensitive')]
     public function testStatelessBurstGetsOneAttemptWhenOneTokenIsFreed()
     {
         $localLimiter = new RateLimiterFactory([
@@ -405,6 +399,19 @@ class LoginThrottlingListenerTest extends TestCase
 
         $this->expectException(TooManyLoginAttemptsAuthenticationException::class);
         $listener->checkPassport($this->createCheckPassportEvent($passport));
+    }
+
+    public function testPreventsLoginWithoutClientIp()
+    {
+        $this->requestStack->push(new Request());
+        $passport = $this->createPassport('wouter');
+
+        for ($i = 0; $i < 3; ++$i) {
+            $this->listener->checkPassport($this->createCheckPassportEvent($passport));
+        }
+
+        $this->expectException(TooManyLoginAttemptsAuthenticationException::class);
+        $this->listener->checkPassport($this->createCheckPassportEvent($passport));
     }
 
     public function testPreventsLoginFromTheSameIpv6Network()

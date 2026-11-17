@@ -53,12 +53,10 @@ class DoctrineChoiceLoaderTest extends TestCase
 
         $this->om
             ->method('getRepository')
-            ->with($this->class)
             ->willReturn($this->repository);
 
         $this->om
             ->method('getClassMetadata')
-            ->with($this->class)
             ->willReturn(new ClassMetadata($this->class));
         $this->repository
             ->method('findAll')
@@ -75,18 +73,19 @@ class DoctrineChoiceLoaderTest extends TestCase
         );
 
         $choices = [$this->obj1, $this->obj2, $this->obj3];
-        $value = static function () {};
-        $choiceList = new ArrayChoiceList($choices, $value);
+        $value = static fn ($choice) => $choice->name;
 
         $this->repository->expects($this->once())
             ->method('findAll')
             ->willReturn($choices);
 
-        $this->assertEquals($choiceList, $loader->loadChoiceList($value));
+        $expected = ['A' => $this->obj1, 'B' => $this->obj2, 'C' => $this->obj3];
+
+        $this->assertSame($expected, $loader->loadChoiceList($value)->getChoices());
 
         // no further loads on subsequent calls
 
-        $this->assertEquals($choiceList, $loader->loadChoiceList($value));
+        $this->assertSame($expected, $loader->loadChoiceList($value)->getChoices());
     }
 
     public function testLoadChoiceListUsesObjectLoaderIfAvailable()
@@ -152,19 +151,20 @@ class DoctrineChoiceLoaderTest extends TestCase
 
     public function testLoadValuesForChoicesDoesNotLoadIfSingleIntId()
     {
+        $idReader = $this->createMock(IdReader::class);
+        $idReader->method('isSingleId')->willReturn(true);
         $loader = new DoctrineChoiceLoader(
             $this->om,
             $this->class,
-            $this->idReader
+            $idReader
         );
 
         $this->repository->expects($this->never())
             ->method('findAll');
 
-        $this->idReader
-            ->method('getIdValue')
-            ->with($this->obj2)
-            ->willReturn('2');
+        $idReader
+            ->expects($this->never())
+            ->method('getIdValue');
 
         $this->expectException(LogicException::class);
         $this->expectExceptionMessage('Not defining the IdReader explicitly as a value callback when the query can be optimized is not supported.');
@@ -195,18 +195,21 @@ class DoctrineChoiceLoaderTest extends TestCase
 
     public function testLoadValuesForChoicesDoesNotLoadIfValueIsIdReader()
     {
+        $idReader = $this->createMock(IdReader::class);
+        $idReader->method('isSingleId')->willReturn(true);
         $loader = new DoctrineChoiceLoader(
             $this->om,
             $this->class,
-            $this->idReader
+            $idReader
         );
 
-        $value = [$this->idReader, 'getIdValue'];
+        $value = [$idReader, 'getIdValue'];
 
         $this->repository->expects($this->never())
             ->method('findAll');
 
-        $this->idReader
+        $idReader
+            ->expects($this->once())
             ->method('getIdValue')
             ->with($this->obj2)
             ->willReturn('2');

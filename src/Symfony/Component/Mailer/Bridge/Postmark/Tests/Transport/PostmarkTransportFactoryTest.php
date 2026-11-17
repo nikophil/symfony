@@ -16,12 +16,15 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\Mailer\Bridge\Postmark\Transport\PostmarkApiTransport;
 use Symfony\Component\Mailer\Bridge\Postmark\Transport\PostmarkSmtpTransport;
 use Symfony\Component\Mailer\Bridge\Postmark\Transport\PostmarkTransportFactory;
-use Symfony\Component\Mailer\Test\TransportFactoryTestCase;
+use Symfony\Component\Mailer\Test\AbstractTransportFactoryTestCase;
+use Symfony\Component\Mailer\Test\IncompleteDsnTestTrait;
 use Symfony\Component\Mailer\Transport\Dsn;
 use Symfony\Component\Mailer\Transport\TransportFactoryInterface;
 
-class PostmarkTransportFactoryTest extends TransportFactoryTestCase
+class PostmarkTransportFactoryTest extends AbstractTransportFactoryTestCase
 {
+    use IncompleteDsnTestTrait;
+
     public function getFactory(): TransportFactoryInterface
     {
         return new PostmarkTransportFactory(null, new MockHttpClient(), new NullLogger());
@@ -106,5 +109,16 @@ class PostmarkTransportFactoryTest extends TransportFactoryTestCase
     public static function incompleteDsnProvider(): iterable
     {
         yield [new Dsn('postmark+api', 'default')];
+    }
+
+    public function testSmtpTransportRequiresTls()
+    {
+        $factory = $this->getFactory();
+
+        foreach (['postmark', 'postmark+smtp', 'postmark+smtps'] as $scheme) {
+            $this->assertTrue($factory->create(new Dsn($scheme, 'default', self::USER))->isTlsRequired());
+        }
+
+        $this->assertFalse($factory->create(new Dsn('postmark+smtp', 'default', self::USER, null, null, ['require_tls' => 'false']))->isTlsRequired());
     }
 }

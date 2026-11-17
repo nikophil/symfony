@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Security\Http\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Request;
@@ -64,9 +65,7 @@ class HttpUtilsTest extends TestCase
         $this->assertTrue($response->isRedirect('http://localhost/blog'));
     }
 
-    /**
-     * @dataProvider validRequestDomainUrls
-     */
+    #[DataProvider('validRequestDomainUrls')]
     public function testCreateRedirectResponse(?string $domainRegexp, string $path, string $expectedRedirectUri)
     {
         $utils = new HttpUtils($this->getUrlGenerator(), null, $domainRegexp);
@@ -112,9 +111,7 @@ class HttpUtilsTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider badRequestDomainUrls
-     */
+    #[DataProvider('badRequestDomainUrls')]
     public function testCreateRedirectResponseWithBadRequestsDomain($url)
     {
         $utils = new HttpUtils($this->getUrlGenerator(), null, '#^https?://%s$#i');
@@ -145,9 +142,10 @@ class HttpUtilsTest extends TestCase
 
     public function testCreateRedirectResponseWithRouteName()
     {
-        $utils = new HttpUtils($urlGenerator = $this->createStub(UrlGeneratorInterface::class));
+        $utils = new HttpUtils($urlGenerator = $this->createMock(UrlGeneratorInterface::class));
 
         $urlGenerator
+            ->expects($this->once())
             ->method('generate')
             ->with('foobar', [], UrlGeneratorInterface::ABSOLUTE_URL)
             ->willReturn('http://localhost/foo/bar')
@@ -213,9 +211,7 @@ class HttpUtilsTest extends TestCase
         $this->assertSame($session, $subRequest->getSession());
     }
 
-    /**
-     * @dataProvider provideSecurityRequestAttributes
-     */
+    #[DataProvider('provideSecurityRequestAttributes')]
     public function testCreateRequestPassesSecurityRequestAttributesToTheNewRequest($attribute)
     {
         $request = $this->getRequest();
@@ -242,7 +238,7 @@ class HttpUtilsTest extends TestCase
 
         $this->assertSame(
             'http://localhost/foo/',
-            (new HttpUtils())->createRequest(Request::create('/', server: ['HTTP_X_FORWARDED_PREFIX' => '/foo']), '/')->getUri(),
+            (new HttpUtils())->createRequest(Request::create('/', 'GET', [], [], [], ['HTTP_X_FORWARDED_PREFIX' => '/foo']), '/')->getUri(),
         );
     }
 
@@ -250,7 +246,7 @@ class HttpUtilsTest extends TestCase
     {
         Request::setTrustedProxies(['127.0.0.1'], Request::HEADER_X_FORWARDED_PREFIX);
 
-        $request = Request::create('/', server: ['HTTP_X_FORWARDED_PREFIX' => '/foo']);
+        $request = Request::create('/', 'GET', [], [], [], ['HTTP_X_FORWARDED_PREFIX' => '/foo']);
 
         $urlGenerator = new UrlGenerator(
             $routeCollection = new RouteCollection(),
@@ -339,8 +335,9 @@ class HttpUtilsTest extends TestCase
 
     public function testCheckRequestPathWithUrlMatcherAndResourceNotFound()
     {
-        $urlMatcher = $this->createStub(UrlMatcherInterface::class);
+        $urlMatcher = $this->createMock(UrlMatcherInterface::class);
         $urlMatcher
+            ->expects($this->once())
             ->method('match')
             ->with('/')
             ->willThrowException(new ResourceNotFoundException())
@@ -353,8 +350,9 @@ class HttpUtilsTest extends TestCase
     public function testCheckRequestPathWithUrlMatcherAndMethodNotAllowed()
     {
         $request = $this->getRequest();
-        $urlMatcher = $this->createStub(RequestMatcherInterface::class);
+        $urlMatcher = $this->createMock(RequestMatcherInterface::class);
         $urlMatcher
+            ->expects($this->once())
             ->method('matchRequest')
             ->with($request)
             ->willThrowException(new MethodNotAllowedException([]))
@@ -366,8 +364,9 @@ class HttpUtilsTest extends TestCase
 
     public function testCheckRequestPathWithUrlMatcherAndResourceFoundByUrl()
     {
-        $urlMatcher = $this->createStub(UrlMatcherInterface::class);
+        $urlMatcher = $this->createMock(UrlMatcherInterface::class);
         $urlMatcher
+            ->expects($this->once())
             ->method('match')
             ->with('/foo/bar')
             ->willReturn(['_route' => 'foobar'])
@@ -380,8 +379,9 @@ class HttpUtilsTest extends TestCase
     public function testCheckRequestPathWithUrlMatcherAndResourceFoundByRequest()
     {
         $request = $this->getRequest();
-        $urlMatcher = $this->createStub(RequestMatcherInterface::class);
+        $urlMatcher = $this->createMock(RequestMatcherInterface::class);
         $urlMatcher
+            ->expects($this->once())
             ->method('matchRequest')
             ->with($request)
             ->willReturn(['_route' => 'foobar'])
@@ -393,7 +393,6 @@ class HttpUtilsTest extends TestCase
 
     public function testCheckRequestPathWithUrlMatcherLoadingException()
     {
-        $this->expectException(\RuntimeException::class);
         $urlMatcher = $this->createStub(UrlMatcherInterface::class);
         $urlMatcher
             ->method('match')
@@ -401,6 +400,9 @@ class HttpUtilsTest extends TestCase
         ;
 
         $utils = new HttpUtils(null, $urlMatcher);
+
+        $this->expectException(\RuntimeException::class);
+
         $utils->checkRequestPath($this->getRequest(), 'foobar');
     }
 
@@ -448,7 +450,6 @@ class HttpUtilsTest extends TestCase
         $urlMatcher = $this->createStub(RequestMatcherInterface::class);
         $urlMatcher
             ->method('matchRequest')
-            ->with($request)
             ->willReturn(['_route' => 'foobar'])
         ;
 
@@ -483,7 +484,6 @@ class HttpUtilsTest extends TestCase
         $urlMatcher = $this->createStub(RequestMatcherInterface::class);
         $urlMatcher
             ->method('matchRequest')
-            ->with($request)
             ->willReturn(['_route' => 'foobar', '_controller' => 'App\Controller\FooBarController::index', 'name' => 'bar'])
         ;
 
@@ -603,8 +603,7 @@ class HttpUtilsTest extends TestCase
     {
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('You must provide a UrlGeneratorInterface instance to be able to use routes.');
-        $utils = new HttpUtils();
-        $utils->generateUri(new Request(), 'route_name');
+        (new HttpUtils())->generateUri(new Request(), 'route_name');
     }
 
     private function getUrlGenerator($generatedUrl = '/foo/bar')

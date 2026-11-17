@@ -36,39 +36,28 @@ use Twig\Loader\FilesystemLoader;
 #[AsCommand(name: 'debug:twig', description: 'Show a list of twig functions, filters, globals and tests')]
 class DebugCommand extends Command
 {
-    private Environment $twig;
-    private ?string $projectDir;
-    private array $bundlesMetadata;
-    private ?string $twigDefaultPath;
-
     /**
      * @var FilesystemLoader[]
      */
     private array $filesystemLoaders;
 
-    private ?FileLinkFormatter $fileLinkFormatter;
-
-    public function __construct(Environment $twig, ?string $projectDir = null, array $bundlesMetadata = [], ?string $twigDefaultPath = null, ?FileLinkFormatter $fileLinkFormatter = null)
-    {
+    public function __construct(
+        private Environment $twig,
+        private ?string $projectDir = null,
+        private array $bundlesMetadata = [],
+        private ?string $twigDefaultPath = null,
+        private ?FileLinkFormatter $fileLinkFormatter = null,
+    ) {
         parent::__construct();
-
-        $this->twig = $twig;
-        $this->projectDir = $projectDir;
-        $this->bundlesMetadata = $bundlesMetadata;
-        $this->twigDefaultPath = $twigDefaultPath;
-        $this->fileLinkFormatter = $fileLinkFormatter;
     }
 
-    /**
-     * @return void
-     */
-    protected function configure()
+    protected function configure(): void
     {
         $this
             ->setDefinition([
                 new InputArgument('name', InputArgument::OPTIONAL, 'The template name'),
                 new InputOption('filter', null, InputOption::VALUE_REQUIRED, 'Show details for all entries matching this filter'),
-                new InputOption('format', null, InputOption::VALUE_REQUIRED, \sprintf('The output format ("%s")', implode('", "', $this->getAvailableFormatOptions())), 'text'),
+                new InputOption('format', null, InputOption::VALUE_REQUIRED, \sprintf('The output format ("%s")', implode('", "', $this->getAvailableFormatOptions())), 'txt'),
             ])
             ->setHelp(<<<'EOF'
                 The <info>%command.name%</info> command outputs a list of twig functions,
@@ -104,8 +93,14 @@ class DebugCommand extends Command
             throw new InvalidArgumentException(\sprintf('Argument "name" not supported, it requires the Twig loader "%s".', FilesystemLoader::class));
         }
 
-        match ($input->getOption('format')) {
-            'text' => $name ? $this->displayPathsText($io, $name) : $this->displayGeneralText($io, $filter),
+        $format = $input->getOption('format');
+        if ('text' === $format) {
+            trigger_deprecation('symfony/twig-bridge', '7.2', 'The "text" format is deprecated, use "txt" instead.');
+
+            $format = 'txt';
+        }
+        match ($format) {
+            'txt' => $name ? $this->displayPathsText($io, $name) : $this->displayGeneralText($io, $filter),
             'json' => $name ? $this->displayPathsJson($io, $name) : $this->displayGeneralJson($io, $filter),
             default => throw new InvalidArgumentException(\sprintf('Supported formats are "%s".', implode('", "', $this->getAvailableFormatOptions()))),
         };
@@ -142,9 +137,9 @@ class DebugCommand extends Command
                 $io->section('Overridden Files');
                 do {
                     if ($fileLink = $this->getFileLink($file->key())) {
-                        $io->text(\sprintf('* <href=%s>%s</>', $fileLink, $file->current()));
+                        $io->text(\sprintf('* <href=%s>%s</>', $fileLink, OutputFormatter::escape($file->current())));
                     } else {
-                        $io->text(\sprintf('* %s', $file->current()));
+                        $io->text(\sprintf('* %s', OutputFormatter::escape($file->current())));
                     }
                     $file->next();
                 } while ($file->valid());
@@ -214,7 +209,7 @@ class DebugCommand extends Command
         }
         $data['loader_paths'] = $paths;
 
-        $io->writeln(json_encode($data));
+        $io->writeln(json_encode($data, \JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
     }
 
     private function displayGeneralText(SymfonyStyle $io, ?string $filter = null): void
@@ -253,7 +248,6 @@ class DebugCommand extends Command
 
     private function displayGeneralJson(SymfonyStyle $io, ?string $filter): void
     {
-        $decorated = $io->isDecorated();
         $types = ['functions', 'filters', 'tests', 'globals'];
         $data = [];
         foreach ($types as $type) {
@@ -275,8 +269,7 @@ class DebugCommand extends Command
             $data['warnings'] = $this->buildWarningMessages($wrongBundles);
         }
 
-        $data = json_encode($data, \JSON_PRETTY_PRINT);
-        $io->writeln($decorated ? OutputFormatter::escape($data) : $data);
+        $io->writeln(json_encode($data, \JSON_PRETTY_PRINT | \JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
     }
 
     private function getLoaderPaths(?string $name = null): array
@@ -349,15 +342,13 @@ class DebugCommand extends Command
             }
 
             // format args
-            $args = array_map(static function (\ReflectionParameter $param) {
+            return array_map(static function (\ReflectionParameter $param) {
                 if ($param->isDefaultValueAvailable()) {
                     return $param->getName().' = '.json_encode($param->getDefaultValue());
                 }
 
                 return $param->getName();
             }, $args);
-
-            return $args;
         }
 
         return null;
@@ -419,7 +410,6 @@ class DebugCommand extends Command
         }
 
         if ($notFoundBundles = array_diff_key($bundleNames, $this->bundlesMetadata)) {
-            $alternatives = [];
             foreach ($notFoundBundles as $notFoundBundle => $path) {
                 $alternatives[$path] = $this->findAlternatives($notFoundBundle, array_keys($this->bundlesMetadata));
             }
@@ -516,7 +506,7 @@ class DebugCommand extends Command
             }
             $firstNamespace = false;
             foreach ($paths as $path) {
-                $rows[] = [$namespace, $path.\DIRECTORY_SEPARATOR];
+                $rows[] = [OutputFormatter::escape($namespace), OutputFormatter::escape($path.\DIRECTORY_SEPARATOR)];
                 $namespace = '';
             }
             if (\count($paths) > 1) {
@@ -590,15 +580,12 @@ class DebugCommand extends Command
 
     private function getFileLink(string $absolutePath): string
     {
-        if (null === $this->fileLinkFormatter) {
-            return '';
-        }
-
-        return (string) $this->fileLinkFormatter->format($absolutePath, 1);
+        return (string) $this->fileLinkFormatter?->format($absolutePath, 1);
     }
 
+    /** @return string[] */
     private function getAvailableFormatOptions(): array
     {
-        return ['text', 'json'];
+        return ['txt', 'json'];
     }
 }

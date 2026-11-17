@@ -17,10 +17,14 @@ use Symfony\Component\Form\Extension\Validator\Constraints\Form as FormConstrain
 use Symfony\Component\Form\Extension\Validator\ValidatorExtension;
 use Symfony\Component\Form\Form;
 use Symfony\Component\Form\Forms;
+use Symfony\Component\Form\Tests\Extension\Core\Type\CollectionTypeTest;
 use Symfony\Component\Form\Tests\Extension\Core\Type\FormTypeTest;
 use Symfony\Component\Form\Tests\Extension\Core\Type\TextTypeTest;
 use Symfony\Component\Form\Tests\Fixtures\Author;
+use Symfony\Component\Form\Tests\Fixtures\AuthorType;
+use Symfony\Component\Form\Tests\Fixtures\Organization;
 use Symfony\Component\OptionsResolver\Exception\InvalidOptionsException;
+use Symfony\Component\Validator\Constraints\All;
 use Symfony\Component\Validator\Constraints\GroupSequence;
 use Symfony\Component\Validator\Constraints\Length;
 use Symfony\Component\Validator\Constraints\NotBlank;
@@ -82,8 +86,8 @@ class FormTypeValidatorExtensionTest extends BaseValidatorExtensionTestCase
             ->create(FormTypeTest::TESTED_TYPE, null, ['validation_groups' => new GroupSequence(['First', 'Second'])])
             ->add('field', TextTypeTest::TESTED_TYPE, [
                 'constraints' => [
-                    new Length(['min' => 10, 'groups' => ['First']]),
-                    new NotBlank(['groups' => ['Second']]),
+                    new Length(min: 10, groups: ['First']),
+                    new NotBlank(groups: ['Second']),
                 ],
             ])
         ;
@@ -119,7 +123,7 @@ class FormTypeValidatorExtensionTest extends BaseValidatorExtensionTestCase
     {
         $formMetadata = new ClassMetadata(Form::class);
         $authorMetadata = (new ClassMetadata(Author::class))
-            ->addPropertyConstraint('firstName', new NotBlank(['groups' => 'Second']))
+            ->addPropertyConstraint('firstName', new NotBlank(groups: ['Second']))
         ;
         $metadataFactory = $this->createStub(MetadataFactoryInterface::class);
         $metadataFactory
@@ -148,12 +152,12 @@ class FormTypeValidatorExtensionTest extends BaseValidatorExtensionTestCase
             ->add('firstName', TextTypeTest::TESTED_TYPE)
             ->add('lastName', TextTypeTest::TESTED_TYPE, [
                 'constraints' => [
-                    new Length(['min' => 10, 'groups' => ['First']]),
+                    new Length(min: 10, groups: ['First']),
                 ],
             ])
             ->add('australian', TextTypeTest::TESTED_TYPE, [
                 'constraints' => [
-                    new NotBlank(['groups' => ['Second']]),
+                    new NotBlank(groups: ['Second']),
                 ],
             ])
         ;
@@ -177,5 +181,253 @@ class FormTypeValidatorExtensionTest extends BaseValidatorExtensionTestCase
     protected function createForm(array $options = [])
     {
         return $this->factory->create(FormTypeTest::TESTED_TYPE, null, $options);
+    }
+
+    public function testCollectionTypeKeepAsListOptionFalse()
+    {
+        $formMetadata = new ClassMetadata(Form::class);
+        $authorMetadata = (new ClassMetadata(Author::class))
+            ->addPropertyConstraint('firstName', new NotBlank());
+        $organizationMetadata = (new ClassMetadata(Organization::class))
+            ->addPropertyConstraint('authors', new Valid());
+        $metadataFactory = $this->createStub(MetadataFactoryInterface::class);
+        $metadataFactory
+            ->method('getMetadataFor')
+            ->willReturnCallback(static function ($classOrObject) use ($formMetadata, $authorMetadata, $organizationMetadata) {
+                if (Author::class === $classOrObject || $classOrObject instanceof Author) {
+                    return $authorMetadata;
+                }
+
+                if (Organization::class === $classOrObject || $classOrObject instanceof Organization) {
+                    return $organizationMetadata;
+                }
+
+                if (Form::class === $classOrObject || $classOrObject instanceof Form) {
+                    return $formMetadata;
+                }
+
+                return new ClassMetadata(\is_string($classOrObject) ? $classOrObject : $classOrObject::class);
+            });
+
+        $validator = Validation::createValidatorBuilder()
+            ->setMetadataFactory($metadataFactory)
+            ->getValidator();
+
+        $form = Forms::createFormFactoryBuilder()
+            ->addExtension(new ValidatorExtension($validator))
+            ->getFormFactory()
+            ->create(FormTypeTest::TESTED_TYPE, new Organization([]), [
+                'data_class' => Organization::class,
+                'by_reference' => false,
+            ])
+            ->add('authors', CollectionTypeTest::TESTED_TYPE, [
+                'entry_type' => AuthorType::class,
+                'allow_add' => true,
+                'allow_delete' => true,
+                'keep_as_list' => false,
+            ])
+        ;
+
+        $form->submit([
+            'authors' => [
+                0 => [
+                    'firstName' => '', // Fires a Not Blank Error
+                    'lastName' => 'lastName1',
+                ],
+                // key "1" could be missing if we add 4 blank form entries and then remove it.
+                2 => [
+                    'firstName' => '', // Fires a Not Blank Error
+                    'lastName' => 'lastName3',
+                ],
+                3 => [
+                    'firstName' => '', // Fires a Not Blank Error
+                    'lastName' => 'lastName3',
+                ],
+            ],
+        ]);
+
+        // Form does have 3 not blank errors
+        $errors = $form->getErrors(true);
+        $this->assertCount(3, $errors);
+
+        // Form behaves as expected. It has index 0, 2 and 3 (1 has been removed)
+        // But errors property paths mismatch happening with "keep_as_list" option set to false
+        $errorPaths = [
+            $errors[0]->getCause()->getPropertyPath(),
+            $errors[1]->getCause()->getPropertyPath(),
+            $errors[2]->getCause()->getPropertyPath(),
+        ];
+
+        $this->assertTrue($form->get('authors')->has('0'));
+        $this->assertContains('data.authors[0].firstName', $errorPaths);
+
+        $this->assertFalse($form->get('authors')->has('1'));
+        $this->assertContains('data.authors[1].firstName', $errorPaths);
+
+        $this->assertTrue($form->get('authors')->has('2'));
+        $this->assertContains('data.authors[2].firstName', $errorPaths);
+
+        $this->assertTrue($form->get('authors')->has('3'));
+        $this->assertNotContains('data.authors[3].firstName', $errorPaths);
+
+        // As result, root form contain errors
+        $this->assertCount(1, $form->getErrors(false));
+    }
+
+    public function testCollectionTypeKeepAsListValidatesTheEntries()
+    {
+        $form = Forms::createFormFactoryBuilder()
+            ->addExtension(new ValidatorExtension(Validation::createValidator()))
+            ->getFormFactory()
+            ->create(CollectionTypeTest::TESTED_TYPE, [], [
+                'entry_type' => TextTypeTest::TESTED_TYPE,
+                'entry_options' => ['constraints' => [new NotBlank()]],
+                'allow_add' => true,
+                'keep_as_list' => true,
+            ]);
+
+        $form->submit(['foo', '']);
+
+        $this->assertFalse($form->isValid());
+        $this->assertCount(1, $form->getErrors(true));
+        $this->assertCount(0, $form->get('0')->getErrors());
+        $this->assertCount(1, $form->get('1')->getErrors());
+    }
+
+    public function testCollectionTypeKeepAsListValidatesTheEntriesBeforeAGap()
+    {
+        $form = Forms::createFormFactoryBuilder()
+            ->addExtension(new ValidatorExtension(Validation::createValidator()))
+            ->getFormFactory()
+            ->create(CollectionTypeTest::TESTED_TYPE, ['a', 'b', 'c'], [
+                'entry_type' => TextTypeTest::TESTED_TYPE,
+                'entry_options' => ['constraints' => [new NotBlank()]],
+                'allow_delete' => true,
+                'keep_as_list' => true,
+                'constraints' => [new All([new Length(max: 1)])],
+            ]);
+
+        $form->submit([0 => '', 2 => 'zz']);
+
+        $this->assertSame([null, 'zz'], $form->getData());
+        $this->assertFalse($form->has('2'));
+        $this->assertCount(1, $form->get('0')->getErrors());
+        $this->assertSame('zz', $form->get('1')->getData());
+        $this->assertCount(1, $form->get('1')->getErrors());
+    }
+
+    public function testCollectionTypeKeepAsListMapsTheViolationsOfTheEntriesFollowingADeletedEmptyOne()
+    {
+        $form = Forms::createFormFactoryBuilder()
+            ->addExtension(new ValidatorExtension(Validation::createValidator()))
+            ->getFormFactory()
+            ->create(CollectionTypeTest::TESTED_TYPE, [], [
+                'entry_type' => TextTypeTest::TESTED_TYPE,
+                'allow_add' => true,
+                'delete_empty' => true,
+                'keep_as_list' => true,
+                'constraints' => [new All([new Length(max: 1)])],
+            ]);
+
+        $form->submit([0 => 'a', 1 => '', 2 => 'b', 3 => 'cc']);
+
+        $this->assertSame(['a', 'b', 'cc'], $form->getData());
+        $this->assertFalse($form->has('3'));
+        $this->assertCount(0, $form->get('1')->getErrors());
+        $this->assertSame('cc', $form->get('2')->getData());
+        $this->assertCount(1, $form->get('2')->getErrors());
+    }
+
+    public function testCollectionTypeKeepAsListOptionTrue()
+    {
+        $formMetadata = new ClassMetadata(Form::class);
+        $authorMetadata = (new ClassMetadata(Author::class))
+            ->addPropertyConstraint('firstName', new Length(1));
+        $organizationMetadata = (new ClassMetadata(Organization::class))
+            ->addPropertyConstraint('authors', new Valid());
+        $metadataFactory = $this->createStub(MetadataFactoryInterface::class);
+        $metadataFactory
+            ->method('getMetadataFor')
+            ->willReturnCallback(static function ($classOrObject) use ($formMetadata, $authorMetadata, $organizationMetadata) {
+                if (Author::class === $classOrObject || $classOrObject instanceof Author) {
+                    return $authorMetadata;
+                }
+
+                if (Organization::class === $classOrObject || $classOrObject instanceof Organization) {
+                    return $organizationMetadata;
+                }
+
+                if (Form::class === $classOrObject || $classOrObject instanceof Form) {
+                    return $formMetadata;
+                }
+
+                return new ClassMetadata(\is_string($classOrObject) ? $classOrObject : $classOrObject::class);
+            });
+
+        $validator = Validation::createValidatorBuilder()
+            ->setMetadataFactory($metadataFactory)
+            ->getValidator();
+
+        $form = Forms::createFormFactoryBuilder()
+            ->addExtension(new ValidatorExtension($validator))
+            ->getFormFactory()
+            ->create(FormTypeTest::TESTED_TYPE, new Organization([]), [
+                'data_class' => Organization::class,
+                'by_reference' => false,
+            ])
+            ->add('authors', CollectionTypeTest::TESTED_TYPE, [
+                'entry_type' => AuthorType::class,
+                'allow_add' => true,
+                'allow_delete' => true,
+                'keep_as_list' => true,
+            ])
+        ;
+
+        $form->submit([
+            'authors' => [
+                0 => [
+                    'firstName' => 'foobar', // Fires a Length Error
+                    'lastName' => 'lastName1',
+                ],
+                // key "1" could be missing if we add 4 blank form entries and then remove it.
+                2 => [
+                    'firstName' => 'barfoo', // Fires a Length Error
+                    'lastName' => 'lastName3',
+                ],
+                3 => [
+                    'firstName' => 'barbaz', // Fires a Length Error
+                    'lastName' => 'lastName3',
+                ],
+            ],
+        ]);
+
+        // Form does have 3 length errors
+        $errors = $form->getErrors(true);
+        $this->assertCount(3, $errors);
+
+        // No property paths mismatch happening with "keep_as_list" option set to true
+        $errorPaths = [
+            $errors[0]->getCause()->getPropertyPath(),
+            $errors[1]->getCause()->getPropertyPath(),
+            $errors[2]->getCause()->getPropertyPath(),
+        ];
+
+        $this->assertTrue($form->get('authors')->has('0'));
+        $this->assertSame('foobar', $form->get('authors')->get('0')->getData()->firstName);
+        $this->assertContains('data.authors[0].firstName', $errorPaths);
+
+        $this->assertTrue($form->get('authors')->has('1'));
+        $this->assertSame('barfoo', $form->get('authors')->get('1')->getData()->firstName);
+        $this->assertContains('data.authors[1].firstName', $errorPaths);
+
+        $this->assertTrue($form->get('authors')->has('2'));
+        $this->assertSame('barbaz', $form->get('authors')->get('2')->getData()->firstName);
+        $this->assertContains('data.authors[2].firstName', $errorPaths);
+
+        $this->assertFalse($form->get('authors')->has('3'));
+        $this->assertNotContains('data.authors[3].firstName', $errorPaths);
+
+        // Root form does NOT contain errors
+        $this->assertCount(0, $form->getErrors(false));
     }
 }

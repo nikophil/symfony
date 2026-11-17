@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\PasswordHasher\Tests\Command;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Tester\CommandCompletionTester;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -277,18 +278,17 @@ class UserPasswordHashCommandTest extends TestCase
 
     public function testThrowsExceptionOnNoConfiguredHashers()
     {
+        $tester = new CommandTester(new UserPasswordHashCommand(new PasswordHasherFactory([]), []));
+
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('There are no configured password hashers for the "security" extension.');
 
-        $tester = new CommandTester(new UserPasswordHashCommand(new PasswordHasherFactory([]), []));
         $tester->execute([
             'password' => 'password',
         ], ['interactive' => false]);
     }
 
-    /**
-     * @dataProvider provideCompletionSuggestions
-     */
+    #[DataProvider('provideCompletionSuggestions')]
     public function testCompletionSuggestions(array $input, array $expectedSuggestions)
     {
         $command = new UserPasswordHashCommand(new PasswordHasherFactory([]), ['App\Entity\User']);

@@ -11,6 +11,9 @@
 
 namespace Symfony\Component\Mime\Tests\Part;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Mime\Exception\InvalidArgumentException;
 use Symfony\Component\Mime\Header\Headers;
@@ -138,7 +141,7 @@ class DataPartTest extends TestCase
 
     public function testFromPathWithUrl()
     {
-        if (!\in_array('http', stream_get_wrappers())) {
+        if (!\in_array('http', stream_get_wrappers(), true)) {
             $this->markTestSkipped('"http" stream wrapper is not enabled.');
         }
 
@@ -233,5 +236,142 @@ class DataPartTest extends TestCase
 
         $this->assertTrue($unserialized->hasContentId());
         $this->assertSame($cid, $unserialized->getContentId());
+    }
+
+    public function testUnserializeNativePayloadWithContentId()
+    {
+        $data = [
+            "\0*\0_headers" => new Headers(),
+            "\0*\0_parent" => ['body' => 'content', 'charset' => null, 'subtype' => 'pdf', 'disposition' => 'attachment', 'name' => 'file.pdf', 'encoding' => 'base64'],
+            "\0".DataPart::class."\0filename" => 'file.pdf',
+            "\0".DataPart::class."\0mediaType" => 'application',
+            "\0".DataPart::class."\0cid" => 'foo@example.com',
+        ];
+        $payload = \sprintf('O:%d:"%s":%d:{', \strlen(DataPart::class), DataPart::class, \count($data));
+        foreach ($data as $key => $value) {
+            $payload .= serialize($key).serialize($value);
+        }
+
+        $part = unserialize($payload.'}');
+
+        $this->assertSame((new DataPart('content', 'file.pdf', 'application/pdf'))->setContentId('foo@example.com')->toString(), $part->toString());
+    }
+
+    #[DataProvider('provideTrampolineKeys')]
+    public function testUnserializeRejectsObjectInTypedStringProperty(string $key)
+    {
+        $template = (new DataPart('content'))->__serialize();
+        $template[$key] = new DataPartTestToStringGadget();
+        $payload = \sprintf('O:%d:"%s":%d:{', \strlen(DataPart::class), DataPart::class, \count($template));
+        foreach ($template as $k => $v) {
+            $payload .= serialize($k).serialize($v);
+        }
+        $payload .= '}';
+        DataPartTestToStringGadget::$fired = false;
+
+        try {
+            unserialize($payload);
+            $this->fail('Expected BadMethodCallException.');
+        } catch (\BadMethodCallException $e) {
+        }
+
+        $this->assertFalse(DataPartTestToStringGadget::$fired, '__toString gadget must not fire during unserialize');
+    }
+
+    public static function provideTrampolineKeys(): iterable
+    {
+        yield ['filename'];
+        yield ['mediaType'];
+        yield ['cid'];
+    }
+
+    #[DataProvider('provideNonStringValues')]
+    public function testUnserializeRejectsNonStringValue(string $key, mixed $value)
+    {
+        $template = (new DataPart('content'))->__serialize();
+        $template[$key] = $value;
+        $payload = \sprintf('O:%d:"%s":%d:{', \strlen(DataPart::class), DataPart::class, \count($template));
+        foreach ($template as $k => $v) {
+            $payload .= serialize($k).serialize($v);
+        }
+
+        $this->expectException(\BadMethodCallException::class);
+
+        unserialize($payload.'}');
+    }
+
+    public static function provideNonStringValues(): iterable
+    {
+        foreach (['filename', 'mediaType', 'cid'] as $key) {
+            yield $key.' int' => [$key, 123];
+            yield $key.' object' => [$key, new \stdClass()];
+        }
+
+        yield 'mediaType null' => ['mediaType', null];
+    }
+
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    #[DataProvider('provideSubclassesImplementingSleep')]
+    public function testSerializeSubclassImplementingSleep(string $class)
+    {
+        $part = (new $class('content', 'state'))->setContentId('foo@example.com');
+        $part->getHeaders()->addTextHeader('X-Foo', 'bar');
+
+        $this->expectUserDeprecationMessage(\sprintf('Since symfony/mime 7.4: Passing extra keys to "%s::__unserialize()" is deprecated, populate properties in "%s::__unserialize()" instead.', DataPart::class, $class));
+
+        $unserialized = unserialize(serialize($part));
+
+        $this->assertSame('state', $unserialized->getState());
+        $this->assertSame('foo@example.com', $unserialized->getContentId());
+        $this->assertSame($part->toString(), $unserialized->toString());
+    }
+
+    public static function provideSubclassesImplementingSleep(): iterable
+    {
+        yield [DataPartTestSleepPart::class];
+        yield [DataPartTestWakeupPart::class];
+    }
+}
+
+class DataPartTestSleepPart extends DataPart
+{
+    protected ?string $state = null;
+
+    public function __construct(string $body, string $state)
+    {
+        parent::__construct($body, 'file.txt', 'text/plain');
+
+        $this->state = $state;
+    }
+
+    public function getState(): ?string
+    {
+        return $this->state;
+    }
+
+    public function __sleep(): array
+    {
+        return [...parent::__sleep(), 'state'];
+    }
+}
+
+class DataPartTestWakeupPart extends DataPartTestSleepPart
+{
+    public function __wakeup(): void
+    {
+        parent::__wakeup();
+    }
+}
+
+class DataPartTestToStringGadget
+{
+    public static bool $fired = false;
+
+    public function __toString(): string
+    {
+        self::$fired = true;
+
+        return '';
     }
 }

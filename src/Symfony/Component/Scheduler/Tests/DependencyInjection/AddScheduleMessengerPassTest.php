@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Scheduler\Tests\DependencyInjection;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -19,17 +20,15 @@ use Symfony\Component\Scheduler\DependencyInjection\AddScheduleMessengerPass;
 
 class AddScheduleMessengerPassTest extends TestCase
 {
-    /**
-     * @dataProvider processSchedulerTaskCommandProvider
-     */
-    public function testProcessSchedulerTaskCommand(array $arguments, string $expectedCommand)
+    #[DataProvider('processSchedulerTaskCommandProvider')]
+    public function testProcessSchedulerTaskCommand(array $arguments, string $expectedCommand, string $commandClass = SchedulableCommand::class)
     {
         $container = new ContainerBuilder();
 
-        $definition = new Definition(SchedulableCommand::class);
+        $definition = new Definition($commandClass);
         $definition->addTag('console.command');
         $definition->addTag('scheduler.task', $arguments);
-        $container->setDefinition(SchedulableCommand::class, $definition);
+        $container->setDefinition($commandClass, $definition);
 
         (new AddScheduleMessengerPass())->process($container);
 
@@ -46,9 +45,7 @@ class AddScheduleMessengerPassTest extends TestCase
         $this->assertSame($expectedCommand, $command);
     }
 
-    /**
-     * @dataProvider processSchedulerTaskCommandNameFromTagProvider
-     */
+    #[DataProvider('processSchedulerTaskCommandNameFromTagProvider')]
     public function testProcessSchedulerTaskCommandNameFromTag(array $commandTagAttributes, string $expectedCommand)
     {
         $container = new ContainerBuilder();
@@ -88,6 +85,8 @@ class AddScheduleMessengerPassTest extends TestCase
         yield 'empty array arguments' => [['trigger' => 'every', 'frequency' => '1 hour', 'arguments' => []], 'schedulable'];
         yield 'array options' => [['trigger' => 'every', 'frequency' => '1 hour', 'arguments' => ['--option1' => 'first', '--option2' => true, '--option3' => false]], 'schedulable --option1=first --option2=1 --option3'];
         yield 'array arguments and options' => [['trigger' => 'every', 'frequency' => '1 hour', 'arguments' => ['arg1' => 'first_one', 'arg2' => 'second_one', '--option1' => 'first', '--option2' => true, '--option3' => false]], 'schedulable first_one second_one --option1=first --option2=1 --option3'];
+        yield 'alias, no arguments' => [['trigger' => 'every', 'frequency' => '1 hour'], 'schedulable-with-alias', SchedulableCommandWithAlias::class];
+        yield 'alias, with argument' => [['trigger' => 'every', 'frequency' => '1 hour', 'arguments' => 'test'], 'schedulable-with-alias test', SchedulableCommandWithAlias::class];
     }
 }
 
@@ -97,9 +96,12 @@ class SchedulableCommand
     public function __invoke(): void
     {
     }
+}
 
-    public static function getDefaultName()
+#[AsCommand(name: 'schedulable-with-alias', aliases: ['schedulable-alias'])]
+class SchedulableCommandWithAlias
+{
+    public function __invoke(): void
     {
-        return 'schedulable';
     }
 }

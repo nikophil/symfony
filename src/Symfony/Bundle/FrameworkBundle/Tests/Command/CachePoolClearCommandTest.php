@@ -11,6 +11,7 @@
 
 namespace Symfony\Bundle\FrameworkBundle\Tests\Command;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Bundle\FrameworkBundle\Command\CachePoolClearCommand;
@@ -19,19 +20,18 @@ use Symfony\Bundle\FrameworkBundle\Tests\TestCase;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\Console\Tester\CommandCompletionTester;
 use Symfony\Component\Console\Tester\CommandTester;
+use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\CacheClearer\Psr6CacheClearer;
 use Symfony\Component\HttpKernel\KernelInterface;
 
 class CachePoolClearCommandTest extends TestCase
 {
-    /**
-     * @dataProvider provideCompletionSuggestions
-     */
+    #[DataProvider('provideCompletionSuggestions')]
     public function testComplete(array $input, array $expectedSuggestions)
     {
         $application = new Application($this->getKernel());
-        $application->add(new CachePoolClearCommand(new Psr6CacheClearer(['foo' => new ArrayAdapter()]), ['foo']));
+        $application->addCommand(new CachePoolClearCommand(new Psr6CacheClearer(['foo' => new ArrayAdapter()]), ['foo']));
         $tester = new CommandCompletionTester($application->get('cache:pool:clear'));
 
         $suggestions = $tester->complete($input);
@@ -52,7 +52,7 @@ class CachePoolClearCommandTest extends TestCase
         $kernel->expects($this->once())->method('getBundles')->willReturn([]);
 
         $application = new Application($kernel);
-        $application->add(new CachePoolClearCommand(new Psr6CacheClearer()));
+        $application->addCommand(new CachePoolClearCommand(new Psr6CacheClearer()));
 
         $tester = new CommandTester($application->find('cache:pool:clear'));
         $tester->execute(['pools' => ['foo']]);
@@ -71,12 +71,10 @@ class CachePoolClearCommandTest extends TestCase
 
     private function getKernel(): MockObject&KernelInterface
     {
-        $container = $this->createMock(ContainerInterface::class);
-
         $kernel = $this->createMock(KernelInterface::class);
         $kernel
             ->method('getContainer')
-            ->willReturn($container);
+            ->willReturn(new Container());
 
         $kernel
             ->expects($this->once())

@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Translation\Bridge\Lokalise\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -753,9 +755,7 @@ class LokaliseProviderTest extends ProviderTestCase
         $provider->write($translatorBag);
     }
 
-    /**
-     * @dataProvider getResponsesForOneLocaleAndOneDomain
-     */
+    #[DataProvider('getResponsesForOneLocaleAndOneDomain')]
     public function testReadForOneLocaleAndOneDomain(string $locale, string $domain, string $responseContent, TranslatorBag $expectedTranslatorBag)
     {
         $response = function (string $method, string $url, array $options = []) use ($locale, $domain, $responseContent): ResponseInterface {
@@ -797,9 +797,7 @@ class LokaliseProviderTest extends ProviderTestCase
         $this->assertEquals($expectedTranslatorBag->getCatalogues(), $translatorBag->getCatalogues());
     }
 
-    /**
-     * @dataProvider getResponsesForManyLocalesAndManyDomains
-     */
+    #[DataProvider('getResponsesForManyLocalesAndManyDomains')]
     public function testReadForManyLocalesAndManyDomains(array $locales, array $domains, array $responseContents, TranslatorBag $expectedTranslatorBag)
     {
         $consecutiveLoadArguments = [];
@@ -887,9 +885,7 @@ class LokaliseProviderTest extends ProviderTestCase
         $provider->read([1 => 'validators'], [1 => 'en']);
     }
 
-    /**
-     * @requires extension zip
-     */
+    #[RequiresPhpExtension('zip')]
     public function testReadWithExportAsync()
     {
         $zipLocation = __DIR__.\DIRECTORY_SEPARATOR.'Fixtures'.\DIRECTORY_SEPARATOR.'Symfony-locale.zip';
@@ -952,9 +948,7 @@ class LokaliseProviderTest extends ProviderTestCase
         $this->assertEquals($expectedTranslatorBag->getCatalogues(), $translatorBag->getCatalogues());
     }
 
-    /**
-     * @requires extension zip
-     */
+    #[RequiresPhpExtension('zip')]
     public function testReadWithExportAsyncFailedProcess()
     {
         $firstResponse = static fn (): ResponseInterface => new JsonMockResponse(

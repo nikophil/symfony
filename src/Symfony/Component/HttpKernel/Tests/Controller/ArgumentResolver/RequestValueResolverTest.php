@@ -12,29 +12,38 @@
 namespace Symfony\Component\HttpKernel\Tests\Controller\ArgumentResolver;
 
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\BrowserKit\Request as RandomRequest;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Controller\ArgumentResolver\RequestValueResolver;
 use Symfony\Component\HttpKernel\ControllerMetadata\ArgumentMetadata;
+use Symfony\Component\HttpKernel\Exception\NearMissValueResolverException;
 use Symfony\Component\HttpKernel\Tests\Fixtures\Controller\ExtendingRequest;
 
 class RequestValueResolverTest extends TestCase
 {
-    public function testResolveReturnsMainRequest()
+    public function testSameRequestReturned()
     {
         $resolver = new RequestValueResolver();
-        $request = Request::create('/');
-        $metadata = new ArgumentMetadata('request', Request::class, false, false, null);
-
-        $this->assertSame([$request], $resolver->resolve($request, $metadata));
+        $expectedRequest = Request::create('/');
+        $actualRequest = $resolver->resolve($expectedRequest, new ArgumentMetadata('request', Request::class, false, false, null));
+        self::assertCount(1, $actualRequest);
+        self::assertSame($expectedRequest, $actualRequest[0] ?? null);
     }
 
-    public function testResolveSkipsUnrelatedTypes()
+    public function testRequestIsNotResolvedForRandomClass()
     {
         $resolver = new RequestValueResolver();
-        $request = Request::create('/');
-        $metadata = new ArgumentMetadata('foo', \stdClass::class, false, false, null);
+        $expectedRequest = Request::create('/');
+        $actualRequest = $resolver->resolve($expectedRequest, new ArgumentMetadata('request', self::class, false, false, null));
+        self::assertCount(0, $actualRequest);
+    }
 
-        $this->assertSame([], $resolver->resolve($request, $metadata));
+    public function testExceptionThrownForRandomRequestClass()
+    {
+        $resolver = new RequestValueResolver();
+        $expectedRequest = Request::create('/');
+        $this->expectException(NearMissValueResolverException::class);
+        $resolver->resolve($expectedRequest, new ArgumentMetadata('request', RandomRequest::class, false, false, null));
     }
 
     public function testResolveSupportsExtendingRequest()

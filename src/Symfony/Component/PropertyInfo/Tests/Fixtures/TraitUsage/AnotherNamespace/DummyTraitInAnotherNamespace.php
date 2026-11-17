@@ -2,6 +2,9 @@
 
 namespace Symfony\Component\PropertyInfo\Tests\Fixtures\TraitUsage\AnotherNamespace;
 
+/**
+ * @template T
+ */
 trait DummyTraitInAnotherNamespace
 {
     /**
@@ -16,8 +19,9 @@ trait DummyTraitInAnotherNamespace
 
     /**
      * @param DummyInAnotherNamespace $dummyInConstructor
+     * @param list<T>                 $templateInConstructor
      */
-    public function __construct($dummyInConstructor = null)
+    public function __construct($dummyInConstructor = null, $templateInConstructor = [])
     {
     }
 
@@ -46,6 +50,13 @@ trait DummyTraitInAnotherNamespace
      * @return DummyInAnotherNamespace
      */
     abstract public function getOverriddenAbstractMethodInTraitInAnotherNamespace();
+
+    /**
+     * @param list<T> $value
+     */
+    public function setTemplateInTraitInAnotherNamespace($value)
+    {
+    }
 
     /**
      * @param DummyInAnotherNamespace $value

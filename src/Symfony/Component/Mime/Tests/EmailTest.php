@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Mime\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\ExpectationFailedException;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Mime\Address;
@@ -45,9 +46,7 @@ class EmailTestToStringGadget
 
 class EmailTest extends TestCase
 {
-    /**
-     * @dataProvider provideTrampolineSlots
-     */
+    #[DataProvider('provideTrampolineSlots')]
     public function testUnserializeRejectsObjectInTypedCharsetProperty(int $slot)
     {
         $email = new Email();
@@ -76,6 +75,32 @@ class EmailTest extends TestCase
         // [text, textCharset, html, htmlCharset, attachments, parentData]
         yield 'textCharset' => [1];
         yield 'htmlCharset' => [3];
+    }
+
+    #[DataProvider('provideNonStringCharsets')]
+    public function testUnserializeRejectsNonStringCharset(int $slot, mixed $value)
+    {
+        $email = new Email();
+        $email->text('text body');
+        $email->html('html body');
+        $data = $email->__serialize();
+        $data[$slot] = $value;
+        $payload = \sprintf('O:%d:"%s":%d:{', \strlen(Email::class), Email::class, \count($data));
+        foreach ($data as $key => $v) {
+            $payload .= serialize($key).serialize($v);
+        }
+
+        $this->expectException(\BadMethodCallException::class);
+
+        unserialize($payload.'}');
+    }
+
+    public static function provideNonStringCharsets(): iterable
+    {
+        foreach (['textCharset' => 1, 'htmlCharset' => 3] as $name => $slot) {
+            yield $name.' int' => [$slot, 123];
+            yield $name.' object' => [$slot, new \stdClass()];
+        }
     }
 
     public function testSubject()

@@ -11,13 +11,12 @@
 
 namespace Symfony\Component\Cache\Tests\Adapter;
 
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Psr\Cache\CacheItemInterface;
 use Symfony\Component\Cache\Adapter\NullAdapter;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class NullAdapterTest extends TestCase
 {
     public function createCachePool()
@@ -137,5 +136,21 @@ class NullAdapterTest extends TestCase
 
         $this->assertTrue($adapter->saveDeferred($item));
         $this->assertTrue($this->createCachePool()->commit());
+    }
+
+    public function testTaggable()
+    {
+        $this->expectNotToPerformAssertions();
+        $adapter = $this->createCachePool();
+        $item = $adapter->getItem('any_item');
+        // No error triggered 'Cache item "%s" comes from a non tag-aware pool: you cannot tag it.'
+        $item->tag(['tag1']);
+    }
+
+    public function testInvalidateTags()
+    {
+        $adapter = $this->createCachePool();
+
+        self::assertTrue($adapter->invalidateTags(['foo']));
     }
 }

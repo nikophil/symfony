@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Translation\Bridge\Crowdin\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -600,9 +601,7 @@ class CrowdinProviderTest extends ProviderTestCase
         $provider->write($translatorBag);
     }
 
-    /**
-     * @dataProvider getResponsesForProcessAddFileAndUploadTranslations
-     */
+    #[DataProvider('getResponsesForProcessAddFileAndUploadTranslations')]
     public function testCompleteWriteProcessAddFileAndUploadTranslations(TranslatorBag $translatorBag, string $expectedLocale, string $expectedMessagesTranslationsContent)
     {
         $this->xliffFileDumper = new XliffFileDumper();
@@ -938,9 +937,7 @@ class CrowdinProviderTest extends ProviderTestCase
         $this->assertSame(\count($responses), $httpClient->getRequestsCount());
     }
 
-    /**
-     * @dataProvider getResponsesForOneLocaleAndOneDomain
-     */
+    #[DataProvider('getResponsesForOneLocaleAndOneDomain')]
     public function testReadForOneLocaleAndOneDomain(string $locale, string $domain, string $responseContent, TranslatorBag $expectedTranslatorBag, string $expectedTargetLanguageId)
     {
         $responses = [
@@ -1064,9 +1061,7 @@ class CrowdinProviderTest extends ProviderTestCase
         ];
     }
 
-    /**
-     * @dataProvider getResponsesForDefaultLocaleAndOneDomain
-     */
+    #[DataProvider('getResponsesForDefaultLocaleAndOneDomain')]
     public function testReadForDefaultLocaleAndOneDomain(string $locale, string $domain, string $responseContent, TranslatorBag $expectedTranslatorBag)
     {
         $responses = [

@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Security\Core\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Security\Core\Authentication\Token\PreAuthenticatedToken;
 use Symfony\Component\Security\Core\Authentication\Token\RememberMeToken;
@@ -40,9 +41,7 @@ class UnserializeTrampolineGadget
  */
 class UnserializeTrampolineTest extends TestCase
 {
-    /**
-     * @dataProvider provideStringSlots
-     */
+    #[DataProvider('provideStringSlots')]
     public function testUnserializeRejectsStringableTrampoline(string $class, int $size, int $slot)
     {
         $data = array_fill(0, $size, null);

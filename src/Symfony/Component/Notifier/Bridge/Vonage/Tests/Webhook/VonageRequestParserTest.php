@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Notifier\Bridge\Vonage\Tests\Webhook;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Bridge\PhpUnit\ClockMock;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Notifier\Bridge\Vonage\Webhook\VonageRequestParser;
@@ -18,9 +20,7 @@ use Symfony\Component\Webhook\Client\RequestParserInterface;
 use Symfony\Component\Webhook\Exception\RejectWebhookException;
 use Symfony\Component\Webhook\Test\AbstractRequestParserTestCase;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class VonageRequestParserTest extends AbstractRequestParserTestCase
 {
     public static function getStaleClockOffsets(): iterable
@@ -29,9 +29,7 @@ class VonageRequestParserTest extends AbstractRequestParserTestCase
         yield 'too far in the future' => [-301];
     }
 
-    /**
-     * @dataProvider getStaleClockOffsets
-     */
+    #[DataProvider('getStaleClockOffsets')]
     public function testRejectSignedRequestWithStaleTimestamp(int $offset)
     {
         $request = $this->createRequest(file_get_contents(__DIR__.'/Fixtures/delivered.json'));
@@ -49,9 +47,7 @@ class VonageRequestParserTest extends AbstractRequestParserTestCase
         yield 'at the future edge' => [-300];
     }
 
-    /**
-     * @dataProvider getToleratedClockOffsets
-     */
+    #[DataProvider('getToleratedClockOffsets')]
     public function testAcceptSignedRequestWithinTolerance(int $offset)
     {
         $request = $this->createRequest(file_get_contents(__DIR__.'/Fixtures/delivered.json'));

@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Workflow\Tests\Dumper;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Workflow\Definition;
 use Symfony\Component\Workflow\Dumper\GraphvizDumper;
@@ -23,9 +24,7 @@ class GraphvizDumperTest extends TestCase
 {
     use WorkflowBuilderTrait;
 
-    /**
-     * @dataProvider provideWorkflowDefinitionWithoutMarking
-     */
+    #[DataProvider('provideWorkflowDefinitionWithoutMarking')]
     public function testDumpWithoutMarking($definition, $expected, $withMetadata)
     {
         $dump = (new GraphvizDumper())->dump($definition, null, ['with-metadata' => $withMetadata]);
@@ -33,9 +32,7 @@ class GraphvizDumperTest extends TestCase
         $this->assertEquals($expected, $dump);
     }
 
-    /**
-     * @dataProvider provideWorkflowDefinitionWithMarking
-     */
+    #[DataProvider('provideWorkflowDefinitionWithMarking')]
     public function testDumpWithMarking($definition, $marking, $expected, $withMetadata)
     {
         $dump = (new GraphvizDumper())->dump($definition, $marking, ['with-metadata' => $withMetadata]);

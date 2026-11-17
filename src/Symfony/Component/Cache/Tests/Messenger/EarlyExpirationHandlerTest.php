@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Cache\Tests\Messenger;
 
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Psr\Cache\CacheItemInterface;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
@@ -41,9 +42,7 @@ use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
 use Symfony\Component\Messenger\Worker;
 use Symfony\Contracts\Cache\CallbackInterface;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class EarlyExpirationHandlerTest extends TestCase
 {
     public static function tearDownAfterClass(): void

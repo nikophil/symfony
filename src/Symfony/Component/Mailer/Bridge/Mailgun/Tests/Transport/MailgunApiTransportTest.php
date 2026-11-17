@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Mailer\Bridge\Mailgun\Tests\Transport;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\JsonMockResponse;
@@ -27,9 +28,7 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
 
 class MailgunApiTransportTest extends TestCase
 {
-    /**
-     * @dataProvider getTransportData
-     */
+    #[DataProvider('getTransportData')]
     public function testToString(MailgunApiTransport $transport, string $expected)
     {
         $this->assertSame($expected, (string) $transport);
@@ -199,21 +198,13 @@ class MailgunApiTransportTest extends TestCase
         });
         $transport = new MailgunApiTransport('ACCESS_KEY', 'symfony', 'us-east-1', $client);
 
-        $addPart = method_exists(Email::class, 'addPart')
-            ? static function (Email $email, string $body, string $filename, string $contentType): void {
-                $email->addPart((new DataPart($body, $filename, $contentType))->asInline());
-            } : static function (Email $email, string $body, string $filename, string $contentType): void {
-                $email->embed($body, $filename, $contentType);
-            };
-
         $mail = new Email();
         $mail->subject('Hello!')
             ->to(new Address('saif.gmati@symfony.com', 'Saif Eddin'))
             ->from(new Address('fabpot@symfony.com', 'Fabien'))
-            ->html('<img src="cid:a/b"><img src="cid:a/b/c">');
-
-        $addPart($mail, 'image', 'a/b', 'image/png');
-        $addPart($mail, 'nested-image', 'a/b/c', 'image/png');
+            ->html('<img src="cid:a/b"><img src="cid:a/b/c">')
+            ->addPart((new DataPart('image', 'a/b', 'image/png'))->asInline())
+            ->addPart((new DataPart('nested-image', 'a/b/c', 'image/png'))->asInline());
 
         $message = $transport->send($mail);
 

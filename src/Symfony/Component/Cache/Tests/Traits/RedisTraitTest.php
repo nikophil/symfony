@@ -11,13 +11,15 @@
 
 namespace Symfony\Component\Cache\Tests\Traits;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
+use Relay\Cluster as RelayCluster;
 use Symfony\Component\Cache\Exception\InvalidArgumentException;
 use Symfony\Component\Cache\Traits\RedisTrait;
 
-/**
- * @requires extension redis
- */
+#[RequiresPhpExtension('redis')]
 class RedisTraitTest extends TestCase
 {
     public static function setUpBeforeClass(): void
@@ -29,9 +31,7 @@ class RedisTraitTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider provideCreateConnection
-     */
+    #[DataProvider('provideCreateConnection')]
     public function testCreateConnection(string $dsn, string $expectedClass)
     {
         if (!class_exists($expectedClass)) {
@@ -66,7 +66,7 @@ class RedisTraitTest extends TestCase
 
     public static function provideCreateConnection(): array
     {
-        $hosts = array_map(static fn ($host) => \sprintf('host[%s]', $host), explode(' ', getenv('REDIS_CLUSTER_HOSTS')));
+        $hosts = array_map(static fn ($host) => \sprintf('host[%s]', $host), explode(' ', getenv('REDIS_CLUSTER_HOSTS') ?: ''));
 
         return [
             [
@@ -93,9 +93,8 @@ class RedisTraitTest extends TestCase
      * a persistent connection, the database has to be re-selected, too.
      *
      * @see https://github.com/phpredis/phpredis/issues/1920
-     *
-     * @group integration
      */
+    #[Group('integration')]
     public function testPconnectSelectsCorrectDatabase()
     {
         if (!\ini_get('redis.pconnect.pooling_enabled')) {
@@ -137,9 +136,7 @@ class RedisTraitTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider provideDbIndexDsnParameter
-     */
+    #[DataProvider('provideDbIndexDsnParameter')]
     public function testDbIndexDsnParameter(string $dsn, int $expectedDb)
     {
         if (!getenv('REDIS_AUTHENTICATED_HOST')) {
@@ -183,9 +180,7 @@ class RedisTraitTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider provideInvalidDbIndexDsnParameter
-     */
+    #[DataProvider('provideInvalidDbIndexDsnParameter')]
     public function testInvalidDbIndexDsnParameter(string $dsn)
     {
         if (!getenv('REDIS_AUTHENTICATED_HOST')) {
@@ -211,9 +206,36 @@ class RedisTraitTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider providePredisMasterAuthResolution
-     */
+    public function testInvalidNonStringSslOption()
+    {
+        $mock = new class {
+            use RedisTrait;
+        };
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid Redis DSN: parameter "ssl[verify_peer]" must be a boolean.');
+
+        $mock::createConnection('redis://localhost:1', ['ssl' => ['verify_peer' => 2]]);
+    }
+
+    #[RequiresPhpExtension('relay')]
+    public function testInvalidRelayClusterContextOptions()
+    {
+        $mock = new class {
+            use RedisTrait;
+        };
+
+        foreach (['throw-on-error' => 'a boolean', 'max-retries' => 'an integer'] as $option => $type) {
+            try {
+                $mock::createConnection('redis://localhost:1?cluster_relay_context['.$option.']=ture', ['class' => RelayCluster::class]);
+                $this->fail(\sprintf('"cluster_relay_context[%s]=ture" should have been rejected.', $option));
+            } catch (InvalidArgumentException $e) {
+                $this->assertSame(\sprintf('Invalid Redis DSN: parameter "cluster_relay_context[%s]" must be %s.', $option, $type), $e->getMessage());
+            }
+        }
+    }
+
+    #[DataProvider('providePredisMasterAuthResolution')]
     public function testPredisMasterAuthResolution(string $dsn, array $options, string|array|null $expectedMasterAuth)
     {
         $predisClass = $this->createPredisCaptureClass();
@@ -260,9 +282,7 @@ class RedisTraitTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider providePredisSentinelAuthResolution
-     */
+    #[DataProvider('providePredisSentinelAuthResolution')]
     public function testPredisSentinelAuthResolution(string $dsn, array $options, string|array|null $expectedMasterAuth, string|array|null $expectedSentinelAuth)
     {
         $predisClass = $this->createPredisCaptureClass();
@@ -367,7 +387,7 @@ class RedisTraitTest extends TestCase
             use RedisTrait;
         };
 
-        foreach (['ssl[verify_peer]', 'ssl[verify_peer_name]', 'host[localhost][ssl][verify_peer]', 'lazy', 'persistent', 'redis_cluster'] as $parameter) {
+        foreach (['ssl[verify_peer]', 'ssl[verify_peer_name]', 'host[localhost][ssl][verify_peer]', 'lazy', 'persistent', 'cluster'] as $parameter) {
             try {
                 $mock::createConnection('redis://localhost?'.$parameter.'=ture', ['class' => $predisClass]);
                 $this->fail(\sprintf('"%s=ture" should have been rejected.', $parameter));
@@ -416,9 +436,6 @@ class RedisTraitTest extends TestCase
                 };
             }
 
-            /**
-             * @return object
-             */
             public function getConnection()
             {
                 return $this->connection;

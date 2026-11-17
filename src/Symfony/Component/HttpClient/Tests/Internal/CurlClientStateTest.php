@@ -11,12 +11,11 @@
 
 namespace Symfony\Component\HttpClient\Tests\Internal;
 
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\Internal\CurlClientState;
 
-/**
- * @requires extension curl
- */
+#[RequiresPhpExtension('curl')]
 class CurlClientStateTest extends TestCase
 {
     public function testOriginKeyFormat()

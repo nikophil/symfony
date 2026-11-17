@@ -28,7 +28,7 @@ class TextTypeHtmlSanitizerExtensionTest extends TypeTestCase
         parent::setUp();
     }
 
-    protected function getExtensions()
+    protected function getExtensions(): array
     {
         $fooSanitizer = $this->createMock(HtmlSanitizerInterface::class);
         $fooSanitizer->expects($this->once())

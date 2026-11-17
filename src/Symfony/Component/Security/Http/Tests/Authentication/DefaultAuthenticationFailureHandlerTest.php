@@ -38,17 +38,14 @@ class DefaultAuthenticationFailureHandlerTest extends TestCase
         $this->request = Request::create('https://localhost/');
         $this->request->attributes = new ParameterBag(['_stateless' => false]);
         $this->request->setSession($this->session);
-        $this->exception = $this->getMockBuilder(AuthenticationException::class)->onlyMethods(['getMessage'])->getMock();
+        $this->exception = new AuthenticationException();
     }
 
     public function testForward()
     {
         $options = ['failure_forward' => true];
 
-        $subRequest = new Request();
-        $subRequest->attributes = $this->createMock(ParameterBag::class);
-        $subRequest->attributes->expects($this->once())
-            ->method('set')->with(SecurityRequestAttributes::AUTHENTICATION_ERROR, $this->exception);
+        $subRequest = Request::create('/');
         $httpUtils = $this->createMock(HttpUtils::class);
         $httpUtils->expects($this->once())
             ->method('createRequest')->with($this->request, '/login')
@@ -61,6 +58,7 @@ class DefaultAuthenticationFailureHandlerTest extends TestCase
         $result = $handler->onAuthenticationFailure($this->request, $this->exception);
 
         $this->assertSame($response, $result);
+        $this->assertSame($this->exception, $subRequest->attributes->get(SecurityRequestAttributes::AUTHENTICATION_ERROR));
     }
 
     public function testRedirect()
@@ -94,10 +92,7 @@ class DefaultAuthenticationFailureHandlerTest extends TestCase
     {
         $options = ['failure_forward' => true];
 
-        $subRequest = new Request();
-        $subRequest->attributes = $this->createMock(ParameterBag::class);
-        $subRequest->attributes->expects($this->once())
-            ->method('set')->with(SecurityRequestAttributes::AUTHENTICATION_ERROR, $this->exception);
+        $subRequest = Request::create('/');
 
         $httpUtils = $this->createMock(HttpUtils::class);
         $httpUtils->expects($this->once())
@@ -105,8 +100,9 @@ class DefaultAuthenticationFailureHandlerTest extends TestCase
             ->willReturn($subRequest);
 
         $handler = new DefaultAuthenticationFailureHandler($this->createStub(HttpKernelInterface::class), $httpUtils, $options, new NullLogger());
-        $result = $handler->onAuthenticationFailure($this->request, $this->exception);
+        $handler->onAuthenticationFailure($this->request, $this->exception);
 
+        $this->assertSame($this->exception, $subRequest->attributes->get(SecurityRequestAttributes::AUTHENTICATION_ERROR));
         $this->assertSame([], $this->session->all());
     }
 

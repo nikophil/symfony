@@ -46,11 +46,7 @@ use Symfony\Component\VarExporter\LazyObjectInterface;
  */
 class ContextListener extends AbstractListener
 {
-    private TokenStorageInterface $tokenStorage;
     private string $sessionKey;
-    private ?LoggerInterface $logger;
-    private iterable $userProviders;
-    private ?EventDispatcherInterface $dispatcher;
     private bool $registered = false;
     private AuthenticationTrustResolverInterface $trustResolver;
     private ?\Closure $sessionTrackerEnabler;
@@ -58,18 +54,20 @@ class ContextListener extends AbstractListener
     /**
      * @param iterable<mixed, UserProviderInterface> $userProviders
      */
-    public function __construct(TokenStorageInterface $tokenStorage, iterable $userProviders, string $contextKey, ?LoggerInterface $logger = null, ?EventDispatcherInterface $dispatcher = null, ?AuthenticationTrustResolverInterface $trustResolver = null, ?callable $sessionTrackerEnabler = null)
-    {
-        if (empty($contextKey)) {
+    public function __construct(
+        private TokenStorageInterface $tokenStorage,
+        private iterable $userProviders,
+        string $contextKey,
+        private ?LoggerInterface $logger = null,
+        private ?EventDispatcherInterface $dispatcher = null,
+        ?AuthenticationTrustResolverInterface $trustResolver = null,
+        ?callable $sessionTrackerEnabler = null,
+    ) {
+        if (!$contextKey) {
             throw new \InvalidArgumentException('$contextKey must not be empty.');
         }
 
-        $this->tokenStorage = $tokenStorage;
-        $this->userProviders = $userProviders;
         $this->sessionKey = '_security_'.$contextKey;
-        $this->logger = $logger;
-        $this->dispatcher = $dispatcher;
-
         $this->trustResolver = $trustResolver ?? new AuthenticationTrustResolver();
         $this->sessionTrackerEnabler = null === $sessionTrackerEnabler ? null : $sessionTrackerEnabler(...);
     }
@@ -208,7 +206,7 @@ class ContextListener extends AbstractListener
      *
      * @throws \RuntimeException
      */
-    protected function refreshUser(TokenInterface $token): ?TokenInterface
+    private function refreshUser(TokenInterface $token): ?TokenInterface
     {
         if ($token instanceof SwitchUserToken && $token->getOriginalToken()->getUser() && !$this->refreshUser($token->getOriginalToken())) {
             return null;
@@ -258,7 +256,7 @@ class ContextListener extends AbstractListener
             } catch (UnsupportedUserException) {
                 // let's try the next user provider
             } catch (UserNotFoundException $e) {
-                $this->logger?->warning('Username could not be found in the selected user provider.', ['username' => $e->getUserIdentifier(), 'provider' => $provider::class]);
+                $this->logger?->info('Username could not be found in the selected user provider.', ['username' => $e->getUserIdentifier(), 'provider' => $provider::class]);
 
                 $userNotFoundByProvider = true;
             }
@@ -309,7 +307,17 @@ class ContextListener extends AbstractListener
         }
 
         if ($originalUser instanceof PasswordAuthenticatedUserInterface || $refreshedUser instanceof PasswordAuthenticatedUserInterface) {
-            if (!$originalUser instanceof PasswordAuthenticatedUserInterface || !$refreshedUser instanceof PasswordAuthenticatedUserInterface || $originalUser->getPassword() !== $refreshedUser->getPassword()) {
+            if (!$originalUser instanceof PasswordAuthenticatedUserInterface || !$refreshedUser instanceof PasswordAuthenticatedUserInterface) {
+                return true;
+            }
+
+            $originalPassword = $originalUser->getPassword();
+            $refreshedPassword = $refreshedUser->getPassword();
+
+            if (null !== $originalPassword
+                && $refreshedPassword !== $originalPassword
+                && (8 !== \strlen($originalPassword) || hash('crc32c', $refreshedPassword ?? '') !== $originalPassword)
+            ) {
                 return true;
             }
 
@@ -317,17 +325,12 @@ class ContextListener extends AbstractListener
                 return true;
             }
 
-            if ($originalUser instanceof LegacyPasswordAuthenticatedUserInterface && $refreshedUser instanceof LegacyPasswordAuthenticatedUserInterface && $originalUser->getSalt() !== $refreshedUser->getSalt()) {
+            if ($originalUser instanceof LegacyPasswordAuthenticatedUserInterface && $originalUser->getSalt() !== $refreshedUser->getSalt()) {
                 return true;
             }
         }
 
         $userRoles = array_map('strval', (array) $refreshedUser->getRoles());
-
-        if ($token instanceof SwitchUserToken) {
-            $userRoles[] = 'ROLE_PREVIOUS_ADMIN';
-        }
-
         $tokenRoleNames = $token->getRoleNames();
 
         if (

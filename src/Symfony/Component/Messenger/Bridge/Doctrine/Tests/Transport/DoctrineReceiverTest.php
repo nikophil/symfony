@@ -12,9 +12,8 @@
 namespace Symfony\Component\Messenger\Bridge\Doctrine\Tests\Transport;
 
 use Doctrine\DBAL\Driver\PDO\Exception;
-use Doctrine\DBAL\Driver\PDOException;
 use Doctrine\DBAL\Exception\DeadlockException;
-use Doctrine\DBAL\Version;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Bridge\Doctrine\Tests\Fixtures\DummyMessage;
 use Symfony\Component\Messenger\Bridge\Doctrine\Transport\Connection;
@@ -79,15 +78,8 @@ class DoctrineReceiverTest extends TestCase
     {
         $serializer = $this->createSerializer();
         $connection = $this->createStub(Connection::class);
-        $driverException = class_exists(Exception::class) ? Exception::new(new \PDOException('Deadlock', 40001)) : new PDOException(new \PDOException('Deadlock', 40001));
-        if (!class_exists(Version::class)) {
-            // This is doctrine/dbal 3.x
-            $deadlockException = new DeadlockException($driverException, null);
-        } else {
-            $deadlockException = new DeadlockException('Deadlock', $driverException);
-        }
+        $connection->method('get')->willThrowException(new DeadlockException(Exception::new(new \PDOException('Deadlock', 40001)), null));
 
-        $connection->method('get')->willThrowException($deadlockException);
         $receiver = new DoctrineReceiver($connection, $serializer);
         $this->assertSame([], $receiver->get());
         $this->assertSame([], $receiver->get());
@@ -125,8 +117,8 @@ class DoctrineReceiverTest extends TestCase
 
         $doctrineEnvelope1 = $this->createDoctrineEnvelope();
         $doctrineEnvelope2 = $this->createDoctrineEnvelope();
-        $connection = $this->createStub(Connection::class);
-        $connection->method('findAll')->with(50)->willReturn([$doctrineEnvelope1, $doctrineEnvelope2]);
+        $connection = $this->createMock(Connection::class);
+        $connection->expects($this->once())->method('findAll')->with(50)->willReturn([$doctrineEnvelope1, $doctrineEnvelope2]);
 
         $receiver = new DoctrineReceiver($connection, $serializer);
         $actualEnvelopes = iterator_to_array($receiver->all(50));
@@ -140,8 +132,8 @@ class DoctrineReceiverTest extends TestCase
 
         $doctrineEnvelope1 = $this->createRetriedDoctrineEnvelope();
         $doctrineEnvelope2 = $this->createRetriedDoctrineEnvelope();
-        $connection = $this->createStub(Connection::class);
-        $connection->method('findAll')->willReturn([$doctrineEnvelope1, $doctrineEnvelope2]);
+        $connection = $this->createMock(Connection::class);
+        $connection->expects($this->once())->method('findAll')->willReturn([$doctrineEnvelope1, $doctrineEnvelope2]);
 
         $receiver = new DoctrineReceiver($connection, $serializer);
         $actualEnvelopes = $receiver->all();
@@ -157,8 +149,8 @@ class DoctrineReceiverTest extends TestCase
         $serializer = $this->createSerializer();
 
         $doctrineEnvelope = $this->createDoctrineEnvelope();
-        $connection = $this->createStub(Connection::class);
-        $connection->method('find')->with(10)->willReturn($doctrineEnvelope);
+        $connection = $this->createMock(Connection::class);
+        $connection->expects($this->once())->method('find')->with(10)->willReturn($doctrineEnvelope);
 
         $receiver = new DoctrineReceiver($connection, $serializer);
         $actualEnvelope = $receiver->find(10);
@@ -170,8 +162,8 @@ class DoctrineReceiverTest extends TestCase
         $serializer = $this->createSerializer();
 
         $doctrineEnvelope = $this->createRetriedDoctrineEnvelope();
-        $connection = $this->createStub(Connection::class);
-        $connection->method('find')->with(3)->willReturn($doctrineEnvelope);
+        $connection = $this->createMock(Connection::class);
+        $connection->expects($this->once())->method('find')->with(3)->willReturn($doctrineEnvelope);
 
         $receiver = new DoctrineReceiver($connection, $serializer);
         $actualEnvelope = $receiver->find(3);
@@ -362,6 +354,22 @@ class DoctrineReceiverTest extends TestCase
         $receiver->reject($envelope);
     }
 
+    public function testKeepalive()
+    {
+        $serializer = $this->createSerializer();
+        $connection = $this->createMock(Connection::class);
+
+        $envelope = new Envelope(new \stdClass(), [new DoctrineReceivedStamp('1')]);
+        $receiver = new DoctrineReceiver($connection, $serializer);
+
+        $connection
+            ->expects($this->once())
+            ->method('keepalive')
+            ->with('1');
+
+        $receiver->keepalive($envelope);
+    }
+
     public function testAckRetriesADeadlockReportedByTheConnection()
     {
         $driverConnection = $this->createMock(\Doctrine\DBAL\Connection::class);
@@ -428,6 +436,64 @@ class DoctrineReceiverTest extends TestCase
                 'Content-Type' => 'application/json',
             ],
         ];
+    }
+
+    #[RequiresPhpExtension('pcntl')]
+    #[RequiresPhpExtension('posix')]
+    public function testItDispatchesTheSignalsRaisedWhileFetching()
+    {
+        $received = false;
+        $previousHandler = pcntl_signal_get_handler(\SIGUSR1);
+        $previousAsync = pcntl_async_signals(true);
+        pcntl_signal(\SIGUSR1, static function () use (&$received) { $received = true; });
+
+        try {
+            $connection = $this->createMock(Connection::class);
+            $connection->expects($this->once())->method('get')->willReturnCallback(function () use (&$received) {
+                posix_kill(posix_getpid(), \SIGUSR1);
+
+                // the transport holds the signal back until it is done talking to the database
+                $this->assertFalse($received);
+
+                return null;
+            });
+
+            $receiver = new DoctrineReceiver($connection, $this->createSerializer());
+
+            $this->assertSame([], $receiver->get());
+            $this->assertTrue($received);
+            $this->assertTrue(pcntl_async_signals());
+        } finally {
+            pcntl_signal(\SIGUSR1, $previousHandler);
+            pcntl_async_signals($previousAsync);
+        }
+    }
+
+    #[RequiresPhpExtension('pcntl')]
+    public function testItRestoresSignalDispatchingWhenFetchingThrows()
+    {
+        $previousAsync = pcntl_async_signals(true);
+
+        try {
+            $connection = $this->createStub(Connection::class);
+            $connection->method('get')->willThrowException(new DeadlockException(Exception::new(new \PDOException('Deadlock', 40001)), null));
+
+            $receiver = new DoctrineReceiver($connection, $this->createSerializer());
+
+            // the first calls are swallowed as retryable, the last one throws
+            $this->assertSame([], $receiver->get());
+            $this->assertSame([], $receiver->get());
+
+            try {
+                $receiver->get();
+                $this->fail('TransportException expected.');
+            } catch (TransportException) {
+            }
+
+            $this->assertTrue(pcntl_async_signals());
+        } finally {
+            pcntl_async_signals($previousAsync);
+        }
     }
 
     private function createSerializer(): Serializer

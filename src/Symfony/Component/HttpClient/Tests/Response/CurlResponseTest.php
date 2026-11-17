@@ -11,18 +11,16 @@
 
 namespace Symfony\Component\HttpClient\Tests\Response;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\Internal\CurlClientState;
 use Symfony\Component\HttpClient\Response\CurlResponse;
 
-/**
- * @requires extension curl
- */
+#[RequiresPhpExtension('curl')]
 class CurlResponseTest extends TestCase
 {
-    /**
-     * @dataProvider provideTimeoutsAboveWhatCurlAccepts
-     */
+    #[DataProvider('provideTimeoutsAboveWhatCurlAccepts')]
     public function testSelectCapsTheTimeoutCurlAccepts(float $timeout)
     {
         $select = new \ReflectionMethod(CurlResponse::class, 'select');

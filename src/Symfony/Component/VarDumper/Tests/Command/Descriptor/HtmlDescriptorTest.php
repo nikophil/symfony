@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\VarDumper\Tests\Command\Descriptor;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\VarDumper\Cloner\Data;
@@ -51,7 +52,7 @@ class HtmlDescriptorTest extends TestCase
     public function testItEscapesContextStrings()
     {
         $output = new BufferedOutput();
-        $dumper = $this->createMock(HtmlDumper::class);
+        $dumper = $this->createStub(HtmlDumper::class);
         $dumper->method('dump')->willReturn('[DUMPED]');
         $descriptor = new HtmlDescriptor($dumper);
 
@@ -87,7 +88,7 @@ class HtmlDescriptorTest extends TestCase
     public function testItKeepsContextStringsThatAreNotValidUtf8()
     {
         $output = new BufferedOutput();
-        $dumper = $this->createMock(HtmlDumper::class);
+        $dumper = $this->createStub(HtmlDumper::class);
         $dumper->method('dump')->willReturn('[DUMPED]');
         $descriptor = new HtmlDescriptor($dumper);
 
@@ -105,7 +106,7 @@ class HtmlDescriptorTest extends TestCase
     public function testItKeepsTheDumpedControllerAsMarkup()
     {
         $output = new BufferedOutput();
-        $dumper = $this->createMock(HtmlDumper::class);
+        $dumper = $this->createStub(HtmlDumper::class);
         $dumper->method('dump')->willReturn('<span class=sf-dump-str>App\\Controller\\FooController</span>');
         $descriptor = new HtmlDescriptor($dumper);
 
@@ -122,9 +123,7 @@ class HtmlDescriptorTest extends TestCase
         $this->assertStringContainsString('<span class=\'dumped-tag\'><span class=sf-dump-str>App\\Controller\\FooController</span></span>', $output->fetch());
     }
 
-    /**
-     * @dataProvider provideContext
-     */
+    #[DataProvider('provideContext')]
     public function testDescribe(array $context, string $expectedOutput)
     {
         $output = new BufferedOutput();

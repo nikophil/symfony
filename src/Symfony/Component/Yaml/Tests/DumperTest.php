@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Yaml\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Dumper;
 use Symfony\Component\Yaml\Exception\DumpException;
@@ -215,9 +216,64 @@ class DumperTest extends TestCase
         $this->dumper->dump(['foo' => new A(), 'bar' => 1], 0, 0, Yaml::DUMP_EXCEPTION_ON_INVALID_TYPE);
     }
 
-    /**
-     * @dataProvider getEscapeSequences
-     */
+    public function testDumpWithMultipleNullFlagsFormatsThrows()
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('The Yaml::DUMP_NULL_AS_EMPTY and Yaml::DUMP_NULL_AS_TILDE flags cannot be used together.');
+
+        $this->dumper->dump(['foo' => 'bar'], 0, 0, Yaml::DUMP_NULL_AS_EMPTY | Yaml::DUMP_NULL_AS_TILDE);
+    }
+
+    public function testDumpNullAsEmptyInExpandedMapping()
+    {
+        $expected = "qux:\n    foo: bar\n    baz: \n";
+
+        $this->assertSame($expected, $this->dumper->dump(['qux' => ['foo' => 'bar', 'baz' => null]], 2, flags: Yaml::DUMP_NULL_AS_EMPTY));
+    }
+
+    public function testDumpNullAsEmptyWithObject()
+    {
+        $class = new \stdClass();
+        $class->foo = 'bar';
+        $class->baz = null;
+
+        $this->assertSame("foo: bar\nbaz: \n", $this->dumper->dump($class, 2, flags: Yaml::DUMP_NULL_AS_EMPTY | Yaml::DUMP_OBJECT_AS_MAP));
+    }
+
+    public function testDumpNullAsEmptyDumpsWhenInInlineMapping()
+    {
+        $expected = "foo: \nqux: { foo: bar, baz:  }\n";
+
+        $this->assertSame($expected, $this->dumper->dump(['foo' => null, 'qux' => ['foo' => 'bar', 'baz' => null]], 1, flags: Yaml::DUMP_NULL_AS_EMPTY));
+    }
+
+    public function testDumpNullAsEmptyDumpsNestedMaps()
+    {
+        $expected = "foo: \nqux:\n    foo: bar\n    baz: \n";
+
+        $this->assertSame($expected, $this->dumper->dump(['foo' => null, 'qux' => ['foo' => 'bar', 'baz' => null]], 10, flags: Yaml::DUMP_NULL_AS_EMPTY));
+    }
+
+    public function testDumpNullAsEmptyInExpandedSequence()
+    {
+        $expected = "qux:\n    - foo\n    - \n    - bar\n";
+
+        $this->assertSame($expected, $this->dumper->dump(['qux' => ['foo', null, 'bar']], 2, flags: Yaml::DUMP_NULL_AS_EMPTY));
+    }
+
+    public function testDumpNullAsEmptyWhenInInlineSequence()
+    {
+        $expected = "foo: \nqux: [foo, , bar]\n";
+
+        $this->assertSame($expected, $this->dumper->dump(['foo' => null, 'qux' => ['foo', null, 'bar']], 1, flags: Yaml::DUMP_NULL_AS_EMPTY));
+    }
+
+    public function testDumpNullAsEmptyAtRoot()
+    {
+        $this->assertSame('null', $this->dumper->dump(null, 2, flags: Yaml::DUMP_NULL_AS_EMPTY));
+    }
+
+    #[DataProvider('getEscapeSequences')]
     public function testEscapedEscapeSequencesInQuotedScalar($input, $expected)
     {
         $this->assertSame($expected, $this->dumper->dump($input));
@@ -265,9 +321,7 @@ class DumperTest extends TestCase
         $this->assertSame('!!binary ZsM/cg==', $this->dumper->dump("f\xc3\x3fr"));
     }
 
-    /**
-     * @dataProvider objectAsMapProvider
-     */
+    #[DataProvider('objectAsMapProvider')]
     public function testDumpObjectAsMap($object, $expected)
     {
         $yaml = $this->dumper->dump($object, 0, 0, Yaml::DUMP_OBJECT_AS_MAP);
@@ -788,9 +842,7 @@ class DumperTest extends TestCase
         $this->assertSame($data, $this->parser->parse($yml));
     }
 
-    /**
-     * @dataProvider provideMultiLineStringsWithLeadingSpacesOnlyLines
-     */
+    #[DataProvider('provideMultiLineStringsWithLeadingSpacesOnlyLines')]
     public function testDumpMultiLineStringWithLeadingSpacesOnlyLines(string $value, int $indentation)
     {
         $data = ['value' => $value];
@@ -964,9 +1016,86 @@ class DumperTest extends TestCase
         $this->assertSame('{ foo: ~ }', $this->dumper->dump(['foo' => null], 0, 0, Yaml::DUMP_NULL_AS_TILDE));
     }
 
-    /**
-     * @dataProvider getNumericKeyData
-     */
+    #[DataProvider('getForceQuotesOnValuesData')]
+    public function testCanForceQuotesOnValues(array $input, string $expected)
+    {
+        $this->assertSame($expected, $this->dumper->dump($input, 0, 0, Yaml::DUMP_FORCE_DOUBLE_QUOTES_ON_VALUES));
+    }
+
+    public static function getForceQuotesOnValuesData(): iterable
+    {
+        yield 'empty string' => [
+            ['foo' => ''],
+            '{ foo: \'\' }',
+        ];
+
+        yield 'double quote' => [
+            ['foo' => '"'],
+            '{ foo: "\"" }',
+        ];
+
+        yield 'single quote' => [
+            ['foo' => "'"],
+            '{ foo: "\'" }',
+        ];
+
+        yield 'line break' => [
+            ['foo' => "line\nbreak"],
+            '{ foo: "line\nbreak" }',
+        ];
+
+        yield 'tab character' => [
+            ['foo' => "tab\tcharacter"],
+            '{ foo: "tab\tcharacter" }',
+        ];
+
+        yield 'backslash' => [
+            ['foo' => 'back\\slash'],
+            '{ foo: "back\\\\slash" }',
+        ];
+
+        yield 'colon' => [
+            ['foo' => 'colon: value'],
+            '{ foo: "colon: value" }',
+        ];
+
+        yield 'dash' => [
+            ['foo' => '- dash'],
+            '{ foo: "- dash" }',
+        ];
+
+        yield 'numeric' => [
+            ['foo' => 23],
+            '{ foo: 23 }',
+        ];
+
+        yield 'boolean' => [
+            ['foo' => true],
+            '{ foo: true }',
+        ];
+
+        yield 'null' => [
+            ['foo' => null],
+            '{ foo: null }',
+        ];
+
+        yield 'nested' => [
+            ['foo' => ['bar' => 'bat', 'baz' => 23]],
+            '{ foo: { bar: "bat", baz: 23 } }',
+        ];
+
+        yield 'mix of values' => [
+            ['foo' => 'bat', 'bar' => 23, 'baz' => true, 'qux' => "line\nbreak"],
+            '{ foo: "bat", bar: 23, baz: true, qux: "line\nbreak" }',
+        ];
+
+        yield 'special YAML characters' => [
+            ['foo' => 'colon: value', 'bar' => '- dash', 'baz' => '? question', 'qux' => '# hash'],
+            '{ foo: "colon: value", bar: "- dash", baz: "? question", qux: "# hash" }',
+        ];
+    }
+
+    #[DataProvider('getNumericKeyData')]
     public function testDumpInlineNumericKeyAsString(array $input, bool $inline, int $flags, string $expected)
     {
         $this->assertSame($expected, $this->dumper->dump($input, $inline ? 0 : 4, 0, $flags));
@@ -1069,9 +1198,7 @@ class DumperTest extends TestCase
         ], 2));
     }
 
-    /**
-     * @dataProvider getDateTimeData
-     */
+    #[DataProvider('getDateTimeData')]
     public function testDumpDateTime(array $input, string $expected)
     {
         $this->assertSame($expected, rtrim($this->dumper->dump($input, 1)));
@@ -1113,6 +1240,175 @@ class DumperTest extends TestCase
             ['date' => new \DateTimeImmutable('2023-01-24T01:02:03.456789Z')],
             'date: 2023-01-24T01:02:03.456789+00:00',
         ];
+    }
+
+    public static function getDumpCompactNestedMapping()
+    {
+        $data = [
+            'planets' => [
+                [
+                    'name' => 'Mercury',
+                    'distance' => 57910000,
+                    'properties' => [
+                        ['name' => 'size', 'value' => 4879],
+                        ['name' => 'moons', 'value' => 0],
+                        [[[]]],
+                    ],
+                ],
+                [
+                    'name' => 'Jupiter',
+                    'distance' => 778500000,
+                    'properties' => [
+                        ['name' => 'size', 'value' => 139820],
+                        ['name' => 'moons', 'value' => 79],
+                        [[]],
+                    ],
+                ],
+            ],
+        ];
+
+        yield 'Compact nested mapping 1' => [
+            $data,
+            <<<YAML
+                planets:
+                 - name: Mercury
+                   distance: 57910000
+                   properties:
+                    - name: size
+                      value: 4879
+                    - name: moons
+                      value: 0
+                    -
+                     -
+                      - {  }
+                 - name: Jupiter
+                   distance: 778500000
+                   properties:
+                    - name: size
+                      value: 139820
+                    - name: moons
+                      value: 79
+                    -
+                     - {  }
+
+                YAML,
+            1,
+        ];
+
+        yield 'Compact nested mapping 2' => [
+            $data,
+            <<<YAML
+                planets:
+                  - name: Mercury
+                    distance: 57910000
+                    properties:
+                      - name: size
+                        value: 4879
+                      - name: moons
+                        value: 0
+                      -
+                        -
+                          - {  }
+                  - name: Jupiter
+                    distance: 778500000
+                    properties:
+                      - name: size
+                        value: 139820
+                      - name: moons
+                        value: 79
+                      -
+                        - {  }
+
+                YAML,
+            2,
+        ];
+
+        yield 'Compact nested mapping 3' => [
+            $data,
+            <<<YAML
+                planets:
+                   - name: Mercury
+                     distance: 57910000
+                     properties:
+                        - name: size
+                          value: 4879
+                        - name: moons
+                          value: 0
+                        -
+                           -
+                              - {  }
+                   - name: Jupiter
+                     distance: 778500000
+                     properties:
+                        - name: size
+                          value: 139820
+                        - name: moons
+                          value: 79
+                        -
+                           - {  }
+
+                YAML,
+            3,
+        ];
+
+        yield 'Compact nested mapping 4' => [
+            $data,
+            <<<YAML
+                planets:
+                    - name: Mercury
+                      distance: 57910000
+                      properties:
+                          - name: size
+                            value: 4879
+                          - name: moons
+                            value: 0
+                          -
+                              -
+                                  - {  }
+                    - name: Jupiter
+                      distance: 778500000
+                      properties:
+                          - name: size
+                            value: 139820
+                          - name: moons
+                            value: 79
+                          -
+                              - {  }
+
+                YAML,
+            4,
+        ];
+
+        yield 'Compact nested mapping 2 and inline 4' => [
+            $data,
+            <<<YAML
+                planets:
+                  - name: Mercury
+                    distance: 57910000
+                    properties:
+                      - { name: size, value: 4879 }
+                      - { name: moons, value: 0 }
+                      - [[{  }]]
+                  - name: Jupiter
+                    distance: 778500000
+                    properties:
+                      - { name: size, value: 139820 }
+                      - { name: moons, value: 79 }
+                      - [{  }]
+
+                YAML,
+            2,
+            4,
+        ];
+    }
+
+    #[DataProvider('getDumpCompactNestedMapping')]
+    public function testDumpCompactNestedMapping(array $data, string $expected, int $indentation, int $inline = 10)
+    {
+        $dumper = new Dumper($indentation);
+        $actual = $dumper->dump($data, $inline, 0, Yaml::DUMP_COMPACT_NESTED_MAPPING);
+        $this->assertSame($expected, $actual);
+        $this->assertSameData($data, $this->parser->parse($actual));
     }
 
     public function testDumpedMergeKeyStringCanBeParsedBack()

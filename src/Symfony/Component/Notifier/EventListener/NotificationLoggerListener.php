@@ -23,21 +23,23 @@ class NotificationLoggerListener implements EventSubscriberInterface, ResetInter
 {
     private NotificationEvents $events;
 
-    public function __construct()
-    {
+    public function __construct(
+        private ?\Closure $disabled = null,
+    ) {
         $this->events = new NotificationEvents();
     }
 
-    /**
-     * @return void
-     */
-    public function reset()
+    public function reset(): void
     {
         $this->events = new NotificationEvents();
     }
 
     public function onNotification(MessageEvent $event): void
     {
+        if ($this->disabled?->__invoke()) {
+            return;
+        }
+
         $this->events->add($event);
     }
 

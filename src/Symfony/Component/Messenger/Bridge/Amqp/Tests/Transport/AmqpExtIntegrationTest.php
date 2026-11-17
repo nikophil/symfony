@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Messenger\Bridge\Amqp\Tests\Transport;
 
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\EventDispatcher\EventDispatcher;
@@ -43,17 +45,12 @@ use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
 
-/**
- * @requires extension amqp
- *
- * @group integration
- */
+#[RequiresPhpExtension('amqp')]
+#[Group('integration')]
 class AmqpExtIntegrationTest extends TestCase
 {
     protected function setUp(): void
     {
-        parent::setUp();
-
         if (!getenv('MESSENGER_AMQP_DSN')) {
             $this->markTestSkipped('The "MESSENGER_AMQP_DSN" environment variable is required.');
         }
@@ -72,6 +69,36 @@ class AmqpExtIntegrationTest extends TestCase
 
         $sender->send($first = new Envelope(new DummyMessage('First')));
         $sender->send($second = new Envelope(new DummyMessage('Second')));
+
+        $envelopes = iterator_to_array($receiver->get());
+        $this->assertCount(1, $envelopes);
+        /** @var Envelope $envelope */
+        $envelope = $envelopes[0];
+        $this->assertEquals($first->getMessage(), $envelope->getMessage());
+        $this->assertInstanceOf(AmqpReceivedStamp::class, $envelope->last(AmqpReceivedStamp::class));
+
+        $envelopes = iterator_to_array($receiver->get());
+        $this->assertCount(1, $envelopes);
+        /** @var Envelope $envelope */
+        $envelope = $envelopes[0];
+        $this->assertEquals($second->getMessage(), $envelope->getMessage());
+
+        $this->assertSame([], iterator_to_array($receiver->get()));
+    }
+
+    public function testItSendsAndReceivesMessagesThroughDefaultExchange()
+    {
+        $serializer = $this->createSerializer();
+
+        $connection = Connection::fromDsn(getenv('MESSENGER_AMQP_DSN'), ['exchange' => ['name' => '']]);
+        $connection->setup();
+        $connection->purgeQueues();
+
+        $sender = new AmqpSender($connection, $serializer);
+        $receiver = new AmqpReceiver($connection, $serializer);
+
+        $sender->send($first = new Envelope(new DummyMessage('First'), [new AmqpStamp('messages')]));
+        $sender->send($second = new Envelope(new DummyMessage('Second'), [new AmqpStamp('messages')]));
 
         $envelopes = iterator_to_array($receiver->get());
         $this->assertCount(1, $envelopes);

@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Notifier\Bridge\FortySixElks\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Notifier\Bridge\FortySixElks\FortySixElksTransport;
@@ -55,9 +56,7 @@ class FortySixElksTransportTest extends TransportTestCase
         $this->assertSame('s0231d6d7d6bc14a7e7734e466785c4ce', $sentMessage->getMessageId());
     }
 
-    /**
-     * @dataProvider errorProvider
-     */
+    #[DataProvider('errorProvider')]
     public function testExceptionIsThrownWhenSendFailed(int $statusCode, string $content, string $expectedExceptionMessage)
     {
         $client = new MockHttpClient(new MockResponse($content, ['http_code' => $statusCode]));

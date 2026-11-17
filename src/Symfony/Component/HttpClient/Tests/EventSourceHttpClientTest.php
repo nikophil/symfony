@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\HttpClient\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\Chunk\DataChunk;
 use Symfony\Component\HttpClient\Chunk\ErrorChunk;
@@ -30,11 +32,9 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  */
 class EventSourceHttpClientTest extends TestCase
 {
-    /**
-     * @testWith ["\n"]
-     *           ["\r"]
-     *           ["\r\n"]
-     */
+    #[TestWith(["\n"])]
+    #[TestWith(["\r"])]
+    #[TestWith(["\r\n"])]
     public function testGetServerSentEvents(string $sep)
     {
         $es = new EventSourceHttpClient(new MockHttpClient(function (string $method, string $url, array $options) use ($sep): MockResponse {
@@ -143,9 +143,7 @@ class EventSourceHttpClientTest extends TestCase
         $res = $es->connect('http://localhost:8080/events', ['body' => 'mybody'], 'POST');
     }
 
-    /**
-     * @dataProvider contentTypeProvider
-     */
+    #[DataProvider('contentTypeProvider')]
     public function testContentType($contentType, $expected)
     {
         $chunk = new DataChunk(0, '');
@@ -253,6 +251,76 @@ class EventSourceHttpClientTest extends TestCase
         }
 
         $this->assertSame([['1', 'hello'], ['2', 'world']], $events);
+    }
+
+    public function testPostIsNotSentAgainWhenTheConnectionDrops()
+    {
+        $client = new MockHttpClient([
+            new MockResponse((static function (): \Generator {
+                yield "data: hello\n\n";
+
+                throw new TransportException('Connection dropped');
+            })(), [
+                'response_headers' => ['content-type: text/event-stream'],
+            ]),
+            new MockResponse("data: hello again\n\n", [
+                'response_headers' => ['content-type: text/event-stream'],
+            ]),
+        ]);
+        $es = new EventSourceHttpClient($client, 0.0);
+
+        $res = $es->connect('http://localhost:8080/events', ['body' => 'mybody'], 'POST');
+
+        $events = [];
+        try {
+            foreach ($es->stream($res) as $chunk) {
+                if ($chunk->isTimeout()) {
+                    continue;
+                }
+
+                if ($chunk instanceof ServerSentEvent) {
+                    $events[] = $chunk->getData();
+                }
+            }
+            $this->fail('A TransportException should have been thrown.');
+        } catch (TransportException $e) {
+            $this->assertSame('Connection dropped', $e->getMessage());
+        }
+
+        $this->assertSame(['hello'], $events);
+        $this->assertSame(1, $client->getRequestsCount());
+    }
+
+    public function testPostIsNotSentAgainAfterAnIdleTimeout()
+    {
+        $client = new MockHttpClient([
+            new MockResponse((static function (): \Generator {
+                yield "data: hello\n\n";
+                yield '';
+                yield "data: world\n\n";
+            })(), [
+                'response_headers' => ['content-type: text/event-stream'],
+            ]),
+            new MockResponse("data: hello again\n\n", [
+                'response_headers' => ['content-type: text/event-stream'],
+            ]),
+        ]);
+        $es = new EventSourceHttpClient($client, 0.0);
+
+        $res = $es->connect('http://localhost:8080/events', ['body' => 'mybody'], 'POST');
+
+        $events = [];
+        // the idle timeout ends the first iteration
+        for ($i = 0; $i < 2; ++$i) {
+            foreach ($es->stream($res) as $chunk) {
+                if (!$chunk->isTimeout() && $chunk instanceof ServerSentEvent) {
+                    $events[] = $chunk->getData();
+                }
+            }
+        }
+
+        $this->assertSame(['hello', 'world'], $events);
+        $this->assertSame(1, $client->getRequestsCount());
     }
 
     public static function contentTypeProvider()

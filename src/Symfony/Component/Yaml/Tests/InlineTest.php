@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Yaml\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Yaml\Exception\ParseException;
 use Symfony\Component\Yaml\Inline;
@@ -26,22 +27,23 @@ class InlineTest extends TestCase
         Inline::initialize(0, 0);
     }
 
-    /**
-     * @dataProvider getTestsForParse
-     */
+    #[DataProvider('getTestsForParse')]
     public function testParse(string $yaml, $value, $flags = 0)
     {
         $this->assertSame($value, Inline::parse($yaml, $flags), \sprintf('::parse() converts an inline YAML to a PHP structure (%s)', $yaml));
     }
 
-    /**
-     * @testWith [".nan"]
-     *           [".NaN"]
-     *           [".NAN"]
-     */
+    #[DataProvider('getNanRepresentations')]
     public function testParseNan(string $yaml)
     {
         $this->assertNan(Inline::parse($yaml));
+    }
+
+    public static function getNanRepresentations(): iterable
+    {
+        yield ['.nan'];
+        yield ['.NaN'];
+        yield ['.NAN'];
     }
 
     public function testDumpNan()
@@ -50,9 +52,7 @@ class InlineTest extends TestCase
         $this->assertNan(Inline::parse(Inline::dump(\NAN)));
     }
 
-    /**
-     * @dataProvider getTestsForParseWithMapObjects
-     */
+    #[DataProvider('getTestsForParseWithMapObjects')]
     public function testParseWithMapObjects($yaml, $value, $flags = Yaml::PARSE_OBJECT_FOR_MAP)
     {
         $actual = Inline::parse($yaml, $flags);
@@ -60,9 +60,7 @@ class InlineTest extends TestCase
         $this->assertSame(serialize($value), serialize($actual));
     }
 
-    /**
-     * @dataProvider getTestsForParsePhpConstants
-     */
+    #[DataProvider('getTestsForParsePhpConstants')]
     public function testParsePhpConstants($yaml, $value)
     {
         $actual = Inline::parse($yaml, Yaml::PARSE_CONSTANT);
@@ -94,14 +92,21 @@ class InlineTest extends TestCase
     public function testParsePhpEnumThrowsExceptionWhenUndefined()
     {
         $this->expectException(ParseException::class);
-        $this->expectExceptionMessage('The enum "SomeEnum::Foo" is not defined');
-        Inline::parse('!php/enum SomeEnum::Foo', Yaml::PARSE_CONSTANT);
+        $this->expectExceptionMessage('The enum "SomeEnum" is not defined');
+        Inline::parse('!php/enum SomeEnum', Yaml::PARSE_CONSTANT);
+    }
+
+    public function testParsePhpEnumThrowsExceptionWhenNameUndefined()
+    {
+        $this->expectException(ParseException::class);
+        $this->expectExceptionMessage('The string "Symfony\Component\Yaml\Tests\Fixtures\FooUnitEnum::Foo" is not the name of a valid enum');
+        Inline::parse('!php/enum Symfony\Component\Yaml\Tests\Fixtures\FooUnitEnum::Foo', Yaml::PARSE_CONSTANT);
     }
 
     public function testParsePhpEnumThrowsExceptionWhenNotAnEnum()
     {
         $this->expectException(ParseException::class);
-        $this->expectExceptionMessage('The string "PHP_INT_MAX" is not the name of a valid enum');
+        $this->expectExceptionMessage('The enum "PHP_INT_MAX" is not defined');
         Inline::parse('!php/enum PHP_INT_MAX', Yaml::PARSE_CONSTANT);
     }
 
@@ -130,9 +135,7 @@ class InlineTest extends TestCase
         Inline::parse('!php/enum SomeEnum::Foo', Yaml::PARSE_EXCEPTION_ON_INVALID_TYPE);
     }
 
-    /**
-     * @dataProvider getTestsForDump
-     */
+    #[DataProvider('getTestsForDump')]
     public function testDump($yaml, $value, $parseFlags = 0)
     {
         $this->assertEquals($yaml, Inline::dump($value), \sprintf('::dump() converts a PHP structure to an inline YAML (%s)', $yaml));
@@ -279,9 +282,7 @@ class InlineTest extends TestCase
         $this->assertSame($expect, Inline::parseScalar($value));
     }
 
-    /**
-     * @dataProvider getDataForParseReferences
-     */
+    #[DataProvider('getDataForParseReferences')]
     public function testParseReferences($yaml, $expected)
     {
         $references = ['var' => 'var-value'];
@@ -329,9 +330,7 @@ class InlineTest extends TestCase
         Inline::parse('{ foo: * #foo }');
     }
 
-    /**
-     * @dataProvider getReservedIndicators
-     */
+    #[DataProvider('getReservedIndicators')]
     public function testParseUnquotedScalarStartingWithReservedIndicator($indicator)
     {
         $this->expectException(ParseException::class);
@@ -345,9 +344,7 @@ class InlineTest extends TestCase
         return [['@'], ['`']];
     }
 
-    /**
-     * @dataProvider getScalarIndicators
-     */
+    #[DataProvider('getScalarIndicators')]
     public function testParseUnquotedScalarStartingWithScalarIndicator($indicator)
     {
         $this->expectException(ParseException::class);
@@ -361,9 +358,7 @@ class InlineTest extends TestCase
         return [['|'], ['>'], ['%']];
     }
 
-    /**
-     * @dataProvider getDataForIsHash
-     */
+    #[DataProvider('getDataForIsHash')]
     public function testIsHash($array, $expected)
     {
         $this->assertSame($expected, Inline::isHash($array));
@@ -664,18 +659,14 @@ class InlineTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider getTimestampTests
-     */
-    public function testParseTimestampAsUnixTimestampByDefault(string $yaml, int $year, int $month, int $day, int $hour, int $minute, int $second, int $microsecond)
+    #[DataProvider('getTimestampTests')]
+    public function testParseTimestampAsUnixTimestampByDefault(string $yaml, int $year, int $month, int $day, int $hour, int $minute, int $second, int $microsecond, string $timezone)
     {
         $expectedDate = (new \DateTimeImmutable($yaml, new \DateTimeZone('UTC')))->format('U');
         $this->assertSame($microsecond ? (float) "$expectedDate.$microsecond" : (int) $expectedDate, Inline::parse($yaml));
     }
 
-    /**
-     * @dataProvider getTimestampTests
-     */
+    #[DataProvider('getTimestampTests')]
     public function testParseTimestampAsDateTimeObject(string $yaml, int $year, int $month, int $day, int $hour, int $minute, int $second, int $microsecond, string $timezone)
     {
         $expected = (new \DateTimeImmutable($yaml))
@@ -704,10 +695,8 @@ class InlineTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider getTimestampTests
-     */
-    public function testParseNestedTimestampListAsDateTimeObject(string $yaml, int $year, int $month, int $day, int $hour, int $minute, int $second, int $microsecond)
+    #[DataProvider('getTimestampTests')]
+    public function testParseNestedTimestampListAsDateTimeObject(string $yaml, int $year, int $month, int $day, int $hour, int $minute, int $second, int $microsecond, string $timezone)
     {
         $expected = (new \DateTimeImmutable($yaml))
             ->setTimeZone(new \DateTimeZone('UTC'))
@@ -728,17 +717,13 @@ class InlineTest extends TestCase
         Inline::parse('2024-50-50', Yaml::PARSE_DATETIME);
     }
 
-    /**
-     * @dataProvider getDateTimeDumpTests
-     */
+    #[DataProvider('getDateTimeDumpTests')]
     public function testDumpDateTime($dateTime, $expected)
     {
         $this->assertSame($expected, Inline::dump($dateTime));
     }
 
-    /**
-     * @dataProvider getNumericKeyData
-     */
+    #[DataProvider('getNumericKeyData')]
     public function testDumpNumericKeyAsString(array|int $input, int $flags, string $expected)
     {
         $this->assertSame($expected, Inline::dump($input, $flags));
@@ -830,7 +815,12 @@ class InlineTest extends TestCase
 
     public function testDumpUnitEnum()
     {
-        $this->assertSame("!php/const Symfony\Component\Yaml\Tests\Fixtures\FooUnitEnum::BAR", Inline::dump(FooUnitEnum::BAR));
+        $this->assertSame("!php/enum Symfony\Component\Yaml\Tests\Fixtures\FooUnitEnum::BAR", Inline::dump(FooUnitEnum::BAR));
+    }
+
+    public function testParseUnitEnumCases()
+    {
+        $this->assertSame(FooUnitEnum::cases(), Inline::parse("!php/enum Symfony\Component\Yaml\Tests\Fixtures\FooUnitEnum", Yaml::PARSE_CONSTANT));
     }
 
     public function testParseUnitEnum()
@@ -869,9 +859,7 @@ class InlineTest extends TestCase
         return $tests;
     }
 
-    /**
-     * @dataProvider getBinaryData
-     */
+    #[DataProvider('getBinaryData')]
     public function testParseBinaryData($data)
     {
         $this->assertSame('Hello world', Inline::parse($data));
@@ -886,9 +874,7 @@ class InlineTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider getInvalidBinaryData
-     */
+    #[DataProvider('getInvalidBinaryData')]
     public function testParseInvalidBinaryData($data, $expectedMessage)
     {
         $this->expectException(ParseException::class);
@@ -1007,9 +993,7 @@ class InlineTest extends TestCase
         Inline::parse('{: foo}');
     }
 
-    /**
-     * @dataProvider getTestsForNullValues
-     */
+    #[DataProvider('getTestsForNullValues')]
     public function testParseMissingMappingValueAsNull($yaml, $expected)
     {
         $this->assertSame($expected, Inline::parse($yaml));
@@ -1028,23 +1012,21 @@ class InlineTest extends TestCase
         $this->assertSame(['' => 'foo'], Inline::parse('{ "": foo }'));
     }
 
-    /**
-     * @dataProvider getNotPhpCompatibleMappingKeyData
-     */
-    public function testImplicitStringCastingOfMappingKeysIsDeprecated($yaml, $expected)
+    #[DataProvider('getNotPhpCompatibleMappingKeyData')]
+    public function testImplicitStringCastingOfMappingKeysThrowsException(string $yaml)
     {
         $this->expectException(ParseException::class);
         $this->expectExceptionMessage('Implicit casting of incompatible mapping keys to strings is not supported. Quote your evaluable mapping keys instead');
-        $this->assertSame($expected, Inline::parse($yaml));
+        Inline::parse($yaml);
     }
 
     public static function getNotPhpCompatibleMappingKeyData()
     {
         return [
-            'boolean-true' => ['{true: "foo"}', ['true' => 'foo']],
-            'boolean-false' => ['{false: "foo"}', ['false' => 'foo']],
-            'null' => ['{null: "foo"}', ['null' => 'foo']],
-            'float' => ['{0.25: "foo"}', ['0.25' => 'foo']],
+            'boolean-true' => ['{true: "foo"}'],
+            'boolean-false' => ['{false: "foo"}'],
+            'null' => ['{null: "foo"}'],
+            'float' => ['{0.25: "foo"}'],
         ];
     }
 
@@ -1117,9 +1099,7 @@ class InlineTest extends TestCase
         Inline::parse("{abc: 'def'");
     }
 
-    /**
-     * @dataProvider getTestsForOctalNumbers
-     */
+    #[DataProvider('getTestsForOctalNumbers')]
     public function testParseOctalNumbers($expected, $yaml)
     {
         self::assertSame($expected, Inline::parse($yaml));
@@ -1134,9 +1114,7 @@ class InlineTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider getTestsForOctalNumbersYaml11Notation
-     */
+    #[DataProvider('getTestsForOctalNumbersYaml11Notation')]
     public function testParseOctalNumbersYaml11Notation(string $expected, string $yaml)
     {
         self::assertSame($expected, Inline::parse($yaml));
@@ -1153,9 +1131,7 @@ class InlineTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider phpObjectTagWithEmptyValueProvider
-     */
+    #[DataProvider('phpObjectTagWithEmptyValueProvider')]
     public function testPhpObjectWithEmptyValue(string $value)
     {
         $this->expectException(ParseException::class);
@@ -1176,9 +1152,7 @@ class InlineTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider phpConstTagWithEmptyValueProvider
-     */
+    #[DataProvider('phpConstTagWithEmptyValueProvider')]
     public function testPhpConstTagWithEmptyValue(string $value)
     {
         $this->expectException(ParseException::class);
@@ -1187,9 +1161,7 @@ class InlineTest extends TestCase
         Inline::parse($value, Yaml::PARSE_CONSTANT);
     }
 
-    /**
-     * @dataProvider phpConstTagWithEmptyValueProvider
-     */
+    #[DataProvider('phpConstTagWithEmptyValueProvider')]
     public function testPhpEnumTagWithEmptyValue(string $value)
     {
         $this->expectException(ParseException::class);
@@ -1223,9 +1195,7 @@ class InlineTest extends TestCase
         self::assertSame('foo#nocomment', Inline::parse('foo#nocomment'));
     }
 
-    /**
-     * @dataProvider unquotedExclamationMarkThrowsProvider
-     */
+    #[DataProvider('unquotedExclamationMarkThrowsProvider')]
     public function testUnquotedExclamationMarkThrows(string $value)
     {
         $this->expectException(ParseException::class);
@@ -1257,9 +1227,7 @@ class InlineTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider quotedExclamationMarkProvider
-     */
+    #[DataProvider('quotedExclamationMarkProvider')]
     public function testQuotedExclamationMark($expected, string $value)
     {
         $this->assertSame($expected, Inline::parse($value));
@@ -1288,9 +1256,7 @@ class InlineTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider ideographicSpaceProvider
-     */
+    #[DataProvider('ideographicSpaceProvider')]
     public function testParseIdeographicSpace(string $yaml, string $expected)
     {
         $this->assertSame($expected, Inline::parse($yaml));
@@ -1361,9 +1327,7 @@ class InlineTest extends TestCase
         $this->assertSame($parsed['block'], $parsed['flow']);
     }
 
-    /**
-     * @dataProvider getAnchoredInlineValues
-     */
+    #[DataProvider('getAnchoredInlineValues')]
     public function testParseAnchoredInlineValues(string $yaml, array $expected)
     {
         $this->assertSame($expected, Inline::parse($yaml));

@@ -11,12 +11,11 @@
 
 namespace Symfony\Component\Cache\Tests\Traits;
 
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Cache\Traits\RedisTrait;
 
-/**
- * @requires extension redis
- */
+#[RequiresPhpExtension('redis')]
 class RedisTraitTcpKeepaliveTest extends TestCase
 {
     // RedisArray connects lazily, so the tcp_keepalive setOption() runs without a server.

@@ -11,14 +11,13 @@
 
 namespace Symfony\Component\HtmlSanitizer\Tests\TextSanitizer;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HtmlSanitizer\TextSanitizer\UrlSanitizer;
 
 class UrlSanitizerTest extends TestCase
 {
-    /**
-     * @dataProvider provideSanitize
-     */
+    #[DataProvider('provideSanitize')]
     public function testSanitize(?string $input, ?array $allowedSchemes, ?array $allowedHosts, bool $forceHttps, bool $allowRelative, ?string $expected)
     {
         $this->assertSame($expected, UrlSanitizer::sanitize($input, $allowedSchemes, $forceHttps, $allowedHosts, $allowRelative));
@@ -684,9 +683,7 @@ class UrlSanitizerTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider provideParse
-     */
+    #[DataProvider('provideParse')]
     public function testParse(string $url, ?array $expected)
     {
         $parsed = UrlSanitizer::parse($url);
@@ -1265,7 +1262,7 @@ class UrlSanitizerTest extends TestCase
         ];
 
         foreach ($urls as $url => $expected) {
-            yield $url => [$url, $expected];
+            yield ('' === $url ? 'empty string' : $url) => [$url, $expected];
         }
     }
 }

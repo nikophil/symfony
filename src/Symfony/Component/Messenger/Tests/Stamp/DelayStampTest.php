@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Messenger\Tests\Stamp;
 
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Stamp\DelayStamp;
 
@@ -32,9 +33,7 @@ class DelayStampTest extends TestCase
         $this->assertSame(-5000, $stamp->getDelay());
     }
 
-    /**
-     * @group time-sensitive
-     */
+    #[Group('time-sensitive')]
     public function testDelayUntil()
     {
         $stamp = DelayStamp::delayUntil(new \DateTimeImmutable('@'.(time() + 30)));

@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\VarDumper\Tests\Dumper;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresPhp;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\ErrorHandler\ErrorRenderer\FileLinkFormatter;
 use Symfony\Component\Process\Process;
@@ -22,6 +24,7 @@ use Symfony\Component\VarDumper\Cloner\VarCloner;
 use Symfony\Component\VarDumper\Dumper\AbstractDumper;
 use Symfony\Component\VarDumper\Dumper\CliDumper;
 use Symfony\Component\VarDumper\Test\VarDumperTestTrait;
+use Symfony\Component\VarDumper\Tests\Fixtures\VirtualProperty;
 use Twig\Environment;
 use Twig\Loader\FilesystemLoader;
 
@@ -124,9 +127,7 @@ class CliDumperTest extends TestCase
         );
     }
 
-    /**
-     * @dataProvider provideDumpWithCommaFlagTests
-     */
+    #[DataProvider('provideDumpWithCommaFlagTests')]
     public function testDumpWithCommaFlag($expected, $flags)
     {
         $dumper = new CliDumper(null, null, $flags);
@@ -308,6 +309,21 @@ class CliDumperTest extends TestCase
         putenv('DUMP_STRING_LENGTH=');
     }
 
+    #[RequiresPhp('>=8.4.0')]
+    public function testVirtualProperties()
+    {
+        $this->assertDumpEquals(<<<EODUMP
+            Symfony\Component\VarDumper\Tests\Fixtures\VirtualProperty {
+              +firstName: "John"
+              +lastName: "Doe"
+              +fullName: ~ string
+              -noType: ~
+            }
+            EODUMP,
+            new VirtualProperty()
+        );
+    }
+
     public function testThrowingCaster()
     {
         $out = fopen('php://memory', 'r+');
@@ -437,9 +453,7 @@ class CliDumperTest extends TestCase
         yield [[], 0, "\e[0;38;5;208m[]\e[m\n"];
     }
 
-    /**
-     * @dataProvider provideDumpArrayWithColor
-     */
+    #[DataProvider('provideDumpArrayWithColor')]
     public function testDumpArrayWithColor($value, $flags, $expectedOut)
     {
         if ('\\' === \DIRECTORY_SEPARATOR) {

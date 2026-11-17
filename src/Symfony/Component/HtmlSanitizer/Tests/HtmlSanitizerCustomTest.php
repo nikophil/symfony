@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\HtmlSanitizer\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HtmlSanitizer\HtmlSanitizer;
 use Symfony\Component\HtmlSanitizer\HtmlSanitizerConfig;
@@ -25,14 +26,12 @@ class HtmlSanitizerCustomTest extends TestCase
         ;
 
         $this->assertSame(
-            ' world',
-            (new HtmlSanitizer($config))->sanitizeFor('head', '<div style="width: 100px">Hello</div> world')
+            '',
+            (new HtmlSanitizer($config))->sanitizeFor('head', '<div style="width: 100px">Hello world</div>')
         );
     }
 
-    /**
-     * @dataProvider provideSanitizeForHeadWithSafeElements
-     */
+    #[DataProvider('provideSanitizeForHeadWithSafeElements')]
     public function testSanitizeForHeadWithSafeElements(string $input, string $expected)
     {
         $config = (new HtmlSanitizerConfig())
@@ -215,8 +214,8 @@ class HtmlSanitizerCustomTest extends TestCase
 
     public function testSanitizeNullByte()
     {
-        $this->assertSame('Null byte', $this->sanitize(new HtmlSanitizerConfig(), "Null byte\0"));
-        $this->assertSame('Null byte', $this->sanitize(new HtmlSanitizerConfig(), 'Null byte&#0;'));
+        $this->assertSame('Null byte�', $this->sanitize(new HtmlSanitizerConfig(), "Null byte\0"));
+        $this->assertSame('Null byte�', $this->sanitize(new HtmlSanitizerConfig(), 'Null byte&#0;'));
     }
 
     public function testSanitizeDefaultBody()
@@ -916,9 +915,7 @@ class HtmlSanitizerCustomTest extends TestCase
         );
     }
 
-    /**
-     * @dataProvider provideUrlAttributesSanitizedAcrossEmbeddingElements
-     */
+    #[DataProvider('provideUrlAttributesSanitizedAcrossEmbeddingElements')]
     public function testUrlAttributesAreSanitizedAcrossEmbeddingElements(string $element, string $attribute, string $input, string $expected)
     {
         $config = (new HtmlSanitizerConfig())
@@ -989,9 +986,7 @@ class HtmlSanitizerCustomTest extends TestCase
         );
     }
 
-    /**
-     * @dataProvider provideMetaRefreshContent
-     */
+    #[DataProvider('provideMetaRefreshContent')]
     public function testMetaRefreshContentGrammar(string $content, string $expected)
     {
         $config = (new HtmlSanitizerConfig())

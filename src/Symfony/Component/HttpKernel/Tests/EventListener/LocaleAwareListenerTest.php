@@ -117,6 +117,8 @@ class LocaleAwareListenerTest extends TestCase
 
     public function testLocaleSetOutsideOfTheListenerIsRestoredAfterASubRequest()
     {
+        $this->localeAwareService->expects($this->never())->method('setLocale');
+
         $service = new class implements LocaleAwareInterface {
             private string $locale = 'en';
 
@@ -150,6 +152,8 @@ class LocaleAwareListenerTest extends TestCase
 
     public function testSubRequestDoesNotFailOnAServiceWithAnUninitializedLocale()
     {
+        $this->localeAwareService->expects($this->never())->method('setLocale');
+
         $service = new class implements LocaleAwareInterface {
             private string $locale;
 
@@ -180,6 +184,8 @@ class LocaleAwareListenerTest extends TestCase
 
     public function testSubRequestDoesNotHideAnUnrelatedErrorThrownByGetLocale()
     {
+        $this->localeAwareService->expects($this->never())->method('setLocale');
+
         $service = new class implements LocaleAwareInterface {
             private ?LocaleAwareInterface $inner = null;
 

@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Security\Core\Tests\Authorization\Voter;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\ExpressionLanguage\Expression;
 use Symfony\Component\Security\Core\Authentication\AuthenticationTrustResolver;
@@ -32,9 +33,7 @@ use Symfony\Component\Security\Core\User\InMemoryUser;
 
 class ExpressionVoterTest extends TestCase
 {
-    /**
-     * @dataProvider getVoteTests
-     */
+    #[DataProvider('getVoteTests')]
     public function testVoteWithTokenThatReturnsRoleNames($roles, $attributes, $expected, $tokenExpectsGetRoles = true, $expressionLanguageExpectsEvaluate = true)
     {
         $voter = new ExpressionVoter($this->createExpressionLanguage($expressionLanguageExpectsEvaluate), $this->createTrustResolver(), $this->createAuthorizationChecker());
@@ -64,7 +63,7 @@ class ExpressionVoterTest extends TestCase
 
         $admin = new UsernamePasswordToken(new InMemoryUser('admin', null, ['ROLE_ADMIN']), 'main', ['ROLE_ADMIN']);
         $user = new UsernamePasswordToken(new InMemoryUser('user', null, ['ROLE_USER']), 'main', ['ROLE_USER']);
-        $rememberedUser = new RememberMeToken(new InMemoryUser('user', null, ['ROLE_USER']), 'main', 'secret');
+        $rememberedUser = new RememberMeToken(new InMemoryUser('user', null, ['ROLE_USER']), 'main');
 
         $this->assertSame(VoterInterface::ACCESS_GRANTED, $voter->vote($admin, null, [new Expression('is_granted("ROLE_ADMIN")')]));
 

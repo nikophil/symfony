@@ -15,6 +15,7 @@ use PHPUnit\Framework\Assert;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Security\Core\Authentication\Token\NullToken;
 use Symfony\Component\Security\Core\Authentication\Token\TokenInterface;
+use Symfony\Component\Security\Core\Authorization\AccessDecision;
 use Symfony\Component\Security\Core\Authorization\AccessDecisionManager;
 use Symfony\Component\Security\Core\Authorization\Strategy\AccessDecisionStrategyInterface;
 use Symfony\Component\Security\Core\Authorization\Voter\CacheableVoterInterface;
@@ -39,7 +40,7 @@ class AccessDecisionManagerTest extends TestCase
         ];
 
         $strategy = new class implements AccessDecisionStrategyInterface {
-            public function decide(\Traversable $results): bool
+            public function decide(\Traversable $results, ?AccessDecision $accessDecision = null): bool
             {
                 $i = 0;
                 foreach ($results as $result) {

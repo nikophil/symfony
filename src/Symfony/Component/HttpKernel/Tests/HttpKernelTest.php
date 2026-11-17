@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\HttpKernel\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\EventDispatcher\EventDispatcherInterface;
@@ -52,7 +54,7 @@ class HttpKernelTest extends TestCase
         $kernel = $this->getHttpKernel(new EventDispatcher(), static fn () => throw new \RuntimeException(), $requestStack);
 
         try {
-            $kernel->handle(new Request(), HttpKernelInterface::MASTER_REQUEST, true);
+            $kernel->handle(new Request(), HttpKernelInterface::MAIN_REQUEST, true);
         } catch (\Throwable $exception) {
         }
 
@@ -65,7 +67,7 @@ class HttpKernelTest extends TestCase
         $kernel = $this->getHttpKernel(new EventDispatcher(), static fn () => throw new \RuntimeException(), $requestStack);
 
         try {
-            $kernel->handle(new Request(), HttpKernelInterface::MASTER_REQUEST, false);
+            $kernel->handle(new Request(), HttpKernelInterface::MAIN_REQUEST, false);
         } catch (\Throwable $exception) {
         }
 
@@ -78,7 +80,7 @@ class HttpKernelTest extends TestCase
         $kernel = $this->getHttpKernel(new EventDispatcher(), static fn () => throw new \Error(), $requestStack);
 
         try {
-            $kernel->handle(new Request(), HttpKernelInterface::MASTER_REQUEST, true);
+            $kernel->handle(new Request(), HttpKernelInterface::MAIN_REQUEST, true);
         } catch (\Throwable $exception) {
         }
 
@@ -243,9 +245,7 @@ class HttpKernelTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider getSpecificStatusCodes
-     */
+    #[DataProvider('getSpecificStatusCodes')]
     public function testHandleWhenAnExceptionIsHandledWithASpecificStatusCode($expectedStatusCode)
     {
         $dispatcher = new EventDispatcher();
@@ -440,6 +440,74 @@ class HttpKernelTest extends TestCase
         $kernel->terminateWithException(new \Exception('boo'), $request = Request::create('/'));
         $this->assertSame($request, $capturedRequest);
         $this->assertNull($requestStack->getCurrentRequest());
+    }
+
+    public function testTerminateWithExceptionThrownByTerminateListener()
+    {
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(KernelEvents::TERMINATE, static fn () => throw new \RuntimeException('boo'));
+        $dispatcher->addListener(KernelEvents::EXCEPTION, static function (ExceptionEvent $event) use (&$isKernelTerminating) {
+            $isKernelTerminating[] = $event->isKernelTerminating();
+        });
+        $kernel = $this->getHttpKernel($dispatcher);
+        $request = Request::create('/');
+
+        try {
+            $kernel->terminate($request, new Response());
+        } catch (\RuntimeException $e) {
+        }
+
+        try {
+            $kernel->terminateWithException($e, $request);
+        } catch (\RuntimeException) {
+        }
+
+        try {
+            $kernel->terminateWithException(new \RuntimeException('bar'), $request);
+        } catch (\RuntimeException) {
+        }
+
+        $this->assertSame([true, false], $isKernelTerminating);
+    }
+
+    #[RunInSeparateProcess]
+    #[DataProvider('provideHeadersSent')]
+    public function testTerminateWithExceptionSendsHeadersUnlessAlreadySent(bool $headersSent)
+    {
+        require __DIR__.'/Fixtures/headers_sent.php';
+        $GLOBALS['headers_sent'] = $headersSent;
+
+        $response = new class('boo', 500) extends Response {
+            public bool $sendHeadersCalled = false;
+
+            public function sendHeaders(?int $statusCode = null): static
+            {
+                $this->sendHeadersCalled = true;
+
+                return $this;
+            }
+        };
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addListener(KernelEvents::EXCEPTION, static function (ExceptionEvent $event) use ($response) {
+            $event->setResponse($response);
+        });
+        $dispatcher->addListener(KernelEvents::TERMINATE, static function () use (&$terminated) {
+            $terminated = true;
+        });
+
+        ob_start();
+        $this->getHttpKernel($dispatcher)->terminateWithException(new \Exception('boo'), Request::create('/'));
+
+        $this->assertSame('boo', ob_get_clean());
+        $this->assertSame(!$headersSent, $response->sendHeadersCalled);
+        $this->assertTrue($terminated);
+    }
+
+    public static function provideHeadersSent(): iterable
+    {
+        yield 'headers not sent yet' => [false];
+        yield 'headers already sent' => [true];
     }
 
     public function testVerifyRequestStackPushPopDuringHandle()

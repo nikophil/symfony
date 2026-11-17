@@ -42,71 +42,27 @@ final class PersistentRememberMeHandler extends AbstractRememberMeHandler
      */
     private const DIGEST_SEPARATOR = '.';
 
-    private TokenProviderInterface $tokenProvider;
-    private ?TokenVerifierInterface $tokenVerifier;
-    private ?array $signatureProperties;
     private PropertyAccessorInterface $propertyAccessor;
 
     /**
-     * @param UserProviderInterface          $userProvider
-     * @param RequestStack                   $requestStack
-     * @param array                          $options
-     * @param LoggerInterface|null           $logger
-     * @param TokenVerifierInterface|null    $tokenVerifier
-     * @param array|null                     $signatureProperties Properties of the User; the stored token is invalidated when these properties change.
-     *                                                            Defaults to ["password"], with the properties the user does not expose being skipped
-     * @param PropertyAccessorInterface|null $propertyAccessor
+     * @param array|null $signatureProperties Properties of the User; the stored token is invalidated when these properties change.
+     *                                        Defaults to ["password"], with the properties the user does not expose being skipped
      */
-    public function __construct(TokenProviderInterface $tokenProvider, #[\SensitiveParameter] $userProvider, $requestStack, $options, $logger = null, $tokenVerifier = null, $signatureProperties = null, $propertyAccessor = null)
-    {
-        if (\is_string($userProvider)) {
-            trigger_deprecation('symfony/security-http', '6.3', 'Calling "%s()" with the secret as the second argument is deprecated. The argument will be dropped in 7.0.', __CLASS__);
-
-            $userProvider = $requestStack;
-            $requestStack = $options;
-            $options = $logger;
-            $logger = $tokenVerifier;
-            $tokenVerifier = \func_num_args() > 6 ? func_get_arg(6) : null;
-            $signatureProperties = \func_num_args() > 7 ? func_get_arg(7) : null;
-            $propertyAccessor = \func_num_args() > 8 ? func_get_arg(8) : null;
-        }
-
-        if (!$userProvider instanceof UserProviderInterface) {
-            throw new \TypeError(\sprintf('Argument 2 passed to "%s()" must be an instance of "%s", "%s" given.', __CLASS__, UserProviderInterface::class, get_debug_type($userProvider)));
-        }
-
-        if (!$requestStack instanceof RequestStack) {
-            throw new \TypeError(\sprintf('Argument 3 passed to "%s()" must be an instance of "%s", "%s" given.', __CLASS__, RequestStack::class, get_debug_type($userProvider)));
-        }
-
-        if (!\is_array($options)) {
-            throw new \TypeError(\sprintf('Argument 4 passed to "%s()" must be an array, "%s" given.', __CLASS__, get_debug_type($userProvider)));
-        }
-
-        if (null !== $logger && !$logger instanceof LoggerInterface) {
-            throw new \TypeError(\sprintf('Argument 5 passed to "%s()" must be an instance of "%s", "%s" given.', __CLASS__, LoggerInterface::class, get_debug_type($userProvider)));
-        }
-
-        if (null !== $tokenVerifier && !$tokenVerifier instanceof TokenVerifierInterface) {
-            throw new \TypeError(\sprintf('Argument 6 passed to "%s()" must be an instance of "%s", "%s" given.', __CLASS__, TokenVerifierInterface::class, get_debug_type($userProvider)));
-        }
-
-        if (null !== $signatureProperties && !\is_array($signatureProperties)) {
-            throw new \TypeError(\sprintf('Argument 7 passed to "%s()" must be an array, "%s" given.', __CLASS__, get_debug_type($signatureProperties)));
-        }
-
-        if (null !== $propertyAccessor && !$propertyAccessor instanceof PropertyAccessorInterface) {
-            throw new \TypeError(\sprintf('Argument 8 passed to "%s()" must be an instance of "%s", "%s" given.', __CLASS__, PropertyAccessorInterface::class, get_debug_type($propertyAccessor)));
-        }
-
+    public function __construct(
+        private TokenProviderInterface $tokenProvider,
+        UserProviderInterface $userProvider,
+        RequestStack $requestStack,
+        array $options,
+        ?LoggerInterface $logger = null,
+        private ?TokenVerifierInterface $tokenVerifier = null,
+        private ?array $signatureProperties = null,
+        ?PropertyAccessorInterface $propertyAccessor = null,
+    ) {
         parent::__construct($userProvider, $requestStack, $options, $logger);
 
         if (!$tokenVerifier && $tokenProvider instanceof TokenVerifierInterface) {
-            $tokenVerifier = $tokenProvider;
+            $this->tokenVerifier = $tokenProvider;
         }
-        $this->tokenProvider = $tokenProvider;
-        $this->tokenVerifier = $tokenVerifier;
-        $this->signatureProperties = $signatureProperties;
         $this->propertyAccessor = $propertyAccessor ?? PropertyAccess::createPropertyAccessor();
     }
 
@@ -118,7 +74,11 @@ final class PersistentRememberMeHandler extends AbstractRememberMeHandler
         if (null !== $digest = $this->hashSignatureProperties($user)) {
             $tokenValue .= self::DIGEST_SEPARATOR.$digest;
         }
-        $token = new PersistentToken($user::class, $user->getUserIdentifier(), $series, $tokenValue, new \DateTimeImmutable());
+        if (method_exists(PersistentToken::class, 'getClass')) {
+            $token = new PersistentToken($user::class, $user->getUserIdentifier(), $series, $tokenValue, new \DateTimeImmutable(), false);
+        } else {
+            $token = new PersistentToken($user->getUserIdentifier(), $series, $tokenValue, new \DateTimeImmutable());
+        }
 
         $this->tokenProvider->createNewToken($token);
         $this->createCookie(RememberMeDetails::fromPersistentToken($token, time() + $this->options['lifetime']));
@@ -131,9 +91,9 @@ final class PersistentRememberMeHandler extends AbstractRememberMeHandler
         }
 
         [$series, $tokenValue] = explode(':', $rememberMeDetails->getValue(), 2);
-        $persistentToken = $this->tokenProvider->loadTokenBySeries($series);
+        $token = $this->tokenProvider->loadTokenBySeries($series);
 
-        if ($persistentToken->getUserIdentifier() !== $rememberMeDetails->getUserIdentifier() || $persistentToken->getClass() !== $rememberMeDetails->getUserFqcn()) {
+        if ($token->getUserIdentifier() !== $rememberMeDetails->getUserIdentifier()) {
             throw new AuthenticationException('The cookie\'s hash is invalid.');
         }
 
@@ -141,31 +101,36 @@ final class PersistentRememberMeHandler extends AbstractRememberMeHandler
         unset($rememberMeDetails);
 
         if ($this->tokenVerifier) {
-            $isTokenValid = $this->tokenVerifier->verifyToken($persistentToken, $tokenValue);
+            $isTokenValid = $this->tokenVerifier->verifyToken($token, $tokenValue);
         } else {
-            $isTokenValid = hash_equals($persistentToken->getTokenValue(), $tokenValue);
+            $isTokenValid = hash_equals($token->getTokenValue(), $tokenValue);
         }
         if (!$isTokenValid) {
             throw new CookieTheftException('This token was already used. The account is possibly compromised.');
         }
 
-        $expires = $persistentToken->getLastUsed()->getTimestamp() + $this->options['lifetime'];
+        $expires = $token->getLastUsed()->getTimestamp() + $this->options['lifetime'];
         if ($expires < time()) {
             throw new AuthenticationException('The cookie has expired.');
         }
 
         return parent::consumeRememberMeCookie(new RememberMeDetails(
-            $persistentToken->getClass(),
-            $persistentToken->getUserIdentifier(),
+            method_exists($token, 'getClass') ? $token->getClass(false) : '',
+            $token->getUserIdentifier(),
             $expires,
-            $persistentToken->getLastUsed()->getTimestamp().':'.$series.':'.$persistentToken->getTokenValue().':'.$persistentToken->getClass()
+            $token->getLastUsed()->getTimestamp().':'.$series.':'.$token->getTokenValue().':'.(method_exists($token, 'getClass') ? $token->getClass(false) : ''),
+            false
         ));
     }
 
     public function processRememberMe(RememberMeDetails $rememberMeDetails, UserInterface $user): void
     {
         [$lastUsed, $series, $tokenValue, $class] = explode(':', $rememberMeDetails->getValue(), 4);
-        $persistentToken = new PersistentToken($class, $rememberMeDetails->getUserIdentifier(), $series, $tokenValue, new \DateTimeImmutable('@'.$lastUsed));
+        if (method_exists(PersistentToken::class, 'getClass')) {
+            $token = new PersistentToken($class, $rememberMeDetails->getUserIdentifier(), $series, $tokenValue, new \DateTimeImmutable('@'.$lastUsed), false);
+        } else {
+            $token = new PersistentToken($rememberMeDetails->getUserIdentifier(), $series, $tokenValue, new \DateTimeImmutable('@'.$lastUsed));
+        }
 
         $digest = $this->hashSignatureProperties($user);
         $storedDigest = false === ($i = strpos($tokenValue, self::DIGEST_SEPARATOR)) ? null : substr($tokenValue, $i + 1);
@@ -176,7 +141,7 @@ final class PersistentRememberMeHandler extends AbstractRememberMeHandler
 
         // if a token was regenerated less than a minute ago, there is no need to regenerate it
         // if multiple concurrent requests reauthenticate a user we do not want to update the token several times
-        if ($persistentToken->getLastUsed()->getTimestamp() + 60 >= time()) {
+        if ($token->getLastUsed()->getTimestamp() + 60 >= time()) {
             return;
         }
 
@@ -185,7 +150,7 @@ final class PersistentRememberMeHandler extends AbstractRememberMeHandler
             $tokenValue .= self::DIGEST_SEPARATOR.$digest;
         }
         $tokenLastUsed = new \DateTime();
-        $this->tokenVerifier?->updateExistingToken($persistentToken, $tokenValue, $tokenLastUsed);
+        $this->tokenVerifier?->updateExistingToken($token, $tokenValue, $tokenLastUsed);
         $this->tokenProvider->updateToken($series, $tokenValue, $tokenLastUsed);
 
         $this->createCookie($rememberMeDetails->withValue($series.':'.$tokenValue));

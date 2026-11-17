@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Scheduler\Tests\Generator;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Psr\Cache\CacheItemInterface;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
@@ -31,9 +33,7 @@ use Symfony\Component\Scheduler\Trigger\TriggerInterface;
 
 class MessageGeneratorTest extends TestCase
 {
-    /**
-     * @dataProvider messagesProvider
-     */
+    #[DataProvider('messagesProvider')]
     public function testGetMessagesFromSchedule(string $startTime, array $runs, array $schedule)
     {
         $clock = new MockClock(self::makeDateTime($startTime));
@@ -57,9 +57,7 @@ class MessageGeneratorTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider messagesProvider
-     */
+    #[DataProvider('messagesProvider')]
     public function testGetMessagesFromScheduleProvider(string $startTime, array $runs, array $schedule)
     {
         $clock = new MockClock(self::makeDateTime($startTime));
@@ -266,6 +264,100 @@ class MessageGeneratorTest extends TestCase
         $this->assertEquals(self::makeDateTime('22:13:00'), $checkpoint->time());
     }
 
+    public function testCheckpointSavedInBigBrokenLoop()
+    {
+        $clock = new MockClock(self::makeDateTime('22:15:00'));
+
+        $message = RecurringMessage::every('1 minute', (object) ['id' => 'message']);
+        $schedule = (new Schedule())->add($message);
+
+        $cache = new ArrayAdapter();
+        $schedule->stateful($cache);
+        $checkpoint = new Checkpoint('dummy', cache: $cache);
+
+        $scheduler = new MessageGenerator($schedule, 'dummy', clock: $clock, checkpoint: $checkpoint);
+
+        // Warmup. The first run always returns nothing.
+        $this->assertSame([], iterator_to_array($scheduler->getMessages(), false));
+        $this->assertEquals(self::makeDateTime('22:15:00'), $checkpoint->time());
+
+        $clock->sleep(60 + 10); // 22:16:10
+
+        $this->assertCount(1, iterator_to_array($scheduler->getMessages(), false));
+
+        $clock->sleep(2 * 60); // 22:18:10
+
+        $this->assertCount(2, iterator_to_array($scheduler->getMessages(), false));
+
+        $clock->sleep(5 * 60); // 22:23:10
+
+        $this->assertCount(5, iterator_to_array($scheduler->getMessages(), false));
+
+        $this->assertEquals(self::makeDateTime('22:23:00'), $checkpoint->time());
+    }
+
+    public function testCheckpointSavedInBigBrokenLoopWithOnlyLastMissed()
+    {
+        $clock = new MockClock(self::makeDateTime('22:15:00'));
+
+        $message = RecurringMessage::every('1 minute', (object) ['id' => 'message'], until: self::makeDateTime('22:23:00'));
+        $schedule = (new Schedule())->add($message);
+
+        $cache = new ArrayAdapter();
+        $schedule->stateful($cache)->processOnlyLastMissedRun(true);
+        $checkpoint = new Checkpoint('dummy', cache: $cache);
+
+        $scheduler = new MessageGenerator($schedule, 'dummy', clock: $clock, checkpoint: $checkpoint);
+
+        // Warmup. The first run always returns nothing.
+        $this->assertSame([], iterator_to_array($scheduler->getMessages(), false));
+        $this->assertEquals(self::makeDateTime('22:15:00'), $clock->now());
+
+        $clock->sleep(60 + 10); // 22:16:10
+        $this->assertCount(1, iterator_to_array($scheduler->getMessages(), false));
+
+        $clock->sleep(2 * 60); // 22:18:10
+        $this->assertCount(1, iterator_to_array($scheduler->getMessages(), false));
+
+        $clock->sleep(5 * 60); // 22:23:10
+        $this->assertCount(1, iterator_to_array($scheduler->getMessages(), false));
+
+        $this->assertEquals(self::makeDateTime('22:23:10'), $clock->now());
+    }
+
+    public function testOnlyLastMissedRunIsProcessedByANewGeneratorAfterARecordedRun()
+    {
+        $clock = new MockClock(self::makeDateTime('22:12:30'));
+        $cache = new ArrayAdapter();
+        $createGenerator = static fn () => new MessageGenerator((new Schedule())->add(RecurringMessage::every('1 minute', (object) ['id' => 'message'], self::makeDateTime('22:12:00')))->stateful($cache)->processOnlyLastMissedRun(true), 'dummy', $clock);
+        $getRunTimes = static function (MessageGenerator $generator): array {
+            $runTimes = [];
+            foreach ($generator->getMessages() as $context => $message) {
+                $runTimes[] = $context->triggeredAt->format('H:i');
+            }
+
+            return $runTimes;
+        };
+
+        $generator = $createGenerator();
+        $this->assertSame([], $getRunTimes($generator));
+        $clock->sleep(31);
+        $this->assertSame(['22:13'], $getRunTimes($generator));
+
+        $clock->sleep(60);
+        $this->assertSame(['22:14'], $getRunTimes($createGenerator()));
+
+        $clock->sleep(3 * 60);
+        $generator = $createGenerator();
+        $this->assertSame(['22:17'], $getRunTimes($generator));
+
+        $clock->sleep(3 * 60);
+        $this->assertSame(['22:20'], $getRunTimes($generator));
+
+        $clock->sleep(10);
+        $this->assertSame([], $getRunTimes($createGenerator()));
+    }
+
     public function testCheckpointWithMultipleRecurringMessagesAtSameTriggerTime()
     {
         $clock = new MockClock(self::makeDateTime('22:12:00'));
@@ -308,10 +400,8 @@ class MessageGeneratorTest extends TestCase
         $this->assertSame([$second], iterator_to_array($scheduler2->getMessages(), false));
     }
 
-    /**
-     * @testWith ["readonly"]
-     *           ["dead"]
-     */
+    #[TestWith(['readonly'])]
+    #[TestWith(['dead'])]
     public function testNothingIsDispatchedWhileStateCannotBeSaved(string $failure)
     {
         $clock = new MockClock(self::makeDateTime('22:12:00'));

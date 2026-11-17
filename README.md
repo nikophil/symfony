@@ -17,19 +17,30 @@ Installation
 Sponsor
 -------
 
-Symfony 6.4 is [backed][27] by
-- [SensioLabs][28]
-- [packagist.com][29]
+Symfony 7.4 is backed by:
+
+- [SensioLabs][27]
+- [Private Packagist][28]
+- [redirection.io][29]
+- [JoliCode][30]
 
 As the creator of Symfony, **SensioLabs** supports companies using Symfony,
 with an offering encompassing consultancy, expertise, services, training, and
 technical assistance to ensure the success of web application development projects.
 
-Private **Packagist.com** is a fast, reliable, and secure Composer repository for
-your private packages. It mirrors all your open-source dependencies for better
+**Private Packagist** is a fast, reliable, and secure Composer repository for your
+private packages. It mirrors all your open-source dependencies for better
 availability and monitors them for security vulnerabilities.
 
-Help Symfony by [sponsoring][30] its development!
+**redirection.io** logs all your website’s HTTP traffic, and lets you fix errors with
+redirect rules in seconds. Give your marketing, SEO and IT teams the right tool to
+manage your website traffic efficiently!
+
+**JoliCode** is a team of passionate developers and open-source lovers, with a
+strong expertise in PHP & Symfony technologies. They can help you build your projects
+using state-of-the-art practices.
+
+Help Symfony by [sponsoring][31] its development!
 
 Documentation
 -------------
@@ -91,7 +102,8 @@ and supported by [Symfony contributors][19].
 [24]: https://symfony.com/coc
 [25]: https://symfony.com/doc/current/contributing/code_of_conduct/care_team.html
 [26]: https://symfony.com/book
-[27]: https://symfony.com/backers
-[28]: https://sensiolabs.com
-[29]: https://packagist.com
-[30]: https://symfony.com/sponsor
+[27]: https://sensiolabs.com
+[28]: https://packagist.com/
+[29]: https://redirection.io
+[30]: https://jolicode.com
+[31]: https://symfony.com/sponsor

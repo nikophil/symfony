@@ -45,7 +45,7 @@ class TokenProcessorTest extends TestCase
     {
         $innerRecord = RecordFactory::create();
 
-        $tokenStorage = $this->createMock(TokenStorageInterface::class);
+        $tokenStorage = $this->createStub(TokenStorageInterface::class);
         $processor = new TokenProcessor($tokenStorage);
 
         $tokenStorage->method('getToken')

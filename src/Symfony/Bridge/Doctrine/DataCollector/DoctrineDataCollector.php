@@ -11,7 +11,6 @@
 
 namespace Symfony\Bridge\Doctrine\DataCollector;
 
-use Doctrine\DBAL\Logging\DebugStack;
 use Doctrine\DBAL\Types\ConversionException;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\Persistence\ManagerRegistry;
@@ -35,41 +34,15 @@ class DoctrineDataCollector extends DataCollector implements LateDataCollectorIn
     private ?\stdClass $collectState = null;
     private int $collectIndex = 0;
 
-    /**
-     * @var array<string, DebugStack>
-     */
-    private array $loggers = [];
-
     public function __construct(
         private ManagerRegistry $registry,
-        private ?DebugDataHolder $debugDataHolder = null,
+        private DebugDataHolder $debugDataHolder,
     ) {
         $this->connections = $registry->getConnectionNames();
         $this->managers = $registry->getManagerNames();
-
-        if (null === $debugDataHolder) {
-            trigger_deprecation('symfony/doctrine-bridge', '6.4', 'Not passing an instance of "%s" as "$debugDataHolder" to "%s()" is deprecated.', DebugDataHolder::class, __METHOD__);
-        }
     }
 
-    /**
-     * Adds the stack logger for a connection.
-     *
-     * @return void
-     *
-     * @deprecated since Symfony 6.4, use a DebugDataHolder instead.
-     */
-    public function addLogger(string $name, DebugStack $logger)
-    {
-        trigger_deprecation('symfony/doctrine-bridge', '6.4', '"%s()" is deprecated. Pass an instance of "%s" to the constructor instead.', __METHOD__, DebugDataHolder::class);
-
-        $this->loggers[$name] = $logger;
-    }
-
-    /**
-     * @return void
-     */
-    public function collect(Request $request, Response $response, ?\Throwable $exception = null)
+    public function collect(Request $request, Response $response, ?\Throwable $exception = null): void
     {
         $this->collectState ??= (object) ['index' => 0];
         $this->collectIndex = ++$this->collectState->index;
@@ -91,80 +64,44 @@ class DoctrineDataCollector extends DataCollector implements LateDataCollectorIn
     {
         $queries = [];
 
-        if (null !== $this->debugDataHolder) {
-            foreach ($this->debugDataHolder->getData() as $name => $data) {
-                $queries[$name] = $this->sanitizeQueries($name, $data);
-            }
-
-            return $queries;
-        }
-
-        foreach ($this->loggers as $name => $logger) {
-            $queries[$name] = $this->sanitizeQueries($name, $logger->queries);
+        foreach ($this->debugDataHolder->getData() as $name => $data) {
+            $queries[$name] = $this->sanitizeQueries($name, $data);
         }
 
         return $queries;
     }
 
-    /**
-     * @return void
-     */
-    public function reset()
+    public function reset(): void
     {
         if ($this->collectState) {
             $this->collectState->index = 0;
             $this->collectState = null;
         }
         $this->data = [];
-
-        if (null !== $this->debugDataHolder) {
-            $this->debugDataHolder->reset();
-
-            return;
-        }
-
-        foreach ($this->loggers as $logger) {
-            $logger->queries = [];
-            $logger->currentQuery = 0;
-        }
+        $this->debugDataHolder->reset();
     }
 
-    /**
-     * @return array
-     */
-    public function getManagers()
+    public function getManagers(): array
     {
         return $this->data['managers'];
     }
 
-    /**
-     * @return array
-     */
-    public function getConnections()
+    public function getConnections(): array
     {
         return $this->data['connections'];
     }
 
-    /**
-     * @return int
-     */
-    public function getQueryCount()
+    public function getQueryCount(): int
     {
         return array_sum(array_map('count', $this->data['queries']));
     }
 
-    /**
-     * @return array
-     */
-    public function getQueries()
+    public function getQueries(): array
     {
         return $this->data['queries'];
     }
 
-    /**
-     * @return float
-     */
-    public function getTime()
+    public function getTime(): float
     {
         $time = 0;
         foreach ($this->data['queries'] as $queries) {
@@ -246,8 +183,7 @@ class DoctrineDataCollector extends DataCollector implements LateDataCollectorIn
                     $query['types'][$j] = $type->getBindingType();
                     try {
                         $param = $type->convertToDatabaseValue($param, $connection->getDatabasePlatform());
-                    } catch (\TypeError $e) {
-                    } catch (ConversionException $e) {
+                    } catch (\TypeError|ConversionException) {
                     }
                 }
             }

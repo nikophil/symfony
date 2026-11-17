@@ -24,6 +24,7 @@ use Symfony\Component\HttpKernel\Fragment\FragmentHandler;
 use Symfony\Component\HttpKernel\Fragment\FragmentRendererInterface;
 use Symfony\Component\HttpKernel\Fragment\FragmentUriGenerator;
 use Twig\Environment;
+use Twig\Error\RuntimeError;
 use Twig\Loader\ArrayLoader;
 use Twig\RuntimeLoader\ContainerRuntimeLoader;
 
@@ -33,7 +34,7 @@ class HttpKernelExtensionTest extends TestCase
     {
         $renderer = $this->getFragmentHandler(new \Exception('foo'));
 
-        $this->expectException(\Twig\Error\RuntimeError::class);
+        $this->expectException(RuntimeError::class);
 
         $this->renderTemplate($renderer);
     }
@@ -49,8 +50,7 @@ class HttpKernelExtensionTest extends TestCase
 
     public function testUnknownFragmentRenderer()
     {
-        $context = $this->createMock(RequestStack::class);
-        $renderer = new FragmentHandler($context);
+        $renderer = new FragmentHandler(new RequestStack());
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('The "inline" renderer does not exist.');
@@ -83,7 +83,7 @@ class HttpKernelExtensionTest extends TestCase
         ]));
         $twig->addRuntimeLoader($loader);
 
-        $this->assertMatchesRegularExpression('#/_fragment\?_hash=.+&amp;_path=template%3Dfoo.html.twig%26_format%3Dhtml%26_locale%3Den%26_controller%3DSymfony%255CBundle%255CFrameworkBundle%255CController%255CTemplateController%253A%253AtemplateAction$#', $twig->render('index'));
+        $this->assertMatchesRegularExpression('#/_fragment\?(?:_expiration=.+&amp;)?_hash=.+&amp;_path=template%3Dfoo.html.twig%26_format%3Dhtml%26_locale%3Den%26_controller%3DSymfony%255CBundle%255CFrameworkBundle%255CController%255CTemplateController%253A%253AtemplateAction$#', $twig->render('index'));
     }
 
     protected function getFragmentHandler($returnOrException): FragmentHandler
@@ -98,9 +98,9 @@ class HttpKernelExtensionTest extends TestCase
             $mocker->willReturn($returnOrException);
         }
 
-        $context = $this->createMock(RequestStack::class);
+        $context = new RequestStack();
 
-        $context->expects($this->any())->method('getCurrentRequest')->willReturn(Request::create('/'));
+        $context->push(Request::create('/'));
 
         return new FragmentHandler($context, [$strategy], false);
     }

@@ -11,8 +11,10 @@
 
 namespace Symfony\Bridge\PhpUnit\Tests;
 
+use PHPUnit\Framework\Attributes\RequiresPhpunit;
 use PHPUnit\Framework\TestCase;
 
+#[RequiresPhpunit('<10.0.0')]
 class SymfonyTestsListenerTest extends TestCase
 {
     public function testStderrDoesNotCorruptJunitOutput()

@@ -17,6 +17,7 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Completion\CompletionInput;
 use Symfony\Component\Console\Completion\CompletionSuggestions;
 use Symfony\Component\Console\Exception\RuntimeException;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -39,21 +40,20 @@ class XliffLintCommand extends Command
     private bool $displayCorrectFiles;
     private ?\Closure $directoryIteratorProvider;
     private ?\Closure $isReadableProvider;
-    private bool $requireStrictFileNames;
 
-    public function __construct(?string $name = null, ?callable $directoryIteratorProvider = null, ?callable $isReadableProvider = null, bool $requireStrictFileNames = true)
-    {
+    public function __construct(
+        ?string $name = null,
+        ?callable $directoryIteratorProvider = null,
+        ?callable $isReadableProvider = null,
+        private bool $requireStrictFileNames = true,
+    ) {
         parent::__construct($name);
 
         $this->directoryIteratorProvider = null === $directoryIteratorProvider ? null : $directoryIteratorProvider(...);
         $this->isReadableProvider = null === $isReadableProvider ? null : $isReadableProvider(...);
-        $this->requireStrictFileNames = $requireStrictFileNames;
     }
 
-    /**
-     * @return void
-     */
-    protected function configure()
+    protected function configure(): void
     {
         $this
             ->addArgument('filename', InputArgument::IS_ARRAY, 'A file, a directory or "-" for reading from STDIN')
@@ -73,6 +73,9 @@ class XliffLintCommand extends Command
                 Or of a whole directory:
 
                   <info>php %command.full_name% dirname</info>
+
+                The <info>--format</info> option specifies the format of the command output:
+
                   <info>php %command.full_name% dirname --format=json</info>
 
                 EOF
@@ -172,17 +175,17 @@ class XliffLintCommand extends Command
 
         foreach ($filesInfo as $info) {
             if ($info['valid'] && $this->displayCorrectFiles) {
-                $io->comment('<info>OK</info>'.($info['file'] ? \sprintf(' in %s', $info['file']) : ''));
+                $io->comment('<info>OK</info>'.($info['file'] ? \sprintf(' in %s', OutputFormatter::escape($info['file'])) : ''));
             } elseif (!$info['valid']) {
                 ++$erroredFiles;
-                $io->text('<error> ERROR </error>'.($info['file'] ? \sprintf(' in %s', $info['file']) : ''));
+                $io->text('<error> ERROR </error>'.($info['file'] ? \sprintf(' in %s', OutputFormatter::escape($info['file'])) : ''));
                 $io->listing(array_map(static function ($error) use ($info, $githubReporter) {
                     // general document errors have a '-1' line number
                     $line = -1 === $error['line'] ? null : $error['line'];
 
                     $githubReporter?->error($error['message'], $info['file'], $line, null !== $line ? $error['column'] : null);
 
-                    return null === $line ? $error['message'] : \sprintf('Line %d, Column %d: %s', $line, $error['column'], $error['message']);
+                    return OutputFormatter::escape(null === $line ? $error['message'] : \sprintf('Line %d, Column %d: %s', $line, $error['column'], $error['message']));
                 }, $info['messages']));
             }
         }
@@ -207,7 +210,7 @@ class XliffLintCommand extends Command
             }
         });
 
-        $io->writeln(json_encode($filesInfo, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES));
+        $io->writeln(json_encode($filesInfo, \JSON_PRETTY_PRINT | \JSON_UNESCAPED_SLASHES | \JSON_INVALID_UTF8_SUBSTITUTE), OutputInterface::OUTPUT_RAW);
 
         return min($errors, 1);
     }
@@ -224,7 +227,7 @@ class XliffLintCommand extends Command
         }
 
         foreach ($this->getDirectoryIterator($fileOrDirectory) as $file) {
-            if (!\in_array($file->getExtension(), ['xlf', 'xliff'])) {
+            if (!\in_array($file->getExtension(), ['xlf', 'xliff'], true)) {
                 continue;
             }
 
@@ -279,6 +282,7 @@ class XliffLintCommand extends Command
         }
     }
 
+    /** @return string[] */
     private function getAvailableFormatOptions(): array
     {
         return ['txt', 'json', 'github'];

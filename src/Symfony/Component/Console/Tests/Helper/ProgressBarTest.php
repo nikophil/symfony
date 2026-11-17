@@ -11,16 +11,17 @@
 
 namespace Symfony\Component\Console\Tests\Helper;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Console\Exception\LogicException;
 use Symfony\Component\Console\Formatter\OutputFormatter;
 use Symfony\Component\Console\Helper\Helper;
 use Symfony\Component\Console\Helper\ProgressBar;
 use Symfony\Component\Console\Output\ConsoleSectionOutput;
 use Symfony\Component\Console\Output\StreamOutput;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class ProgressBarTest extends TestCase
 {
     private string|false $colSize;
@@ -1096,8 +1097,8 @@ And, as in uffish thought he stood, The Jabberwock, with eyes of flame, Came whi
 
         rewind($output->getStream());
         $this->assertEquals(
-            ' 0/2 [>---------------------------]   0% < 1 sec'.\PHP_EOL.
-            ' 2/2 [============================] 100% < 1 sec',
+            ' 0/2 [>---------------------------]   0% < 1 ms'.\PHP_EOL.
+            ' 2/2 [============================] 100% < 1 ms',
             stream_get_contents($output->getStream())
         );
     }
@@ -1386,7 +1387,7 @@ And, as in uffish thought he stood, The Jabberwock, with eyes of flame, Came whi
         $this->assertEquals(
             " \033[44;37m Starting the demo... fingers crossed  \033[0m\n".
             '  0/15 '.$progress.str_repeat($empty, 26)."   0%\n".
-            " \xf0\x9f\x8f\x81  < 1 sec                        \033[44;37m 0 B \033[0m",
+            " \xf0\x9f\x8f\x81  < 1 ms                         \033[44;37m 0 B \033[0m",
             stream_get_contents($output->getStream())
         );
         ftruncate($output->getStream(), 0);
@@ -1400,7 +1401,7 @@ And, as in uffish thought he stood, The Jabberwock, with eyes of flame, Came whi
             $this->generateOutput(
                 " \033[44;37m Looks good to me...                   \033[0m\n".
                 '  4/15 '.str_repeat($done, 7).$progress.str_repeat($empty, 19)."  26%\n".
-                " \xf0\x9f\x8f\x81  < 1 sec                     \033[41;37m 97 KiB \033[0m"
+                " \xf0\x9f\x8f\x81  < 1 ms                      \033[41;37m 97 KiB \033[0m"
             ),
             stream_get_contents($output->getStream())
         );
@@ -1415,7 +1416,7 @@ And, as in uffish thought he stood, The Jabberwock, with eyes of flame, Came whi
             $this->generateOutput(
                 " \033[44;37m Thanks, bye                           \033[0m\n".
                 ' 15/15 '.str_repeat($done, 28)." 100%\n".
-                " \xf0\x9f\x8f\x81  < 1 sec                    \033[41;37m 195 KiB \033[0m"
+                " \xf0\x9f\x8f\x81  < 1 ms                     \033[41;37m 195 KiB \033[0m"
             ),
             stream_get_contents($output->getStream())
         );
@@ -1450,7 +1451,7 @@ And, as in uffish thought he stood, The Jabberwock, with eyes of flame, Came whi
         $bar->start();
         rewind($output->getStream());
         $this->assertEquals(
-            ' 0/15 [>---------------------------]   0% < 1 sec/< 1 sec/< 1 sec',
+            ' 0/15 [>---------------------------]   0% < 1 ms/< 1 ms/< 1 ms',
             stream_get_contents($output->getStream())
         );
     }
@@ -1481,9 +1482,7 @@ And, as in uffish thought he stood, The Jabberwock, with eyes of flame, Came whi
         $this->assertStringContainsString(' 27/28 [============================>]  96%', stream_get_contents($output->getStream()));
     }
 
-    /**
-     * @dataProvider provideFormat
-     */
+    #[DataProvider('provideFormat')]
     public function testFormatsWithoutMax($format)
     {
         $bar = new ProgressBar($output = $this->getOutputStream(), 0, 0);
@@ -1537,6 +1536,98 @@ And, as in uffish thought he stood, The Jabberwock, with eyes of flame, Came whi
             $this->generateOutput('    1 [->--------------------------]').
             $this->generateOutput('    2 [-->-------------------------]').
             $this->generateOutput('    2 [============================]'),
+            stream_get_contents($output->getStream())
+        );
+    }
+
+    public function testIterateUncountableAfterCountable()
+    {
+        $bar = new ProgressBar($output = $this->getOutputStream(), 0, 0);
+
+        $this->assertEquals([1, 2], iterator_to_array($bar->iterate([1, 2])));
+        $this->assertEquals([1, 2, 3], iterator_to_array($bar->iterate((static function () {
+            yield 1;
+            yield 2;
+            yield 3;
+        })())));
+
+        rewind($output->getStream());
+        $this->assertEquals(
+            ' 0/2 [>---------------------------]   0%'.
+            $this->generateOutput(' 1/2 [==============>-------------]  50%').
+            $this->generateOutput(' 2/2 [============================] 100%').
+            $this->generateOutput('    0 [>---------------------------]').
+            $this->generateOutput('    1 [->--------------------------]').
+            $this->generateOutput('    2 [-->-------------------------]').
+            $this->generateOutput('    3 [--->------------------------]').
+            $this->generateOutput('    3 [============================]'),
+            stream_get_contents($output->getStream())
+        );
+    }
+
+    public function testIterateUncountableAfterEmpty()
+    {
+        $bar = new ProgressBar($output = $this->getOutputStream(), 0, 0);
+
+        $this->assertEquals([], iterator_to_array($bar->iterate([])));
+        $this->assertEquals([1, 2], iterator_to_array($bar->iterate((static function () {
+            yield 1;
+            yield 2;
+        })())));
+
+        rewind($output->getStream());
+        $this->assertEquals(
+            '  0 [============================]'.
+            $this->generateOutput('    0 [>---------------------------]').
+            $this->generateOutput('    1 [->--------------------------]').
+            $this->generateOutput('    2 [-->-------------------------]').
+            $this->generateOutput('    2 [============================]'),
+            stream_get_contents($output->getStream())
+        );
+    }
+
+    public function testIterateUncountableKeepsMaxSetByUser()
+    {
+        $bar = new ProgressBar($output = $this->getOutputStream(), 10, 0);
+        $generator = static function () {
+            yield 1;
+            yield 2;
+        };
+
+        $this->assertEquals([1, 2], iterator_to_array($bar->iterate($generator())));
+
+        rewind($output->getStream());
+        $this->assertEquals(
+            '  0/10 [>---------------------------]   0%'.
+            $this->generateOutput('  1/10 [==>-------------------------]  10%').
+            $this->generateOutput('  2/10 [=====>----------------------]  20%').
+            $this->generateOutput(' 10/10 [============================] 100%'),
+            stream_get_contents($output->getStream())
+        );
+
+        iterator_to_array($bar->iterate($generator()));
+        $this->assertSame(10, $bar->getMaxSteps());
+
+        iterator_to_array($bar->iterate([1, 2]));
+        $bar->setMaxSteps(5);
+        iterator_to_array($bar->iterate($generator()));
+        $this->assertSame(5, $bar->getMaxSteps());
+
+        iterator_to_array($bar->iterate([1, 2], 3));
+        iterator_to_array($bar->iterate($generator()));
+        $this->assertSame(3, $bar->getMaxSteps());
+    }
+
+    public function testEmptyInputWithDebugFormat()
+    {
+        $bar = new ProgressBar($output = $this->getOutputStream());
+        $bar->setFormat('%current%/%max% [%bar%] %percent:3s%% %elapsed:6s%/%estimated:-6s%');
+
+        $this->assertEquals([], iterator_to_array($bar->iterate([])));
+
+        rewind($output->getStream());
+        $this->assertEquals(
+            ' 0/0 [============================] 100% < 1 ms/< 1 ms',
             stream_get_contents($output->getStream())
         );
     }
@@ -1712,7 +1803,7 @@ And, as in uffish thought he stood, The Jabberwock, with eyes of flame, Came whi
             'Foo!'.\PHP_EOL.
             $this->generateOutput('[--->------------------------]').
             "\nProcessing \"foobar\"...".
-            $this->generateOutput("[----->----------------------]\nProcessing \"foobar\"..."),
+            $this->generateOutput("[============================]\nProcessing \"foobar\"..."),
             stream_get_contents($output->getStream())
         );
     }
@@ -1722,5 +1813,25 @@ And, as in uffish thought he stood, The Jabberwock, with eyes of flame, Came whi
         $progressBar = new ProgressBar($this->getOutputStream());
 
         $this->assertNull($progressBar->getMessage());
+    }
+
+    public function testRemainingWithoutMaxThrowsLogicException()
+    {
+        $this->expectException(LogicException::class);
+
+        $bar = new ProgressBar($this->getOutputStream());
+        $bar->setFormat('%remaining%');
+        $bar->start();
+        $bar->advance();
+    }
+
+    public function testEstimatedWithoutMaxThrowsLogicException()
+    {
+        $this->expectException(LogicException::class);
+
+        $bar = new ProgressBar($this->getOutputStream());
+        $bar->setFormat('%estimated%');
+        $bar->start();
+        $bar->advance();
     }
 }

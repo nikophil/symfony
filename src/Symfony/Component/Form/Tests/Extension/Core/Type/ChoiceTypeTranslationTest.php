@@ -13,12 +13,13 @@ namespace Symfony\Component\Form\Tests\Extension\Core\Type;
 
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Form\Extension\Core\CoreExtension;
+use Symfony\Component\Form\Extension\Core\Type\ChoiceType;
 use Symfony\Component\Form\Test\TypeTestCase;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
 class ChoiceTypeTranslationTest extends TypeTestCase
 {
-    public const TESTED_TYPE = 'Symfony\Component\Form\Extension\Core\Type\ChoiceType';
+    public const TESTED_TYPE = ChoiceType::class;
 
     private array $choices = [
         'Bernhard' => 'a',
@@ -35,7 +36,7 @@ class ChoiceTypeTranslationTest extends TypeTestCase
         parent::setUp();
     }
 
-    protected function getExtensions()
+    protected function getExtensions(): array
     {
         $translator = $this->createStub(TranslatorInterface::class);
         $translator->method('trans')

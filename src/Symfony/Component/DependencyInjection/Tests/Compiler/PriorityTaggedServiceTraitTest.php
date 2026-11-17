@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\DependencyInjection\Tests\Compiler;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\Attribute\AsTaggedItem;
@@ -197,9 +198,7 @@ class PriorityTaggedServiceTraitTest extends TestCase
         $this->assertEquals($expected, $priorityTaggedServiceTraitImplementation->test($tag, $container));
     }
 
-    /**
-     * @dataProvider provideInvalidDefaultMethods
-     */
+    #[DataProvider('provideInvalidDefaultMethods')]
     public function testTheIndexedTagsByDefaultIndexMethodFailure(string $defaultIndexMethod, ?string $indexAttribute, string $expectedExceptionMessage)
     {
         $this->expectException(InvalidArgumentException::class);
@@ -244,6 +243,9 @@ class PriorityTaggedServiceTraitTest extends TestCase
         $container->register('service5', HelloNamedService2::class)
             ->setAutoconfigured(true)
             ->addTag('my_custom_tag');
+        $container->register('service6', MultiTagHelloNamedService::class)
+            ->setAutoconfigured(true)
+            ->addTag('my_custom_tag');
 
         (new ResolveInstanceofConditionalsPass())->process($container);
 
@@ -252,12 +254,240 @@ class PriorityTaggedServiceTraitTest extends TestCase
         $tag = new TaggedIteratorArgument('my_custom_tag', 'foo', 'getFooBar', exclude: ['service4', 'service5']);
         $expected = [
             'service3' => new TypedReference('service3', HelloNamedService2::class),
+            'multi_hello_2' => new TypedReference('service6', MultiTagHelloNamedService::class),
             'hello' => new TypedReference('service2', HelloNamedService::class),
+            'multi_hello_1' => new TypedReference('service6', MultiTagHelloNamedService::class),
             'service1' => new TypedReference('service1', FooTagClass::class),
+            'multi_hello_0' => new TypedReference('service6', MultiTagHelloNamedService::class),
+        ];
+
+        $services = $priorityTaggedServiceTraitImplementation->test($tag, $container);
+        $this->assertSame(array_keys($expected), array_keys($services));
+        $this->assertEquals($expected, $priorityTaggedServiceTraitImplementation->test($tag, $container));
+    }
+
+    public function testResolveIndexedTags()
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('custom_param_service1', 'bar');
+        $container->setParameter('custom_param_service2', 'baz');
+        $container->setParameter('custom_param_service2_empty', '');
+        $container->setParameter('custom_param_service2_null', null);
+        $container->register('service1')->addTag('my_custom_tag', ['foo' => '%custom_param_service1%']);
+
+        $definition = $container->register('service2', BarTagClass::class);
+        $definition->addTag('my_custom_tag', ['foo' => '%custom_param_service2%', 'priority' => 100]);
+        $definition->addTag('my_custom_tag', ['foo' => '%custom_param_service2_empty%']);
+        $definition->addTag('my_custom_tag', ['foo' => '%custom_param_service2_null%']);
+
+        $priorityTaggedServiceTraitImplementation = new PriorityTaggedServiceTraitImplementation();
+
+        $tag = new TaggedIteratorArgument('my_custom_tag', 'foo', 'getFooBar');
+        $expected = [
+            'baz' => new TypedReference('service2', BarTagClass::class),
+            'bar' => new Reference('service1'),
+            '' => new TypedReference('service2', BarTagClass::class),
+            'bar_tab_class_with_defaultmethod' => new TypedReference('service2', BarTagClass::class),
         ];
         $services = $priorityTaggedServiceTraitImplementation->test($tag, $container);
         $this->assertSame(array_keys($expected), array_keys($services));
         $this->assertEquals($expected, $priorityTaggedServiceTraitImplementation->test($tag, $container));
+    }
+
+    public function testAttributesAreMergedWithTags()
+    {
+        $container = new ContainerBuilder();
+        $definition = $container->register('service_attr_first', MultiTagHelloNamedService::class);
+        $definition->setAutoconfigured(true);
+        $definition->addTag('my_custom_tag', ['foo' => 'z']);
+        $definition->addTag('my_custom_tag', []);
+
+        (new ResolveInstanceofConditionalsPass())->process($container);
+
+        $priorityTaggedServiceTraitImplementation = new PriorityTaggedServiceTraitImplementation();
+
+        $tag = new TaggedIteratorArgument('my_custom_tag', 'foo', 'getFooBar');
+        $services = $priorityTaggedServiceTraitImplementation->test($tag, $container);
+
+        $expected = [
+            'multi_hello_2' => new TypedReference('service_attr_first', MultiTagHelloNamedService::class),
+            'multi_hello_1' => new TypedReference('service_attr_first', MultiTagHelloNamedService::class),
+            'z' => new TypedReference('service_attr_first', MultiTagHelloNamedService::class),
+            'multi_hello_0' => new TypedReference('service_attr_first', MultiTagHelloNamedService::class),
+        ];
+        $this->assertSame(array_keys($expected), array_keys($services));
+        $this->assertEquals($expected, $services);
+    }
+
+    public function testAttributesAreFallbacks()
+    {
+        $container = new ContainerBuilder();
+        $definition = $container->register('service_attr_first', MultiTagHelloNamedService::class);
+        $definition->setAutoconfigured(true);
+        $definition->addTag('my_custom_tag', ['foo' => 'z']);
+
+        (new ResolveInstanceofConditionalsPass())->process($container);
+
+        $priorityTaggedServiceTraitImplementation = new PriorityTaggedServiceTraitImplementation();
+
+        $tag = new TaggedIteratorArgument('my_custom_tag', 'foo', 'getFooBar');
+        $services = $priorityTaggedServiceTraitImplementation->test($tag, $container);
+
+        $this->assertEquals(['z' => new TypedReference('service_attr_first', MultiTagHelloNamedService::class)], $services);
+    }
+
+    public function testTaggedIteratorWithDefaultNameMethod()
+    {
+        $container = new ContainerBuilder();
+        $container->register('service', ClassWithDefaultNameMethod::class)->addTag('my_custom_tag');
+
+        $priorityTaggedServiceTraitImplementation = new PriorityTaggedServiceTraitImplementation();
+
+        $tag = new TaggedIteratorArgument('my_custom_tag');
+        $services = $priorityTaggedServiceTraitImplementation->test($tag, $container);
+        $this->assertEquals([new Reference('service')], $services);
+    }
+
+    public function testIndexedIteratorUsesTagAttributeOverDefaultMethod()
+    {
+        $container = new ContainerBuilder();
+        $container->register('service.a', ServiceWithStaticGetType::class)
+            ->addTag('my_tag', ['type' => 'from_tag']);
+
+        $priorityTaggedServiceTraitImplementation = new PriorityTaggedServiceTraitImplementation();
+
+        $tag = new TaggedIteratorArgument('my_tag', 'type', 'getType');
+        $services = $priorityTaggedServiceTraitImplementation->test($tag, $container);
+
+        $this->assertArrayHasKey('from_tag', $services);
+        $this->assertArrayNotHasKey('from_static_method', $services);
+        $this->assertInstanceOf(TypedReference::class, $services['from_tag']);
+        $this->assertSame('service.a', (string) $services['from_tag']);
+    }
+
+    public function testIndexedIteratorUsesDefaultMethodAsFallback()
+    {
+        $container = new ContainerBuilder();
+        $container->register('service.a', ServiceWithStaticGetType::class)
+            ->addTag('my_tag');
+
+        $priorityTaggedServiceTraitImplementation = new PriorityTaggedServiceTraitImplementation();
+
+        $tag = new TaggedIteratorArgument('my_tag', 'type', 'getType');
+        $services = $priorityTaggedServiceTraitImplementation->test($tag, $container);
+
+        $this->assertArrayHasKey('from_static_method', $services);
+        $this->assertArrayNotHasKey('from_tag', $services);
+        $this->assertInstanceOf(TypedReference::class, $services['from_static_method']);
+    }
+
+    public function testIndexedIteratorUsesTagIndexAndDefaultPriorityMethod()
+    {
+        $container = new ContainerBuilder();
+
+        $container->register('service.a', ServiceWithStaticPriority::class)
+            ->addTag('my_tag', ['type' => 'tag_index']);
+
+        $container->register('service.b', \stdClass::class)
+            ->addTag('my_tag', ['type' => 'another_index']);
+
+        $priorityTaggedServiceTraitImplementation = new PriorityTaggedServiceTraitImplementation();
+
+        $tag = new TaggedIteratorArgument('my_tag', 'type', null, 'getPriority');
+        $services = $priorityTaggedServiceTraitImplementation->test($tag, $container);
+
+        $this->assertArrayHasKey('tag_index', $services);
+        $this->assertSame('service.a', (string) $services['tag_index']);
+
+        $this->assertSame(['tag_index', 'another_index'], array_keys($services));
+    }
+
+    public function testTaggedLocatorWithProvidedIndexAttributeAndNonStaticDefaultIndexMethod()
+    {
+        $container = new ContainerBuilder();
+        $container->register('service', NonStaticDefaultIndexClass::class)
+            ->addTag('my_custom_tag', ['type' => 'foo']);
+
+        $priorityTaggedServiceTraitImplementation = new PriorityTaggedServiceTraitImplementation();
+        $tag = new TaggedIteratorArgument('my_custom_tag', 'type', 'getType');
+
+        $services = $priorityTaggedServiceTraitImplementation->test($tag, $container);
+        $this->assertEquals(['foo' => new TypedReference('service', NonStaticDefaultIndexClass::class)], $services);
+    }
+
+    public function testTaggedLocatorWithoutIndexAttributeAndNonStaticDefaultIndexMethod()
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage(\sprintf('Either method "%s::getType()" should be static or tag "my_custom_tag" on service "service" is missing attribute "type".', NonStaticDefaultIndexClass::class));
+
+        $container = new ContainerBuilder();
+        $container->register('service', NonStaticDefaultIndexClass::class)
+            ->addTag('my_custom_tag');
+
+        $priorityTaggedServiceTraitImplementation = new PriorityTaggedServiceTraitImplementation();
+        $tag = new TaggedIteratorArgument('my_custom_tag', 'type', 'getType');
+
+        $priorityTaggedServiceTraitImplementation->test($tag, $container);
+    }
+
+    public function testMergingAsTaggedItemWithEmptyTagAndNonStaticBusinessMethod()
+    {
+        $container = new ContainerBuilder();
+        $container->register('service', AsTaggedItemClassWithBusinessMethod::class)
+            ->setAutoconfigured(true)
+            ->addTag('my_custom_tag');
+
+        (new ResolveInstanceofConditionalsPass())->process($container);
+
+        $priorityTaggedServiceTraitImplementation = new PriorityTaggedServiceTraitImplementation();
+        $tag = new TaggedIteratorArgument('my_custom_tag', 'index');
+
+        $services = $priorityTaggedServiceTraitImplementation->test($tag, $container);
+        $this->assertEquals(['bar' => new TypedReference('service', AsTaggedItemClassWithBusinessMethod::class)], $services);
+    }
+
+    public function testPriorityFallbackWithoutIndexAndStaticPriorityMethod()
+    {
+        $container = new ContainerBuilder();
+        $container->register('service', StaticPriorityClass::class)
+            ->addTag('my_custom_tag');
+
+        $priorityTaggedServiceTraitImplementation = new PriorityTaggedServiceTraitImplementation();
+        $tag = new TaggedIteratorArgument('my_custom_tag', null, null, false, 'getDefaultPriority');
+
+        $services = $priorityTaggedServiceTraitImplementation->test($tag, $container);
+        $this->assertEquals([new Reference('service')], $services);
+    }
+
+    public function testMultiTagsWithMixedAttributesAndNonStaticDefault()
+    {
+        $container = new ContainerBuilder();
+        $container->register('service', MultiTagNonStaticClass::class)
+            ->addTag('my_custom_tag', ['type' => 'foo'])
+            ->addTag('my_custom_tag');
+
+        $priorityTaggedServiceTraitImplementation = new PriorityTaggedServiceTraitImplementation();
+        $tag = new TaggedIteratorArgument('my_custom_tag', 'type', 'getType');
+
+        $services = $priorityTaggedServiceTraitImplementation->test($tag, $container);
+        $this->assertCount(2, $services);
+        $this->assertArrayHasKey('foo', $services);
+        $this->assertArrayHasKey('default', $services);
+    }
+
+    public function testTagAttributesAreNotAList()
+    {
+        $container = new ContainerBuilder();
+        $container->register('service1')->setTags([
+            'my_custom_tag' => [1 => ['attributes' => 'not_a_list']],
+        ]);
+
+        $priorityTaggedServiceTraitImplementation = new PriorityTaggedServiceTraitImplementation();
+
+        $expected = [
+            new Reference('service1'),
+        ];
+        $this->assertEquals($expected, $priorityTaggedServiceTraitImplementation->test('my_custom_tag', $container));
     }
 
     public function testDecoratedServiceAsTaggedItemIndex()
@@ -336,9 +566,73 @@ class HelloNamedService2
 {
 }
 
+#[AsTaggedItem(index: 'multi_hello_0', priority: 0)]
+#[AsTaggedItem(index: 'multi_hello_1', priority: 1)]
+#[AsTaggedItem(index: 'multi_hello_2', priority: 2)]
+class MultiTagHelloNamedService
+{
+}
+
 interface HelloInterface
 {
     public static function getFooBar(): string;
+}
+
+class ClassWithDefaultNameMethod
+{
+    public function getDefaultName(): string
+    {
+        return 'foo';
+    }
+}
+
+class ServiceWithStaticGetType
+{
+    public static function getType(): string
+    {
+        return 'from_static_method';
+    }
+}
+
+class ServiceWithStaticPriority
+{
+    public static function getPriority(): int
+    {
+        return 10;
+    }
+}
+
+class NonStaticDefaultIndexClass
+{
+    public function getType(): string
+    {
+        return 'foo';
+    }
+}
+
+#[AsTaggedItem(index: 'bar')]
+class AsTaggedItemClassWithBusinessMethod
+{
+    public function getDefaultName(): string
+    {
+        return 'ignored';
+    }
+}
+
+class StaticPriorityClass
+{
+    public static function getDefaultPriority(): int
+    {
+        return 10;
+    }
+}
+
+class MultiTagNonStaticClass
+{
+    public static function getType(): string
+    {
+        return 'default';
+    }
 }
 
 #[AsTaggedItem(index: 'custom_key', priority: 1)]

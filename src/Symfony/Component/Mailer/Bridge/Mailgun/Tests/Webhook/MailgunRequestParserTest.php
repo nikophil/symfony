@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Mailer\Bridge\Mailgun\Tests\Webhook;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Bridge\PhpUnit\ClockMock;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Mailer\Bridge\Mailgun\RemoteEvent\MailgunPayloadConverter;
@@ -19,9 +21,7 @@ use Symfony\Component\Webhook\Client\RequestParserInterface;
 use Symfony\Component\Webhook\Exception\RejectWebhookException;
 use Symfony\Component\Webhook\Test\AbstractRequestParserTestCase;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class MailgunRequestParserTest extends AbstractRequestParserTestCase
 {
     public static function getStaleClockOffsets(): iterable
@@ -30,9 +30,7 @@ class MailgunRequestParserTest extends AbstractRequestParserTestCase
         yield 'too far in the future' => [-301];
     }
 
-    /**
-     * @dataProvider getStaleClockOffsets
-     */
+    #[DataProvider('getStaleClockOffsets')]
     public function testRejectSignedRequestWithStaleTimestamp(int $offset)
     {
         $request = $this->createRequest(file_get_contents(__DIR__.'/Fixtures/delivered_messages.json'));
@@ -50,9 +48,7 @@ class MailgunRequestParserTest extends AbstractRequestParserTestCase
         yield 'at the future edge' => [-300];
     }
 
-    /**
-     * @dataProvider getToleratedClockOffsets
-     */
+    #[DataProvider('getToleratedClockOffsets')]
     public function testAcceptSignedRequestWithinTolerance(int $offset)
     {
         $request = $this->createRequest(file_get_contents(__DIR__.'/Fixtures/delivered_messages.json'));
@@ -90,9 +86,7 @@ class MailgunRequestParserTest extends AbstractRequestParserTestCase
         $this->createRequestParser()->parse($this->createRequest($payload), $this->getSecret());
     }
 
-    /**
-     * @dataProvider provideNonStringSignatureFields
-     */
+    #[DataProvider('provideNonStringSignatureFields')]
     public function testNonStringSignatureFieldsAreRejected(string $payload)
     {
         $this->expectException(RejectWebhookException::class);

@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\CssSelector\Tests\XPath;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\CssSelector\Exception\ExpressionErrorException;
 use Symfony\Component\CssSelector\Node\ElementNode;
@@ -22,13 +23,13 @@ use Symfony\Component\CssSelector\XPath\XPathExpr;
 
 class TranslatorTest extends TestCase
 {
-    /** @dataProvider getXpathLiteralTestData */
+    #[DataProvider('getXpathLiteralTestData')]
     public function testXpathLiteral($value, $literal)
     {
         $this->assertEquals($literal, Translator::getXpathLiteral($value));
     }
 
-    /** @dataProvider getCssToXPathTestData */
+    #[DataProvider('getCssToXPathTestData')]
     public function testCssToXPath($css, $xpath)
     {
         $translator = new Translator();
@@ -103,7 +104,7 @@ class TranslatorTest extends TestCase
         $translator->addAttributeMatching($xpath, '', '', '');
     }
 
-    /** @dataProvider getXmlLangTestData */
+    #[DataProvider('getXmlLangTestData')]
     public function testXmlLang($css, array $elementsId)
     {
         $translator = new Translator();
@@ -115,7 +116,7 @@ class TranslatorTest extends TestCase
         }
     }
 
-    /** @dataProvider getHtmlIdsTestData */
+    #[DataProvider('getHtmlIdsTestData')]
     public function testHtmlIds($css, array $elementsId)
     {
         $translator = new Translator();
@@ -136,7 +137,7 @@ class TranslatorTest extends TestCase
         libxml_use_internal_errors($internalErrors);
     }
 
-    /** @dataProvider getHtmlShakespearTestData */
+    #[DataProvider('getHtmlShakespearTestData')]
     public function testHtmlShakespear($css, $count)
     {
         $translator = new Translator();
@@ -322,6 +323,17 @@ class TranslatorTest extends TestCase
             ['div#container p', "div[@id = 'container']/descendant-or-self::*/p"],
             [':scope > div[dataimg="<testmessage>"]', "*[1]/div[@dataimg = '<testmessage>']"],
             [':scope', '*[1]'],
+            ['e:is(f > e)', "e[(name() = 'e') and (parent::*[name() = 'f'])]"],
+            ['e:where(f e, f + e, f ~ *, * + e)', "e[((name() = 'e') and (ancestor::*[name() = 'f'])) or ((name() = 'e') and (preceding-sibling::*[1]/self::*[name() = 'f'])) or (preceding-sibling::*[name() = 'f'][1]) or ((name() = 'e') and (preceding-sibling::*[1]))]"],
+            ['e:is(:first-child)', 'e[not(preceding-sibling::*[1])]'],
+            ['e:is(f:last-child > :nth-child(2n))', "e[((count(preceding-sibling::*) + 1) >= 0 and ((count(preceding-sibling::*) + 1)) mod 2 = 0) and (parent::*[(name() = 'f') and (not(following-sibling::*[1]))])]"],
+            ['e:is(*, .foo)', 'e'],
+            ['e:is(section, article) h1', "e[(name() = 'section') or (name() = 'article')]/descendant-or-self::*/h1"],
+            ['e:where(section, article) h1', "e[(name() = 'section') or (name() = 'article')]/descendant-or-self::*/h1"],
+            ['[hidden]:where(:is(span))', "*[(@hidden) and (name() = 'span')]"],
+            ['[hidden]:where(:not(span))', "*[(@hidden) and (not(name() = 'span'))]"],
+            ['[hidden]:is(span, div)', "*[(@hidden) and ((name() = 'span') or (name() = 'div'))]"],
+            ['[hidden]:where(:not([hidden=until-found]))', "*[(@hidden) and (not(@hidden = 'until-found'))]"],
         ];
     }
 
@@ -366,7 +378,7 @@ class TranslatorTest extends TestCase
             ['div[foobar~="cd"]', []],
             ['*[lang|="En"]', ['second-li']],
             ['[lang|="En-us"]', ['second-li']],
-            // Attribute values are case sensitive
+            // Attribute values are case-sensitive
             ['*[lang|="en"]', []],
             ['[lang|="en-US"]', []],
             ['*[lang|="e"]', []],
@@ -431,7 +443,7 @@ class TranslatorTest extends TestCase
             ['* :root', []],
             ['*:contains("link")', ['html', 'nil', 'outer-div', 'tag-anchor', 'nofollow-anchor']],
             [':CONtains("link")', ['html', 'nil', 'outer-div', 'tag-anchor', 'nofollow-anchor']],
-            ['*:contains("LInk")', []],  // case sensitive
+            ['*:contains("LInk")', []],  // case-sensitive
             ['*:contains("e")', ['html', 'nil', 'outer-div', 'first-ol', 'first-li', 'paragraph', 'p-em']],
             ['*:contains("E")', []],  // case-sensitive
             ['.a', ['first-ol']],
@@ -486,6 +498,27 @@ class TranslatorTest extends TestCase
             ['a:hover[name]', []],
             ['a:not(:hover)', ['name-anchor', 'tag-anchor', 'nofollow-anchor']],
             ['ol :Not(li[class])', ['first-li', 'second-li', 'li-div', 'fifth-li', 'sixth-li', 'seventh-li']],
+            ['li:is(ul > li)', []],
+            ['a:is(div > a ~ a)', ['tag-anchor', 'nofollow-anchor']],
+            ['div:is(:first-child)', ['outer-div', 'li-div']],
+            ['li:is(*, #first-li)', ['first-li', 'second-li', 'third-li', 'fourth-li', 'fifth-li', 'sixth-li', 'seventh-li']],
+            ['input:is(:nth-of-type(1))', ['checkbox-unchecked', 'checkbox-fieldset-disabled']],
+            ['input:is(:nth-of-type(1):not([disabled]))', ['checkbox-unchecked', 'checkbox-fieldset-disabled']],
+            ['input:where(:nth-of-type(1):is([type]))', ['checkbox-unchecked', 'checkbox-fieldset-disabled']],
+            ['ol:nth-child(4):is(:nth-of-type(1))', ['first-ol']],
+            ['ol:where(:not(.a)):nth-last-child(2):is(:nth-of-type(2))', ['second-ol']],
+            ['ol:is(.a):where(:nth-of-type(1))', ['first-ol']],
+            [':is(#first-li, #second-li)', ['first-li', 'second-li']],
+            ['a:is(#name-anchor, #tag-anchor)', ['name-anchor', 'tag-anchor']],
+            [':is(.c)', ['first-ol', 'third-li', 'fourth-li']],
+            ['a:is(:not(#name-anchor))', ['tag-anchor', 'nofollow-anchor']],
+            ['a:not(:is(#name-anchor))', ['tag-anchor', 'nofollow-anchor']],
+            [':where(#first-li, #second-li)', ['first-li', 'second-li']],
+            ['a:where(#name-anchor, #tag-anchor)', ['name-anchor', 'tag-anchor']],
+            [':where(.c)', ['first-ol', 'third-li', 'fourth-li']],
+            ['a:where(:not(#name-anchor))', ['tag-anchor', 'nofollow-anchor']],
+            ['a:not(:where(#name-anchor))', ['tag-anchor', 'nofollow-anchor']],
+            ['a:where(:is(#name-anchor), :where(#tag-anchor))', ['name-anchor', 'tag-anchor']],
             // HTML-specific
             [':link', ['link-href', 'tag-anchor', 'nofollow-anchor', 'area-href']],
             [':visited', []],
@@ -547,6 +580,7 @@ class TranslatorTest extends TestCase
             [':scope > div', 1],
             [':scope > div > div[class=dialog]', 1],
             [':scope > div div', 242],
+            ['div:is(div#test .dialog) .direction', 4],
         ];
     }
 }

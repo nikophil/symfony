@@ -16,11 +16,13 @@ use AsyncAws\Core\Exception\Http\NetworkException;
 use AsyncAws\Core\Exception\Http\ServerException;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Messenger\Bridge\AmazonSqs\Tests\Fixtures\DummyMessage;
+use Symfony\Component\Messenger\Bridge\AmazonSqs\Transport\AmazonSqsReceivedStamp;
 use Symfony\Component\Messenger\Bridge\AmazonSqs\Transport\AmazonSqsReceiver;
 use Symfony\Component\Messenger\Bridge\AmazonSqs\Transport\AmazonSqsTransport;
 use Symfony\Component\Messenger\Bridge\AmazonSqs\Transport\Connection;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\TransportException;
+use Symfony\Component\Messenger\Stamp\RedeliveryStamp;
 use Symfony\Component\Messenger\Transport\Receiver\MessageCountAwareInterface;
 use Symfony\Component\Messenger\Transport\Receiver\ReceiverInterface;
 use Symfony\Component\Messenger\Transport\Sender\SenderInterface;
@@ -40,7 +42,7 @@ class AmazonSqsTransportTest extends TestCase
     public function testReceivesMessages()
     {
         $transport = $this->getTransport(
-            $serializer = $this->createStub(SerializerInterface::class),
+            $serializer = $this->createMock(SerializerInterface::class),
             $connection = $this->createStub(Connection::class)
         );
 
@@ -52,7 +54,7 @@ class AmazonSqsTransportTest extends TestCase
             'headers' => ['my' => 'header'],
         ];
 
-        $serializer->method('decode')->with(['body' => 'body', 'headers' => ['my' => 'header']])->willReturn(new Envelope($decodedMessage));
+        $serializer->expects($this->once())->method('decode')->with(['body' => 'body', 'headers' => ['my' => 'header']])->willReturn(new Envelope($decodedMessage));
         $connection->method('get')->willReturn($sqsEnvelope);
 
         $envelopes = iterator_to_array($transport->get());
@@ -111,6 +113,25 @@ class AmazonSqsTransportTest extends TestCase
         $this->assertSame($envelope, $transport->send($envelope));
     }
 
+    public function testItSendsAMessageViaTheSenderWithRedeliveryStamp()
+    {
+        $sender = $this->createMock(SenderInterface::class);
+        $transport = $this->getTransport(null, null, null, $sender);
+        $envelope = new Envelope(new \stdClass(), [new RedeliveryStamp(1)]);
+        $sender->expects($this->once())->method('send')->with($envelope)->willReturn($envelope);
+        $this->assertSame($envelope, $transport->send($envelope));
+    }
+
+    public function testItDoesNotSendRedeliveredMessageWhenNotHandlingRetries()
+    {
+        $sender = $this->createMock(SenderInterface::class);
+        $transport = $this->getTransport(null, null, null, $sender, false);
+
+        $envelope = new Envelope(new \stdClass(), [new RedeliveryStamp(1)]);
+        $sender->expects($this->never())->method('send')->with($envelope)->willReturn($envelope);
+        $this->assertSame($envelope, $transport->send($envelope));
+    }
+
     public function testItCanSetUpTheConnection()
     {
         $connection = $this->createMock(Connection::class);
@@ -155,6 +176,31 @@ class AmazonSqsTransportTest extends TestCase
         $transport->reset();
     }
 
+    public function testKeepalive()
+    {
+        $transport = $this->getTransport(
+            null,
+            $connection = $this->createMock(Connection::class),
+        );
+
+        $connection->expects($this->once())->method('keepalive')->with('123', 10);
+        $transport->keepalive(new Envelope(new DummyMessage('foo'), [new AmazonSqsReceivedStamp('123')]), 10);
+    }
+
+    public function testKeepaliveWhenASqsExceptionOccurs()
+    {
+        $transport = $this->getTransport(
+            null,
+            $connection = $this->createMock(Connection::class),
+        );
+
+        $exception = $this->createHttpException();
+        $connection->expects($this->once())->method('keepalive')->with('123')->willThrowException($exception);
+
+        $this->expectExceptionObject(new TransportException($exception->getMessage(), 0, $exception));
+        $transport->keepalive(new Envelope(new DummyMessage('foo'), [new AmazonSqsReceivedStamp('123')]));
+    }
+
     public function testItConvertsNetworkExceptionDuringSetupIntoTransportException()
     {
         $connection = $this->createMock(Connection::class);
@@ -183,12 +229,12 @@ class AmazonSqsTransportTest extends TestCase
         $transport->reset();
     }
 
-    private function getTransport(?SerializerInterface $serializer = null, ?Connection $connection = null, ?ReceiverInterface $receiver = null, ?SenderInterface $sender = null)
+    private function getTransport(?SerializerInterface $serializer = null, ?Connection $connection = null, ?ReceiverInterface $receiver = null, ?SenderInterface $sender = null, bool $handleRetries = true)
     {
         $serializer ??= $this->createStub(SerializerInterface::class);
         $connection ??= $this->createStub(Connection::class);
 
-        return new AmazonSqsTransport($connection, $serializer, $receiver, $sender);
+        return new AmazonSqsTransport($connection, $serializer, $receiver, $sender, $handleRetries);
     }
 
     private function createHttpException(): HttpException

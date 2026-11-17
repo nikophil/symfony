@@ -18,11 +18,16 @@ use Symfony\Component\Mailer\MailerInterface;
 use Symfony\Component\Mailer\Transport\NullTransport;
 use Symfony\Component\Notifier\Bridge\FakeSms\FakeSmsTransportFactory;
 use Symfony\Component\Notifier\Exception\LogicException;
-use Symfony\Component\Notifier\Test\TransportFactoryTestCase;
+use Symfony\Component\Notifier\Test\AbstractTransportFactoryTestCase;
+use Symfony\Component\Notifier\Test\IncompleteDsnTestTrait;
+use Symfony\Component\Notifier\Test\MissingRequiredOptionTestTrait;
 use Symfony\Component\Notifier\Transport\Dsn;
 
-final class FakeSmsTransportFactoryTest extends TransportFactoryTestCase
+final class FakeSmsTransportFactoryTest extends AbstractTransportFactoryTestCase
 {
+    use IncompleteDsnTestTrait;
+    use MissingRequiredOptionTestTrait;
+
     public function testMissingRequiredMailerDependency()
     {
         $this->expectException(LogicException::class);

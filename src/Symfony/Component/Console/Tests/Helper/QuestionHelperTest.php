@@ -11,6 +11,9 @@
 
 namespace Symfony\Component\Console\Tests\Helper;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Exception\InvalidArgumentException;
 use Symfony\Component\Console\Exception\MissingInputException;
@@ -29,9 +32,7 @@ use Symfony\Component\Console\Tester\ApplicationTester;
 use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
 
-/**
- * @group tty
- */
+#[Group('tty')]
 class QuestionHelperTest extends AbstractQuestionHelperTestCase
 {
     public function testAskChoice()
@@ -186,6 +187,49 @@ class QuestionHelperTest extends AbstractQuestionHelperTestCase
 
         rewind($output->getStream());
         $this->assertEquals('What time is it?', stream_get_contents($output->getStream()));
+    }
+
+    public function testAskTimeout()
+    {
+        if (!@stream_isatty(\STDIN)) {
+            $this->markTestSkipped('The timeout only applies when STDIN is a terminal.');
+        }
+
+        $dialog = new QuestionHelper();
+
+        $question = new Question('What is your name?');
+        $question->setTimeout(1);
+
+        $this->expectException(MissingInputException::class);
+        $this->expectExceptionMessage('Timed out after waiting for input for 1 second.');
+
+        try {
+            $startTime = microtime(true);
+            $dialog->ask($this->createStreamableInputInterfaceMock(\STDIN), $this->createOutputInterface(), $question);
+        } finally {
+            $elapsedTime = microtime(true) - $startTime;
+            self::assertGreaterThanOrEqual(1, $elapsedTime, 'The question should timeout after 1 second');
+        }
+    }
+
+    public function testAskTimeoutWithIncompatibleStream()
+    {
+        $dialog = new QuestionHelper();
+        $inputStream = $this->getInputStream('');
+
+        $question = new Question('What is your name?');
+        $question->setTimeout(1);
+
+        $this->expectException(MissingInputException::class);
+        $this->expectExceptionMessage('Aborted.');
+
+        try {
+            $startTime = microtime(true);
+            $dialog->ask($this->createStreamableInputInterfaceMock($inputStream), $this->createOutputInterface(), $question);
+        } finally {
+            $elapsedTime = microtime(true) - $startTime;
+            self::assertLessThan(1, $elapsedTime, 'Question should not wait for input on a non-interactive stream');
+        }
     }
 
     public function testAskWithAutocomplete()
@@ -372,9 +416,7 @@ class QuestionHelperTest extends AbstractQuestionHelperTestCase
         ];
     }
 
-    /**
-     * @dataProvider getInputs
-     */
+    #[DataProvider('getInputs')]
     public function testAskWithAutocompleteWithMultiByteCharacter($character)
     {
         if (!Terminal::hasSttyAvailable()) {
@@ -564,9 +606,7 @@ class QuestionHelperTest extends AbstractQuestionHelperTestCase
         $this->assertSame(18, ftell($response));
     }
 
-    /**
-     * @dataProvider getAskConfirmationData
-     */
+    #[DataProvider('getAskConfirmationData')]
     public function testAskConfirmation($question, $expected, $default = true)
     {
         $dialog = new QuestionHelper();
@@ -607,7 +647,7 @@ class QuestionHelperTest extends AbstractQuestionHelperTestCase
 
         $error = 'This is not a color!';
         $validator = static function ($color) use ($error) {
-            if (!\in_array($color, ['white', 'black'])) {
+            if (!\in_array($color, ['white', 'black'], true)) {
                 throw new \InvalidArgumentException($error);
             }
 
@@ -630,9 +670,7 @@ class QuestionHelperTest extends AbstractQuestionHelperTestCase
         }
     }
 
-    /**
-     * @dataProvider simpleAnswerProvider
-     */
+    #[DataProvider('simpleAnswerProvider')]
     public function testSelectChoiceFromSimpleChoices($providedAnswer, $expectedValue)
     {
         $possibleChoices = [
@@ -664,9 +702,7 @@ class QuestionHelperTest extends AbstractQuestionHelperTestCase
         ];
     }
 
-    /**
-     * @dataProvider specialCharacterInMultipleChoice
-     */
+    #[DataProvider('specialCharacterInMultipleChoice')]
     public function testSpecialCharacterChoiceFromMultipleChoiceList($providedAnswer, $expectedValue)
     {
         $possibleChoices = [
@@ -695,9 +731,7 @@ class QuestionHelperTest extends AbstractQuestionHelperTestCase
         ];
     }
 
-    /**
-     * @dataProvider answerProvider
-     */
+    #[DataProvider('answerProvider')]
     public function testSelectChoiceFromChoiceList($providedAnswer, $expectedValue)
     {
         $possibleChoices = [
@@ -816,8 +850,12 @@ class QuestionHelperTest extends AbstractQuestionHelperTestCase
 
     public function testAskThrowsExceptionOnMissingInputForChoiceQuestion()
     {
+        if (!Terminal::hasSttyAvailable()) {
+            $this->markTestSkipped('`stty` is required to test autocomplete functionality');
+        }
+
         $this->expectException(MissingInputException::class);
-        $this->expectExceptionMessage('Aborted.');
+        $this->expectExceptionMessage('Aborted while asking: Choice');
         (new QuestionHelper())->ask($this->createStreamableInputInterfaceMock($this->getInputStream('')), $this->createOutputInterface(), new ChoiceQuestion('Choice', ['a', 'b']));
     }
 
@@ -864,7 +902,7 @@ class QuestionHelperTest extends AbstractQuestionHelperTestCase
         $application = new Application();
         $application->setAutoExit(false);
         $application->register('question')
-            ->setCode(static function ($input, $output) use (&$tries) {
+            ->setCode(static function (InputInterface $input, OutputInterface $output) use (&$tries): int {
                 $question = new Question('This is a promptable question');
                 $question->setValidator(static function ($value) use (&$tries) {
                     ++$tries;
@@ -1016,10 +1054,8 @@ class QuestionHelperTest extends AbstractQuestionHelperTestCase
         $this->assertStringEndsWith("\033[1D\033[K\033[2D\033[K\033[1D\033[K", stream_get_contents($stream));
     }
 
-    /**
-     * @testWith ["single"]
-     *           ["multi"]
-     */
+    #[TestWith(['single'])]
+    #[TestWith(['multi'])]
     public function testExitCommandOnInputSIGINT(string $mode)
     {
         if (!\function_exists('pcntl_signal')) {

@@ -12,8 +12,8 @@
 namespace Symfony\Component\Messenger\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Psr\Container\ContainerInterface;
 use Psr\Log\NullLogger;
+use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\Envelope;
@@ -71,25 +71,20 @@ class FailureIntegrationTest extends TestCase
             'the_failure_transport' => $failureTransport,
         ];
 
-        $locator = $this->createMock(ContainerInterface::class);
-        $locator->expects($this->any())
-            ->method('has')
-            ->willReturn(true);
-        $locator->expects($this->any())
-            ->method('get')
-            ->willReturnCallback(static fn ($transportName) => $transports[$transportName]);
+        $locator = new Container();
+
+        foreach ($transports as $transportName => $transport) {
+            $locator->set($transportName, $transport);
+        }
+
         $senderLocator = new SendersLocator(
             [DummyMessage::class => ['transport1', 'transport2']],
             $locator
         );
 
-        $retryStrategyLocator = $this->createMock(ContainerInterface::class);
-        $retryStrategyLocator->expects($this->any())
-            ->method('has')
-            ->willReturn(true);
-        $retryStrategyLocator->expects($this->any())
-            ->method('get')
-            ->willReturn(new MultiplierRetryStrategy(1));
+        $retryStrategyLocator = new Container();
+        $retryStrategyLocator->set('the_failure_transport', new MultiplierRetryStrategy(1));
+        $retryStrategyLocator->set('transport1', new MultiplierRetryStrategy(1));
 
         // using to so we can lazily get the bus later and avoid circular problem
         $transport1HandlerThatFails = new DummyTestHandler(true);
@@ -162,7 +157,7 @@ class FailureIntegrationTest extends TestCase
         $this->assertSame(0, $transport2HandlerThatWorks->getTimesCalled());
         // one handler failed and the message is retried (resent to transport1)
         $this->assertCount(1, $transport1->getMessagesWaitingToBeReceived());
-        $this->assertEmpty($failureTransport->getMessagesWaitingToBeReceived());
+        $this->assertSame([], $failureTransport->getMessagesWaitingToBeReceived());
 
         /*
          * Receive the message for a (final) retry
@@ -220,9 +215,9 @@ class FailureIntegrationTest extends TestCase
         // transport1 handler called for the first time
         $this->assertSame(1, $transport2HandlerThatWorks->getTimesCalled());
         // all transport should be empty
-        $this->assertEmpty($transport1->getMessagesWaitingToBeReceived());
-        $this->assertEmpty($transport2->getMessagesWaitingToBeReceived());
-        $this->assertEmpty($failureTransport->getMessagesWaitingToBeReceived());
+        $this->assertSame([], $transport1->getMessagesWaitingToBeReceived());
+        $this->assertSame([], $transport2->getMessagesWaitingToBeReceived());
+        $this->assertSame([], $failureTransport->getMessagesWaitingToBeReceived());
 
         /*
          * Dispatch the original message again
@@ -235,7 +230,7 @@ class FailureIntegrationTest extends TestCase
         $transport1HandlerThatFails->setShouldThrow(false);
         $runWorker('the_failure_transport');
         // the failure transport is empty because it worked
-        $this->assertEmpty($failureTransport->getMessagesWaitingToBeReceived());
+        $this->assertSame([], $failureTransport->getMessagesWaitingToBeReceived());
     }
 
     public function testMultipleFailedTransportsWithoutGlobalFailureTransport()
@@ -257,26 +252,16 @@ class FailureIntegrationTest extends TestCase
             'the_failure_transport2' => $failureTransport2,
         ];
 
-        $locator = $this->createMock(ContainerInterface::class);
-        $locator->expects($this->any())
-            ->method('has')
-            ->willReturn(true);
-        $locator->expects($this->any())
-            ->method('get')
-            ->willReturnCallback(static fn ($transportName) => $transports[$transportName]);
+        $locator = new Container();
+
+        foreach ($transports as $transportName => $transport) {
+            $locator->set($transportName, $transport);
+        }
+
         $senderLocator = new SendersLocator(
             [DummyMessage::class => ['transport1', 'transport2']],
             $locator
         );
-
-        // retry strategy with zero retries so it goes to the failed transport after failure
-        $retryStrategyLocator = $this->createMock(ContainerInterface::class);
-        $retryStrategyLocator->expects($this->any())
-            ->method('has')
-            ->willReturn(true);
-        $retryStrategyLocator->expects($this->any())
-            ->method('get')
-            ->willReturn(new MultiplierRetryStrategy(0));
 
         // using to so we can lazily get the bus later and avoid circular problem
         $transport1HandlerThatFails = new DummyTestHandler(true);
@@ -299,7 +284,7 @@ class FailureIntegrationTest extends TestCase
             new HandleMessageMiddleware($handlerLocator),
         ]);
 
-        $dispatcher->addSubscriber(new SendFailedMessageForRetryListener($locator, $retryStrategyLocator));
+        $dispatcher->addSubscriber(new SendFailedMessageForRetryListener($locator, new Container()));
         $dispatcher->addSubscriber(new SendFailedMessageToFailureTransportListener(
             $sendersLocatorFailureTransport,
             new NullLogger()
@@ -378,22 +363,16 @@ class FailureIntegrationTest extends TestCase
             'transport1' => $transport1,
         ];
 
-        $locator = $this->createMock(ContainerInterface::class);
-        $locator->expects($this->any())
-            ->method('has')
-            ->willReturn(true);
-        $locator->expects($this->any())
-            ->method('get')
-            ->willReturnCallback(static fn ($transportName) => $transports[$transportName]);
+        $locator = new Container();
+
+        foreach ($transports as $transportName => $transport) {
+            $locator->set($transportName, $transport);
+        }
+
         $senderLocator = new SendersLocator([], $locator);
 
-        $retryStrategyLocator = $this->createMock(ContainerInterface::class);
-        $retryStrategyLocator->expects($this->any())
-            ->method('has')
-            ->willReturn(true);
-        $retryStrategyLocator->expects($this->any())
-            ->method('get')
-            ->willReturn(new MultiplierRetryStrategy(1));
+        $retryStrategyLocator = new Container();
+        $retryStrategyLocator->set('transport1', new MultiplierRetryStrategy(1));
 
         $syncHandlerThatFails = new DummyTestHandler(true);
 
@@ -578,22 +557,13 @@ class FailureIntegrationTest extends TestCase
             'transport1' => $transport1,
         ];
 
-        $locator = $this->createMock(ContainerInterface::class);
-        $locator->expects($this->any())
-            ->method('has')
-            ->willReturn(true);
-        $locator->expects($this->any())
-            ->method('get')
-            ->willReturnCallback(static fn ($transportName) => $transports[$transportName]);
+        $locator = new Container();
+        $locator->set('transport1', $transport1);
+
         $senderLocator = new SendersLocator([], $locator);
 
-        $retryStrategyLocator = $this->createMock(ContainerInterface::class);
-        $retryStrategyLocator->expects($this->any())
-            ->method('has')
-            ->willReturn(true);
-        $retryStrategyLocator->expects($this->any())
-            ->method('get')
-            ->willReturn(new MultiplierRetryStrategy(1));
+        $retryStrategyLocator = new Container();
+        $retryStrategyLocator->set('transport1', new MultiplierRetryStrategy(1));
 
         $violationList = new ConstraintViolationList([new ConstraintViolation('validation failed', null, [], null, null, null)]);
         $validator = $this->createMock(ValidatorInterface::class);
@@ -834,11 +804,10 @@ class DummyFailureTestSenderAndReceiver implements ReceiverInterface, SenderInte
 class DummyTestHandler
 {
     private int $timesCalled = 0;
-    private bool $shouldThrow;
 
-    public function __construct(bool $shouldThrow)
-    {
-        $this->shouldThrow = $shouldThrow;
+    public function __construct(
+        private bool $shouldThrow,
+    ) {
     }
 
     public function __invoke()

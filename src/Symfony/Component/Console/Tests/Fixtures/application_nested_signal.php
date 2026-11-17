@@ -20,7 +20,7 @@ $dispatcher = new EventDispatcher();
 $inner = new Application();
 $inner->setAutoExit(false);
 $inner->setDispatcher($dispatcher);
-$inner->add((new Command('inner'))->setCode(static function (InputInterface $input, OutputInterface $output) {
+$inner->addCommand((new Command('inner'))->setCode(static function (InputInterface $input, OutputInterface $output) {
     posix_kill(posix_getpid(), \SIGUSR1);
     $output->write('Inner done. ');
 
@@ -29,7 +29,7 @@ $inner->add((new Command('inner'))->setCode(static function (InputInterface $inp
 
 $outer = new Application();
 $outer->setDispatcher($dispatcher);
-$outer->add(new class($inner) extends Command implements SignalableCommandInterface {
+$outer->addCommand(new class($inner) extends Command implements SignalableCommandInterface {
     private OutputInterface $output;
 
     public function __construct(private Application $inner)

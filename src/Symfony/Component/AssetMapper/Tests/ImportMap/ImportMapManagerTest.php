@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\AssetMapper\Tests\ImportMap;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\AssetMapper\AssetMapperInterface;
@@ -50,9 +51,7 @@ class ImportMapManagerTest extends TestCase
         $this->filesystem->remove(self::$writableRoot);
     }
 
-    /**
-     * @dataProvider getRequirePackageTests
-     */
+    #[DataProvider('getRequirePackageTests')]
     public function testRequire(array $packages, int $expectedProviderPackageArgumentCount, array $resolvedPackages, array $expectedImportMap)
     {
         $this->packageResolver = $this->createMock(PackageResolverInterface::class);
@@ -266,9 +265,7 @@ class ImportMapManagerTest extends TestCase
         $manager->remove(['app', 'sortable/sortable.min.css']);
     }
 
-    /**
-     * @dataProvider provideRemovedPackagesNotFound
-     */
+    #[DataProvider('provideRemovedPackagesNotFound')]
     public function testRemoveKeepsDownloadedFilesWhenAPackageIsNotFound(array $packages, string $notFoundPackage)
     {
         $manager = $this->createImportMapManager();
@@ -442,9 +439,7 @@ class ImportMapManagerTest extends TestCase
         $manager->update(['cowsay']);
     }
 
-    /**
-     * @dataProvider getPackageNameTests
-     */
+    #[DataProvider('getPackageNameTests')]
     public function testParsePackageName(string $packageName, array $expectedReturn)
     {
         $parsed = ImportMapManager::parsePackageName($packageName);
@@ -590,16 +585,12 @@ class ImportMapManagerTest extends TestCase
 
     private function writeFile(string $filename, string $content): void
     {
-        $path = \dirname(self::$writableRoot.'/'.$filename);
-        if (!is_dir($path)) {
-            mkdir($path, 0o777, true);
-        }
-        file_put_contents(self::$writableRoot.'/'.$filename, $content);
+        $this->filesystem->dumpFile(self::$writableRoot.'/'.$filename, $content);
     }
 
     private static function createLocalEntry(string $importName, string $path, ImportMapType $type = ImportMapType::JS, bool $isEntrypoint = false): ImportMapEntry
     {
-        return ImportMapEntry::createLocal($importName, $type, path: $path, isEntrypoint: $isEntrypoint);
+        return ImportMapEntry::createLocal($importName, $type, $path, $isEntrypoint);
     }
 
     private static function createRemoteEntry(string $importName, string $version, ?string $path = null, ImportMapType $type = ImportMapType::JS, ?string $packageSpecifier = null, bool $isEntrypoint = false): ImportMapEntry
@@ -607,6 +598,6 @@ class ImportMapManagerTest extends TestCase
         $packageSpecifier ??= $importName;
         $path ??= '/vendor/any-path.js';
 
-        return ImportMapEntry::createRemote($importName, $type, path: $path, version: $version, packageModuleSpecifier: $packageSpecifier, isEntrypoint: $isEntrypoint);
+        return ImportMapEntry::createRemote($importName, $type, $path, $version, $packageSpecifier, $isEntrypoint);
     }
 }

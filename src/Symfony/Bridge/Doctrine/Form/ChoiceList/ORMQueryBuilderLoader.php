@@ -12,7 +12,6 @@
 namespace Symfony\Bridge\Doctrine\Form\ChoiceList;
 
 use Doctrine\DBAL\ArrayParameterType;
-use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Types\ConversionException;
 use Doctrine\DBAL\Types\Type;
 use Doctrine\ORM\QueryBuilder;
@@ -66,14 +65,14 @@ class ORMQueryBuilderLoader implements EntityLoaderInterface
         // doctrine/dbal 4.5 deprecates the static registry for a provider on the configuration
         $config = $qb->getEntityManager()->getConnection()->getConfiguration();
         $types = method_exists($config, 'getTypeProvider') ? $config->getTypeProvider() : Type::getTypeRegistry();
-        if (\in_array($type = $metadata->getTypeOfField($identifier), ['integer', 'bigint', 'smallint'])) {
-            $parameterType = class_exists(ArrayParameterType::class) ? ArrayParameterType::INTEGER : Connection::PARAM_INT_ARRAY;
+        if (\in_array($type = $metadata->getTypeOfField($identifier), ['integer', 'bigint', 'smallint'], true)) {
+            $parameterType = ArrayParameterType::INTEGER;
 
             // Filter out non-integer values (e.g. ""). If we don't, some
             // databases such as PostgreSQL fail.
             $values = array_values(array_filter($values, static fn ($v) => \is_string($v) && ctype_digit($v) || (string) $v === (string) (int) $v));
-        } elseif (null !== $type && (\in_array($type, ['ulid', 'uuid', 'guid']) || ($types->has($type) && is_subclass_of($types->get($type), AbstractUidType::class)))) {
-            $parameterType = class_exists(ArrayParameterType::class) ? ArrayParameterType::STRING : Connection::PARAM_STR_ARRAY;
+        } elseif (null !== $type && (\in_array($type, ['ulid', 'uuid', 'guid'], true) || ($types->has($type) && is_subclass_of($types->get($type), AbstractUidType::class)))) {
+            $parameterType = ArrayParameterType::STRING;
 
             // Like above, but we just filter out empty strings.
             $values = array_values(array_filter($values, static fn ($v) => '' !== (string) $v));
@@ -92,7 +91,7 @@ class ORMQueryBuilderLoader implements EntityLoaderInterface
                 unset($value);
             }
         } else {
-            $parameterType = class_exists(ArrayParameterType::class) ? ArrayParameterType::STRING : Connection::PARAM_STR_ARRAY;
+            $parameterType = ArrayParameterType::STRING;
         }
         if (!$values) {
             return [];

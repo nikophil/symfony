@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\VarDumper\Tests\Caster;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\VarDumper\Caster\Caster;
 use Symfony\Component\VarDumper\Caster\DateCaster;
@@ -29,22 +30,16 @@ class DateCasterTest extends TestCase
 
     protected function setUp(): void
     {
-        parent::setUp();
-
         $this->previousTimezone = date_default_timezone_get();
     }
 
     protected function tearDown(): void
     {
-        parent::tearDown();
-
         date_default_timezone_set($this->previousTimezone);
     }
 
-    /**
-     * @dataProvider provideDateTimes
-     */
-    public function testDumpDateTime($time, $timezone, $xDate, $xTimestamp)
+    #[DataProvider('provideDateTimes')]
+    public function testDumpDateTime($time, $timezone, $xDate, $xTimestamp, $xInfos)
     {
         $date = new \DateTime($time, new \DateTimeZone($timezone));
 
@@ -57,10 +52,8 @@ class DateCasterTest extends TestCase
         $this->assertDumpEquals($xDump, $date);
     }
 
-    /**
-     * @dataProvider provideDateTimes
-     */
-    public function testDumpDateTimeImmutable($time, $timezone, $xDate, $xTimestamp)
+    #[DataProvider('provideDateTimes')]
+    public function testDumpDateTimeImmutable($time, $timezone, $xDate, $xTimestamp, $xInfos)
     {
         $date = new \DateTimeImmutable($time, new \DateTimeZone($timezone));
 
@@ -73,9 +66,7 @@ class DateCasterTest extends TestCase
         $this->assertDumpEquals($xDump, $date);
     }
 
-    /**
-     * @dataProvider provideDateTimes
-     */
+    #[DataProvider('provideDateTimes')]
     public function testCastDateTime($time, $timezone, $xDate, $xTimestamp, $xInfos)
     {
         $stub = new Stub();
@@ -122,9 +113,7 @@ class DateCasterTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider provideNoTimezoneDateTimes
-     */
+    #[DataProvider('provideNoTimezoneDateTimes')]
     public function testCastDateTimeNoTimezone($time, $xDate, $xInfos)
     {
         date_default_timezone_set('UTC');
@@ -204,10 +193,8 @@ class DateCasterTest extends TestCase
         $this->assertDumpMatchesFormat($xDump, $dateCast["\0~\0date"]);
     }
 
-    /**
-     * @dataProvider provideIntervals
-     */
-    public function testDumpInterval($intervalSpec, $ms, $invert, $expected)
+    #[DataProvider('provideIntervals')]
+    public function testDumpInterval($intervalSpec, $ms, $invert, $expected, $xSeconds)
     {
         $interval = $this->createInterval($intervalSpec, $ms, $invert);
 
@@ -220,10 +207,8 @@ class DateCasterTest extends TestCase
         $this->assertDumpMatchesFormat($xDump, $interval);
     }
 
-    /**
-     * @dataProvider provideIntervals
-     */
-    public function testDumpIntervalExcludingVerbosity($intervalSpec, $ms, $invert, $expected)
+    #[DataProvider('provideIntervals')]
+    public function testDumpIntervalExcludingVerbosity($intervalSpec, $ms, $invert, $expected, $xSeconds)
     {
         $interval = $this->createInterval($intervalSpec, $ms, $invert);
 
@@ -236,9 +221,7 @@ class DateCasterTest extends TestCase
         $this->assertDumpEquals($xDump, $interval, Caster::EXCLUDE_VERBOSE);
     }
 
-    /**
-     * @dataProvider provideIntervals
-     */
+    #[DataProvider('provideIntervals')]
     public function testCastInterval($intervalSpec, $ms, $invert, $xInterval, $xSeconds)
     {
         $interval = $this->createInterval($intervalSpec, $ms, $invert);
@@ -307,10 +290,8 @@ class DateCasterTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider provideTimeZones
-     */
-    public function testDumpTimeZone($timezone, $expected)
+    #[DataProvider('provideTimeZones')]
+    public function testDumpTimeZone($timezone, $expected, $xRegion)
     {
         $timezone = new \DateTimeZone($timezone);
 
@@ -323,10 +304,8 @@ class DateCasterTest extends TestCase
         $this->assertDumpMatchesFormat($xDump, $timezone);
     }
 
-    /**
-     * @dataProvider provideTimeZones
-     */
-    public function testDumpTimeZoneExcludingVerbosity($timezone, $expected)
+    #[DataProvider('provideTimeZones')]
+    public function testDumpTimeZoneExcludingVerbosity($timezone, $expected, $xRegion)
     {
         $timezone = new \DateTimeZone($timezone);
 
@@ -339,9 +318,7 @@ class DateCasterTest extends TestCase
         $this->assertDumpMatchesFormat($xDump, $timezone, Caster::EXCLUDE_VERBOSE);
     }
 
-    /**
-     * @dataProvider provideTimeZones
-     */
+    #[DataProvider('provideTimeZones')]
     public function testCastTimeZone($timezone, $xTimezone, $xRegion)
     {
         $timezone = new \DateTimeZone($timezone);
@@ -400,10 +377,8 @@ class DateCasterTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider providePeriods
-     */
-    public function testDumpPeriod($start, $interval, $end, $options, $expected)
+    #[DataProvider('providePeriods')]
+    public function testDumpPeriod($start, $interval, $end, $options, $expected, $xDates)
     {
         $p = new \DatePeriod(new \DateTimeImmutable($start), new \DateInterval($interval), \is_int($end) ? $end : new \DateTime($end), $options);
 
@@ -416,9 +391,7 @@ class DateCasterTest extends TestCase
         $this->assertDumpMatchesFormat($xDump, $p);
     }
 
-    /**
-     * @dataProvider providePeriods
-     */
+    #[DataProvider('providePeriods')]
     public function testCastPeriod($start, $interval, $end, $options, $xPeriod, $xDates)
     {
         $p = new \DatePeriod(new \DateTimeImmutable($start, new \DateTimeZone('UTC')), new \DateInterval($interval), \is_int($end) ? $end : new \DateTimeImmutable($end, new \DateTimeZone('UTC')), $options);
@@ -450,9 +423,7 @@ class DateCasterTest extends TestCase
         $this->assertDumpMatchesFormat($xDump, $cast["\0~\0period"]);
     }
 
-    /**
-     * @dataProvider provideNonForwardIntervals
-     */
+    #[DataProvider('provideNonForwardIntervals')]
     public function testCastPeriodWithNonForwardInterval($interval, $xDates)
     {
         $p = new \DatePeriod(new \DateTimeImmutable('2017-01-01', new \DateTimeZone('UTC')), $interval, new \DateTimeImmutable('2018-01-01', new \DateTimeZone('UTC')));

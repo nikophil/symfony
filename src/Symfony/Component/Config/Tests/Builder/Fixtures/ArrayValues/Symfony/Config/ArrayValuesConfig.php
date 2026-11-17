@@ -15,15 +15,18 @@ class ArrayValuesConfig implements \Symfony\Component\Config\Builder\ConfigBuild
     private $transports;
     private $errorPages;
     private $_usedProperties = [];
+    private $_hasDeprecatedCalls = false;
 
     /**
      * @template TValue of string|array
      * @param TValue $value
      * @return \Symfony\Config\ArrayValues\TransportsConfig|$this
      * @psalm-return (TValue is array ? \Symfony\Config\ArrayValues\TransportsConfig : static)
+     * @deprecated since Symfony 7.4
      */
     public function transports(string $name, string|array $value = []): \Symfony\Config\ArrayValues\TransportsConfig|static
     {
+        $this->_hasDeprecatedCalls = true;
         if (!\is_array($value)) {
             $this->_usedProperties['transports'] = true;
             $this->transports[$name] = $value;
@@ -42,11 +45,24 @@ class ArrayValuesConfig implements \Symfony\Component\Config\Builder\ConfigBuild
     }
 
     /**
+     * @template TValue of array|bool
+     * @param TValue $value
      * @default {"enabled":false}
-    */
-    public function errorPages(array $value = []): \Symfony\Config\ArrayValues\ErrorPagesConfig
+     * @return \Symfony\Config\ArrayValues\ErrorPagesConfig|$this
+     * @psalm-return (TValue is array ? \Symfony\Config\ArrayValues\ErrorPagesConfig : static)
+     * @deprecated since Symfony 7.4
+     */
+    public function errorPages(array|bool $value = []): \Symfony\Config\ArrayValues\ErrorPagesConfig|static
     {
-        if (null === $this->errorPages) {
+        $this->_hasDeprecatedCalls = true;
+        if (!\is_array($value)) {
+            $this->_usedProperties['errorPages'] = true;
+            $this->errorPages = $value;
+
+            return $this;
+        }
+
+        if (!$this->errorPages instanceof \Symfony\Config\ArrayValues\ErrorPagesConfig) {
             $this->_usedProperties['errorPages'] = true;
             $this->errorPages = new \Symfony\Config\ArrayValues\ErrorPagesConfig($value);
         } elseif (0 < \func_num_args()) {
@@ -61,22 +77,22 @@ class ArrayValuesConfig implements \Symfony\Component\Config\Builder\ConfigBuild
         return 'array_values';
     }
 
-    public function __construct(array $value = [])
+    public function __construct(array $config = [])
     {
-        if (array_key_exists('transports', $value)) {
+        if (array_key_exists('transports', $config)) {
             $this->_usedProperties['transports'] = true;
-            $this->transports = array_map(fn ($v) => \is_array($v) ? new \Symfony\Config\ArrayValues\TransportsConfig($v) : $v, $value['transports']);
-            unset($value['transports']);
+            $this->transports = array_map(fn ($v) => \is_array($v) ? new \Symfony\Config\ArrayValues\TransportsConfig($v) : $v, $config['transports']);
+            unset($config['transports']);
         }
 
-        if (array_key_exists('error_pages', $value)) {
+        if (array_key_exists('error_pages', $config)) {
             $this->_usedProperties['errorPages'] = true;
-            $this->errorPages = \is_array($value['error_pages']) ? new \Symfony\Config\ArrayValues\ErrorPagesConfig($value['error_pages']) : $value['error_pages'];
-            unset($value['error_pages']);
+            $this->errorPages = \is_array($config['error_pages']) ? new \Symfony\Config\ArrayValues\ErrorPagesConfig($config['error_pages']) : $config['error_pages'];
+            unset($config['error_pages']);
         }
 
-        if ([] !== $value) {
-            throw new InvalidConfigurationException(sprintf('The following keys are not supported by "%s": ', __CLASS__).implode(', ', array_keys($value)));
+        if ($config) {
+            throw new InvalidConfigurationException(sprintf('The following keys are not supported by "%s": ', __CLASS__).implode(', ', array_keys($config)));
         }
     }
 
@@ -88,6 +104,9 @@ class ArrayValuesConfig implements \Symfony\Component\Config\Builder\ConfigBuild
         }
         if (isset($this->_usedProperties['errorPages'])) {
             $output['error_pages'] = $this->errorPages instanceof \Symfony\Config\ArrayValues\ErrorPagesConfig ? $this->errorPages->toArray() : $this->errorPages;
+        }
+        if ($this->_hasDeprecatedCalls) {
+            trigger_deprecation('symfony/config', '7.4', 'Calling any fluent method on "%s" is deprecated; pass the configuration to the constructor instead.', $this::class);
         }
 
         return $output;

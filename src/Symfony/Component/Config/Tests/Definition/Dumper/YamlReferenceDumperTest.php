@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Config\Tests\Definition\Dumper;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Config\Definition\Builder\TreeBuilder;
 use Symfony\Component\Config\Definition\Dumper\YamlReferenceDumper;
@@ -71,9 +72,7 @@ class YamlReferenceDumperTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider provideDumpAtPath
-     */
+    #[DataProvider('provideDumpAtPath')]
     public function testDumpAtPath(string $path, string $expected)
     {
         $configuration = new ExampleConfiguration();
@@ -180,6 +179,8 @@ class YamlReferenceDumperTest extends TestCase
                 node_with_a_looong_name: ~
                 enum_with_default:    this # One of "this"; "that"
                 enum:                 ~ # One of "this"; "that"; Symfony\Component\Config\Tests\Fixtures\TestEnum::Ccc
+                enum_with_class:      ~ # One of "foo"; "bar baz"
+                unit_enum_with_class: ~ # One of Symfony\Component\Config\Tests\Fixtures\TestEnum::Foo; Symfony\Component\Config\Tests\Fixtures\TestEnum::Bar; Symfony\Component\Config\Tests\Fixtures\TestEnum::Ccc
 
                 # some info
                 array:
@@ -191,6 +192,7 @@ class YamlReferenceDumperTest extends TestCase
                     # which should be indented
                     child3:               ~ # Example: 'example setting'
                 scalar_prototyped:    []
+                string_list_default_null: ~
                 variable:             ~
 
                     # Examples:

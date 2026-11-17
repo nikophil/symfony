@@ -17,12 +17,15 @@ use Symfony\Component\Mailer\Bridge\Mailchimp\Transport\MandrillApiTransport;
 use Symfony\Component\Mailer\Bridge\Mailchimp\Transport\MandrillHttpTransport;
 use Symfony\Component\Mailer\Bridge\Mailchimp\Transport\MandrillSmtpTransport;
 use Symfony\Component\Mailer\Bridge\Mailchimp\Transport\MandrillTransportFactory;
-use Symfony\Component\Mailer\Test\TransportFactoryTestCase;
+use Symfony\Component\Mailer\Test\AbstractTransportFactoryTestCase;
+use Symfony\Component\Mailer\Test\IncompleteDsnTestTrait;
 use Symfony\Component\Mailer\Transport\Dsn;
 use Symfony\Component\Mailer\Transport\TransportFactoryInterface;
 
-class MandrillTransportFactoryTest extends TransportFactoryTestCase
+class MandrillTransportFactoryTest extends AbstractTransportFactoryTestCase
 {
+    use IncompleteDsnTestTrait;
+
     public function getFactory(): TransportFactoryInterface
     {
         return new MandrillTransportFactory(null, new MockHttpClient(), new NullLogger());
@@ -115,5 +118,16 @@ class MandrillTransportFactoryTest extends TransportFactoryTestCase
         yield [new Dsn('mandrill+api', 'default')];
 
         yield [new Dsn('mandrill+smtp', 'default', self::USER)];
+    }
+
+    public function testSmtpTransportRequiresTls()
+    {
+        $factory = $this->getFactory();
+
+        foreach (['mandrill+smtp', 'mandrill+smtps'] as $scheme) {
+            $this->assertTrue($factory->create(new Dsn($scheme, 'default', self::USER, self::PASSWORD))->isTlsRequired());
+        }
+
+        $this->assertFalse($factory->create(new Dsn('mandrill+smtp', 'default', self::USER, self::PASSWORD, null, ['require_tls' => 'false']))->isTlsRequired());
     }
 }

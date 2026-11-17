@@ -11,12 +11,13 @@
 
 namespace Symfony\Component\DependencyInjection\Tests\Compiler;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Symfony\Bridge\PhpUnit\ExpectDeprecationTrait;
 use Symfony\Component\DependencyInjection\Argument\AbstractArgument;
 use Symfony\Component\DependencyInjection\Argument\BoundArgument;
 use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
+use Symfony\Component\DependencyInjection\Attribute\Target;
 use Symfony\Component\DependencyInjection\Compiler\AutowireRequiredMethodsPass;
 use Symfony\Component\DependencyInjection\Compiler\DefinitionErrorExceptionPass;
 use Symfony\Component\DependencyInjection\Compiler\ResolveBindingsPass;
@@ -40,8 +41,6 @@ require_once __DIR__.'/../Fixtures/includes/autowiring_classes.php';
 
 class ResolveBindingsPassTest extends TestCase
 {
-    use ExpectDeprecationTrait;
-
     public function testProcess()
     {
         $container = new ContainerBuilder();
@@ -148,24 +147,6 @@ class ResolveBindingsPassTest extends TestCase
         $this->assertEquals([new Reference('bar')], $container->getDefinition('def3')->getArguments());
     }
 
-    /**
-     * @group legacy
-     */
-    public function testScalarSetterAnnotation()
-    {
-        $this->expectDeprecation('Since symfony/dependency-injection 6.3: Relying on the "@required" annotation on method "Symfony\Component\DependencyInjection\Tests\Compiler\ScalarSetterAnnotation::setDefaultLocale()" is deprecated, use the "Symfony\Contracts\Service\Attribute\Required" attribute instead.');
-
-        $container = new ContainerBuilder();
-
-        $definition = $container->autowire('foo', ScalarSetterAnnotation::class);
-        $definition->setBindings(['$defaultLocale' => 'fr']);
-
-        (new AutowireRequiredMethodsPass())->process($container);
-        (new ResolveBindingsPass())->process($container);
-
-        $this->assertEquals([['setDefaultLocale', ['fr']]], $definition->getMethodCalls());
-    }
-
     public function testScalarSetterAttribute()
     {
         $container = new ContainerBuilder();
@@ -233,9 +214,7 @@ class ResolveBindingsPassTest extends TestCase
         $pass->process($container);
     }
 
-    /**
-     * @dataProvider provideEmptyBindingTypehintWithMultipleBindingsCases
-     */
+    #[DataProvider('provideEmptyBindingTypehintWithMultipleBindingsCases')]
     public function testEmptyBindingTypehintWithMultipleBindings(string $expectedType, string $expectedArgument, string $class, array $bindings)
     {
         $this->expectException(InvalidArgumentException::class);
@@ -367,5 +346,45 @@ class ResolveBindingsPassTest extends TestCase
         $pass->process($container);
 
         $this->assertEquals(['C', 'K'], $definition->getArguments());
+    }
+
+    public function testBindingsOnTargetedArguments()
+    {
+        $container = new ContainerBuilder();
+        $container->register('service', TargetedBindingsService::class)
+            ->setAutowired(true)
+            ->setBindings([
+                '$targetName' => 'bound_via_target',
+                '$variableName' => 'bound_via_variable',
+                '$commonName' => 'bound_via_common_name',
+            ]);
+
+        (new ResolveBindingsPass())->process($container);
+
+        $definition = $container->getDefinition('service');
+
+        // 1. Priority: Binding matches the #[Target] name
+        $this->assertSame('bound_via_target', $definition->getArgument(0));
+
+        // 2. Fallback: Binding matches the variable name (Target name 'unusedTarget' has no binding)
+        $this->assertSame('bound_via_variable', $definition->getArgument(1));
+
+        // 3. Equality: Target name and variable name are identical
+        $this->assertSame('bound_via_common_name', $definition->getArgument(2));
+    }
+}
+
+class TargetedBindingsService
+{
+    public function __construct(
+        #[Target('targetName')]
+        public $arg1,
+
+        #[Target('unusedTarget')]
+        public $variableName,
+
+        #[Target('commonName')]
+        public $commonName,
+    ) {
     }
 }

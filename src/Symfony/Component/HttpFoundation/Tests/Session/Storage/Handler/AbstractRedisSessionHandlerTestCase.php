@@ -11,15 +11,13 @@
 
 namespace Symfony\Component\HttpFoundation\Tests\Session\Storage\Handler;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Relay\Relay;
 use Symfony\Component\HttpFoundation\Session\Storage\Handler\RedisSessionHandler;
 
-/**
- * @requires extension redis
- *
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 abstract class AbstractRedisSessionHandlerTestCase extends TestCase
 {
     protected const PREFIX = 'prefix_';
@@ -31,8 +29,6 @@ abstract class AbstractRedisSessionHandlerTestCase extends TestCase
 
     protected function setUp(): void
     {
-        parent::setUp();
-
         if (!\extension_loaded('redis')) {
             self::markTestSkipped('Extension redis required.');
         }
@@ -123,9 +119,7 @@ abstract class AbstractRedisSessionHandlerTestCase extends TestCase
         $this->assertFalse((bool) $this->redisClient->exists(self::PREFIX.'id'));
     }
 
-    /**
-     * @dataProvider getOptionFixtures
-     */
+    #[DataProvider('getOptionFixtures')]
     public function testSupportedParam(array $options, bool $supported)
     {
         try {
@@ -147,9 +141,7 @@ abstract class AbstractRedisSessionHandlerTestCase extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider getTtlFixtures
-     */
+    #[DataProvider('getTtlFixtures')]
     public function testUseTtlOption(int $ttl)
     {
         $options = [

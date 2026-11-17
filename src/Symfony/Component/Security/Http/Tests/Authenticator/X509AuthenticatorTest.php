@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Security\Http\Tests\Authenticator;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Security\Core\Authentication\Token\Storage\TokenStorage;
@@ -29,9 +30,7 @@ class X509AuthenticatorTest extends TestCase
         $this->authenticator = new X509Authenticator($this->userProvider, new TokenStorage(), 'main');
     }
 
-    /**
-     * @dataProvider provideServerVars
-     */
+    #[DataProvider('provideServerVars')]
     public function testAuthentication($username, $credentials)
     {
         $serverVars = [];
@@ -57,9 +56,7 @@ class X509AuthenticatorTest extends TestCase
         yield ['TheUser', ''];
     }
 
-    /**
-     * @dataProvider provideServerVarsNoUser
-     */
+    #[DataProvider('provideServerVarsNoUser')]
     public function testAuthenticationNoUser($emailAddress, $credentials)
     {
         $request = $this->createRequest(['SSL_CLIENT_S_DN' => $credentials]);
@@ -94,9 +91,7 @@ class X509AuthenticatorTest extends TestCase
         yield 'quoted preceding value' => ['cert@example.com', 'CN="Sample, certificate DN",emailAddress=cert@example.com'];
     }
 
-    /**
-     * @dataProvider provideSpoofedDns
-     */
+    #[DataProvider('provideSpoofedDns')]
     public function testAuthenticationRejectsSpoofedEmailInDn(string $dn)
     {
         $request = $this->createRequest(['SSL_CLIENT_S_DN' => $dn]);
@@ -175,9 +170,7 @@ class X509AuthenticatorTest extends TestCase
         $this->assertEquals('cert@example.com', $passport->getUser()->getUserIdentifier());
     }
 
-    /**
-     * @dataProvider provideServerVarsUserIdentifier
-     */
+    #[DataProvider('provideServerVarsUserIdentifier')]
     public function testAuthenticationCustomCredentialsUserIdentifier($username, $credentials)
     {
         $authenticator = new X509Authenticator($this->userProvider, new TokenStorage(), 'main', 'SSL_CLIENT_S_DN_Email', 'SSL_CLIENT_S_DN', null, 'CN');
@@ -205,9 +198,7 @@ class X509AuthenticatorTest extends TestCase
         yield ['jdoe', 'CN=jdoe,CN=Users,DC=example,DC=com'];
     }
 
-    /**
-     * @dataProvider provideDnsForCustomUserIdentifier
-     */
+    #[DataProvider('provideDnsForCustomUserIdentifier')]
     public function testAuthenticationCustomCredentialsUserIdentifierSpansAWholeRdn(?string $username, string $dn)
     {
         $authenticator = new X509Authenticator($this->userProvider, new TokenStorage(), 'main', 'SSL_CLIENT_S_DN_Email', 'SSL_CLIENT_S_DN', null, 'UID');
@@ -246,9 +237,7 @@ class X509AuthenticatorTest extends TestCase
         yield 'bare slash in a legacy O, hex escaped attribute' => [null, '/C=US/O=Evil Co/\\x55ID=admin/UID=jdoe/CN=John Doe'];
     }
 
-    /**
-     * @dataProvider provideDns
-     */
+    #[DataProvider('provideDns')]
     public function testSplitDn(array $expected, string $dn)
     {
         $method = new \ReflectionMethod(X509Authenticator::class, 'splitDn');

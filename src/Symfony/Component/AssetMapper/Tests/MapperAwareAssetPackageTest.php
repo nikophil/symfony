@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\AssetMapper\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Asset\Context\RequestStackContext;
 use Symfony\Component\Asset\PackageInterface;
@@ -38,9 +39,7 @@ class MapperAwareAssetPackageTest extends TestCase
         $this->assertSame('2.0', $assetMapperPackage->getVersion('foo'));
     }
 
-    /**
-     * @dataProvider getUrlTests
-     */
+    #[DataProvider('getUrlTests')]
     public function testGetUrl(string $path, string $expectedPathSentToInner)
     {
         $inner = $this->createMock(PackageInterface::class);
@@ -66,9 +65,7 @@ class MapperAwareAssetPackageTest extends TestCase
         $this->assertSame('/'.$expectedPathSentToInner, $assetMapperPackage->getUrl($path));
     }
 
-    /**
-     * @dataProvider getDevServerUrlTests
-     */
+    #[DataProvider('getDevServerUrlTests')]
     public function testGetUrlWithDevServer(string $requestUri, string $scriptName, string $path, string $expectedUrl)
     {
         $requestStack = $this->createRequestStack($requestUri, $scriptName);

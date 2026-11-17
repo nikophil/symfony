@@ -12,15 +12,15 @@
 namespace Symfony\Component\HttpFoundation\Tests\Session\Storage\Handler;
 
 use Doctrine\DBAL\Schema\Schema;
-use Doctrine\DBAL\Schema\Table;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Session\Storage\Handler\PdoSessionHandler;
 
-/**
- * @requires extension pdo_sqlite
- *
- * @group time-sensitive
- */
+#[RequiresPhpExtension('pdo_sqlite')]
+#[Group('time-sensitive')]
 class PdoSessionHandlerTest extends TestCase
 {
     private ?string $dbFile = null;
@@ -31,7 +31,6 @@ class PdoSessionHandlerTest extends TestCase
         if ($this->dbFile) {
             @unlink($this->dbFile);
         }
-        parent::tearDown();
     }
 
     protected function getPersistentSqliteDsn()
@@ -299,9 +298,7 @@ class PdoSessionHandlerTest extends TestCase
         $this->assertSame('', $data, 'Expired session is not revived by updateTimestamp()');
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testSessionGC()
     {
         $previousLifeTime = ini_set('session.gc_maxlifetime', 1000);
@@ -349,9 +346,7 @@ class PdoSessionHandlerTest extends TestCase
         $this->assertInstanceOf(\PDO::class, $method->invoke($storage));
     }
 
-    /**
-     * @dataProvider provideUrlDsnPairs
-     */
+    #[DataProvider('provideUrlDsnPairs')]
     public function testUrlDsn($url, $expectedDsn, $expectedUser = null, $expectedPassword = null)
     {
         $storage = new PdoSessionHandler($url);
@@ -383,7 +378,7 @@ class PdoSessionHandlerTest extends TestCase
     public function testConfigureSchemaTableExistsPdo()
     {
         if (method_exists(Schema::class, 'edit')) {
-            $schema = (new Schema())->edit()->addTable(new Table('sessions'))->create();
+            $schema = (new Schema())->edit()->addTable(new \Doctrine\DBAL\Schema\Table('sessions'))->create();
         } else {
             $schema = new Schema();
             $schema->createTable('sessions');

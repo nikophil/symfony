@@ -11,7 +11,7 @@
 
 namespace Symfony\Component\Messenger\Bridge\Doctrine\Tests\Transport;
 
-use Doctrine\DBAL\Cache\ArrayStatement;
+use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Driver\Result as DriverResult;
 use Doctrine\DBAL\Exception as DBALException;
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
@@ -32,7 +32,7 @@ class PostgreSqlConnectionTest extends TestCase
         $this->expectException(\BadMethodCallException::class);
         $this->expectExceptionMessage('Cannot serialize '.PostgreSqlConnection::class);
 
-        $driverConnection = $this->createStub(\Doctrine\DBAL\Connection::class);
+        $driverConnection = $this->createStub(Connection::class);
         $driverConnection->method('executeStatement')->willReturn(1);
 
         $connection = new PostgreSqlConnection([], $driverConnection);
@@ -44,7 +44,7 @@ class PostgreSqlConnectionTest extends TestCase
         $this->expectException(\BadMethodCallException::class);
         $this->expectExceptionMessage('Cannot unserialize '.PostgreSqlConnection::class);
 
-        $driverConnection = $this->createStub(\Doctrine\DBAL\Connection::class);
+        $driverConnection = $this->createStub(Connection::class);
         $driverConnection->method('executeStatement')->willReturn(1);
 
         $connection = new PostgreSqlConnection([], $driverConnection);
@@ -70,7 +70,7 @@ class PostgreSqlConnectionTest extends TestCase
 
     public function testListenOnConnection()
     {
-        $driverConnection = $this->createMock(\Doctrine\DBAL\Connection::class);
+        $driverConnection = $this->createMock(Connection::class);
         $driverConnection->method('executeStatement')->willReturn(1);
 
         $driverConnection
@@ -104,30 +104,18 @@ class PostgreSqlConnectionTest extends TestCase
             }
         };
 
-        // dbal 2.x
-        if (interface_exists(Result::class)) {
-            $driverConnection
-                ->expects(self::exactly(2))
-                ->method('getWrappedConnection')
-                ->willReturn($wrappedConnection);
+        $driverConnection
+            ->expects(self::exactly(2))
+            ->method('getNativeConnection')
+            ->willReturn($wrappedConnection);
 
-            $driverConnection
-                ->method('executeQuery')
-                ->willReturn(new ArrayStatement([]));
-        } else {
-            // dbal 3.x
-            $driverConnection
-                ->expects(self::exactly(2))
-                ->method('getNativeConnection')
-                ->willReturn($wrappedConnection);
+        $driverResult = $this->createStub(DriverResult::class);
+        $driverResult->method('fetchAssociative')
+            ->willReturn(false);
+        $driverConnection
+            ->method('executeQuery')
+            ->willReturn(new Result($driverResult, $driverConnection));
 
-            $driverResult = $this->createMock(DriverResult::class);
-            $driverResult->method('fetchAssociative')
-                ->willReturn(false);
-            $driverConnection
-                ->method('executeQuery')
-                ->willReturn(new Result($driverResult, $driverConnection));
-        }
         $connection = new PostgreSqlConnection(['table_name' => 'queue_table'], $driverConnection);
 
         $connection->get(); // first time we have queueEmptiedAt === null, fallback on the parent implementation
@@ -145,7 +133,7 @@ class PostgreSqlConnectionTest extends TestCase
 
     public function testDestructDoesNotThrowWhenTheConnectionIsLost()
     {
-        $driverConnection = $this->createStub(\Doctrine\DBAL\Connection::class);
+        $driverConnection = $this->createStub(Connection::class);
         $driverConnection->method('isConnected')->willReturn(true);
         $driverConnection->method('executeStatement')->willReturnCallback(function (string $sql) {
             if (str_starts_with($sql, 'UNLISTEN')) {
@@ -164,7 +152,7 @@ class PostgreSqlConnectionTest extends TestCase
     public function testResetDoesNotReconnectToUnlistenWhenTheConnectionIsClosed()
     {
         $statements = [];
-        $driverConnection = $this->createStub(\Doctrine\DBAL\Connection::class);
+        $driverConnection = $this->createStub(Connection::class);
         $driverConnection->method('isConnected')->willReturn(false);
         $driverConnection->method('executeStatement')->willReturnCallback(static function (string $sql) use (&$statements) {
             $statements[] = $sql;
@@ -181,7 +169,7 @@ class PostgreSqlConnectionTest extends TestCase
 
     public function testGetExtraSetupSqlWrongTable()
     {
-        $driverConnection = $this->createStub(\Doctrine\DBAL\Connection::class);
+        $driverConnection = $this->createStub(Connection::class);
         $driverConnection->method('executeStatement')->willReturn(1);
         $connection = new PostgreSqlConnection(['table_name' => 'queue_table'], $driverConnection);
 
@@ -192,13 +180,13 @@ class PostgreSqlConnectionTest extends TestCase
 
     public function testIsListeningReturnsFalseWhenGetHasNotBeenCalled()
     {
-        $driverConnection = $this->createStub(\Doctrine\DBAL\Connection::class);
+        $driverConnection = $this->createStub(Connection::class);
         $connection = new PostgreSqlConnection(['table_name' => 'queue_table'], $driverConnection);
 
         $this->assertFalse($connection->isListening());
     }
 
-    private function createListeningConnection(\Doctrine\DBAL\Connection&Stub $driverConnection): PostgreSqlConnection
+    private function createListeningConnection(Connection&Stub $driverConnection): PostgreSqlConnection
     {
         $driverConnection->method('getDatabasePlatform')->willReturn(new PostgreSQLPlatform());
         $driverConnection->method('createQueryBuilder')->willReturn(new QueryBuilder($driverConnection));
@@ -215,15 +203,10 @@ class PostgreSqlConnectionTest extends TestCase
             }
         };
 
-        if (interface_exists(Result::class)) {
-            $driverConnection->method('getWrappedConnection')->willReturn($wrappedConnection);
-            $driverConnection->method('executeQuery')->willReturn(new ArrayStatement([]));
-        } else {
-            $driverConnection->method('getNativeConnection')->willReturn($wrappedConnection);
-            $driverResult = $this->createStub(DriverResult::class);
-            $driverResult->method('fetchAssociative')->willReturn(false);
-            $driverConnection->method('executeQuery')->willReturn(new Result($driverResult, $driverConnection));
-        }
+        $driverConnection->method('getNativeConnection')->willReturn($wrappedConnection);
+        $driverResult = $this->createStub(DriverResult::class);
+        $driverResult->method('fetchAssociative')->willReturn(false);
+        $driverConnection->method('executeQuery')->willReturn(new Result($driverResult, $driverConnection));
 
         $connection = new PostgreSqlConnection(['table_name' => 'queue_table'], $driverConnection);
         $connection->get();

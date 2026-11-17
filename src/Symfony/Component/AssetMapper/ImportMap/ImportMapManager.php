@@ -142,13 +142,15 @@ class ImportMapManager
     }
 
     /**
+     * @internal
+     *
      * Gets information about (and optionally downloads) the packages & updates the entries.
      *
      * Returns an array of the entries that were added.
      *
      * @param PackageRequireOptions[] $packagesToRequire
      */
-    private function requirePackages(array $packagesToRequire, ImportMapEntries $importMapEntries): array
+    public function requirePackages(array $packagesToRequire, ImportMapEntries $importMapEntries): array
     {
         if (!$packagesToRequire) {
             return [];
@@ -174,7 +176,7 @@ class ImportMapManager
 
             $newEntry = ImportMapEntry::createLocal(
                 $requireOptions->importName,
-                self::getImportMapTypeFromFilename($requireOptions->path),
+                ImportMapType::tryFrom(pathinfo($path, \PATHINFO_EXTENSION)) ?? ImportMapType::JS,
                 $path,
                 $requireOptions->entrypoint,
             );
@@ -214,11 +216,6 @@ class ImportMapManager
         if ($asset && is_file($asset->sourcePath)) {
             @unlink($asset->sourcePath);
         }
-    }
-
-    private static function getImportMapTypeFromFilename(string $path): ImportMapType
-    {
-        return str_ends_with($path, '.css') ? ImportMapType::CSS : ImportMapType::JS;
     }
 
     /**

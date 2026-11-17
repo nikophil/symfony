@@ -1,5 +1,7 @@
 --TEST--
 Test ExpectDeprecationTrait failing tests
+--SKIPIF--
+<?php if (!getenv('SYMFONY_PHPUNIT_VERSION') || version_compare(getenv('SYMFONY_PHPUNIT_VERSION'), '10.0', '>=')) echo 'Skipping on PHPUnit 10+';
 --FILE--
 <?php
 putenv('SYMFONY_DEPRECATIONS_SERIALIZE');

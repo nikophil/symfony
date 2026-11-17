@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\CssSelector\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\CssSelector\CssSelectorConverter;
 use Symfony\Component\CssSelector\Exception\ParseException;
@@ -82,7 +83,7 @@ class CssSelectorConverterTest extends TestCase
         CssSelectorConverter::$maxCachedItems = 1024;
     }
 
-    /** @dataProvider getCssToXPathWithoutPrefixTestData */
+    #[DataProvider('getCssToXPathWithoutPrefixTestData')]
     public function testCssToXPathWithoutPrefix($css, $xpath)
     {
         $converter = new CssSelectorConverter();

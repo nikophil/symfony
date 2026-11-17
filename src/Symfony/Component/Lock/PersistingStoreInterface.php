@@ -28,23 +28,19 @@ interface PersistingStoreInterface
     /**
      * Stores the resource if it's not locked by someone else.
      *
-     * @return void
-     *
      * @throws LockAcquiringException
      * @throws LockConflictedException
      */
-    public function save(Key $key);
+    public function save(Key $key): void;
 
     /**
      * Removes the resource from the storage if the given key owns it.
      *
      * Does nothing when the lock is owned by another key.
      *
-     * @return void
-     *
      * @throws LockReleasingException
      */
-    public function delete(Key $key);
+    public function delete(Key $key): void;
 
     /**
      * Returns whether or not the given key owns the lock on the resource.
@@ -56,9 +52,7 @@ interface PersistingStoreInterface
      *
      * @param float $ttl amount of seconds to keep the lock in the store
      *
-     * @return void
-     *
      * @throws LockConflictedException
      */
-    public function putOffExpiration(Key $key, float $ttl);
+    public function putOffExpiration(Key $key, float $ttl): void;
 }

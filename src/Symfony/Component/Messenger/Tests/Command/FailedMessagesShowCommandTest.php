@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Messenger\Tests\Command;
 
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Tester\CommandCompletionTester;
@@ -26,9 +27,7 @@ use Symfony\Component\Messenger\Transport\Receiver\ListableReceiverInterface;
 use Symfony\Component\Messenger\Transport\Receiver\MessageCountAwareInterface;
 use Symfony\Component\Messenger\Transport\Receiver\ReceiverInterface;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class FailedMessagesShowCommandTest extends TestCase
 {
     private string|false $colSize;
@@ -226,8 +225,8 @@ class FailedMessagesShowCommandTest extends TestCase
             new RedeliveryStamp(0),
             ErrorDetailsStamp::create(new \RuntimeException('Things are bad!')),
         ]);
-        $receiver = $this->createStub(ListableReceiverInterface::class);
-        $receiver->method('all')->with()->willReturn([$envelope]);
+        $receiver = $this->createMock(ListableReceiverInterface::class);
+        $receiver->expects($this->exactly(3))->method('all')->with()->willReturn([$envelope]);
 
         $failureTransportName = 'failure_receiver';
 
@@ -255,8 +254,8 @@ class FailedMessagesShowCommandTest extends TestCase
             new RedeliveryStamp(0),
             ErrorDetailsStamp::create(new \RuntimeException('Things are bad!')),
         ]);
-        $receiver = $this->createStub(ListableReceiverInterface::class);
-        $receiver->method('all')->with()->willReturn([$envelope, $envelope]);
+        $receiver = $this->createMock(ListableReceiverInterface::class);
+        $receiver->expects($this->once())->method('all')->with()->willReturn([$envelope, $envelope]);
 
         $failureTransportName = 'failure_receiver';
 
@@ -351,7 +350,7 @@ class FailedMessagesShowCommandTest extends TestCase
               message: "Things are bad!"
               code: 0
               file: "%s"
-              line: %d
+              line: %%d
               trace: {
             %%A
             EOF,

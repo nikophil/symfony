@@ -11,8 +11,13 @@
 
 namespace Symfony\Component\DependencyInjection\Tests\Loader;
 
+use Opis\JsonSchema\Errors\ErrorFormatter;
+use Opis\JsonSchema\Validator;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
+use PHPUnit\Framework\Attributes\RequiresMethod;
 use PHPUnit\Framework\TestCase;
-use Symfony\Bridge\PhpUnit\ExpectDeprecationTrait;
 use Symfony\Component\Config\Exception\FileLocatorFileNotFoundException;
 use Symfony\Component\Config\Exception\LoaderLoadException;
 use Symfony\Component\Config\FileLocator;
@@ -33,7 +38,6 @@ use Symfony\Component\DependencyInjection\Exception\LogicException;
 use Symfony\Component\DependencyInjection\Exception\RuntimeException;
 use Symfony\Component\DependencyInjection\Loader\IniFileLoader;
 use Symfony\Component\DependencyInjection\Loader\PhpFileLoader;
-use Symfony\Component\DependencyInjection\Loader\XmlFileLoader;
 use Symfony\Component\DependencyInjection\Loader\YamlFileLoader;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\DependencyInjection\Tests\Fixtures\Bar;
@@ -45,11 +49,11 @@ use Symfony\Component\DependencyInjection\Tests\Fixtures\NamedArgumentsDummy;
 use Symfony\Component\DependencyInjection\Tests\Fixtures\Prototype;
 use Symfony\Component\ExpressionLanguage\Expression;
 use Symfony\Component\Filesystem\Filesystem;
+use Symfony\Component\Yaml\Tag\TaggedValue;
+use Symfony\Component\Yaml\Yaml;
 
 class YamlFileLoaderTest extends TestCase
 {
-    use ExpectDeprecationTrait;
-
     protected static string $fixturesPath;
 
     public static function setUpBeforeClass(): void
@@ -82,9 +86,7 @@ class YamlFileLoaderTest extends TestCase
         $m->invoke($loader, $path.'/parameters.ini');
     }
 
-    /**
-     * @dataProvider provideInvalidFiles
-     */
+    #[DataProvider('provideInvalidFiles')]
     public function testLoadInvalidFile($file)
     {
         $this->expectException(InvalidArgumentException::class);
@@ -121,7 +123,6 @@ class YamlFileLoaderTest extends TestCase
         $container = new ContainerBuilder();
         $resolver = new LoaderResolver([
             new IniFileLoader($container, new FileLocator(self::$fixturesPath.'/ini')),
-            new XmlFileLoader($container, new FileLocator(self::$fixturesPath.'/xml')),
             new PhpFileLoader($container, new FileLocator(self::$fixturesPath.'/php')),
             $loader = new YamlFileLoader($container, new FileLocator(self::$fixturesPath.'/yaml')),
         ]);
@@ -129,18 +130,9 @@ class YamlFileLoaderTest extends TestCase
         $loader->load('services4.yml');
 
         $actual = $container->getParameterBag()->all();
-        $expected = [
-            'foo' => 'bar',
-            'values' => [true, false, \PHP_INT_MAX],
-            'bar' => '%foo%',
-            'escape' => '@escapeme',
-            'foo_bar' => new Reference('foo_bar'),
-            'mixedcase' => ['MixedCaseKey' => 'value'],
-            'imported_from_ini' => true,
-            'imported_from_xml' => true,
-            'with_wrong_ext' => 'from yaml',
-        ];
-        $this->assertEquals(array_keys($expected), array_keys($actual), '->load() imports and merges imported files');
+        $expectedKeys = ['foo', 'values', 'bar', 'escape', 'foo_bar', 'mixedcase', 'imported_from_ini', 'with_wrong_ext'];
+
+        $this->assertEquals($expectedKeys, array_keys($actual), '->load() imports and merges imported files');
         $this->assertTrue($actual['imported_from_ini']);
 
         // Bad import throws no exception due to ignore_errors value.
@@ -166,11 +158,11 @@ class YamlFileLoaderTest extends TestCase
             $this->fail('->load() throws a LoaderLoadException if the tag in the imported yaml file is not valid');
         } catch (\Exception $e) {
             $this->assertInstanceOf(LoaderLoadException::class, $e, '->load() throws a LoaderLoadException if the tag in the imported yaml file is not valid');
-            $this->assertMatchesRegularExpression(\sprintf('#^The service file ".+%1$s" is not valid\. It should contain an array\. Check your YAML syntax in .+%1$s \(which is being imported from ".+%2$s"\)\.$#', 'nonvalid2\.yml', 'services4_bad_import_nonvalid.yml'), $e->getMessage(), '->load() throws a LoaderLoadException if the tag in the imported yaml file is not valid');
+            $this->assertMatchesRegularExpression(\sprintf('#^The service file ".+%1$s" is not valid\. It should contain an array in .+%1$s \(which is being imported from ".+%2$s"\)\.$#', 'nonvalid2\.yml', 'services4_bad_import_nonvalid.yml'), $e->getMessage(), '->load() throws a LoaderLoadException if the tag in the imported yaml file is not valid');
 
             $e = $e->getPrevious();
             $this->assertInstanceOf(InvalidArgumentException::class, $e, '->load() throws an InvalidArgumentException if the tag in the imported yaml file is not valid');
-            $this->assertMatchesRegularExpression(\sprintf('#^The service file ".+%s" is not valid\. It should contain an array\. Check your YAML syntax\.$#', 'nonvalid2\.yml'), $e->getMessage(), '->load() throws an InvalidArgumentException if the tag in the imported yaml file is not valid');
+            $this->assertMatchesRegularExpression(\sprintf('#^The service file ".+%s" is not valid\. It should contain an array\.$#', 'nonvalid2\.yml'), $e->getMessage(), '->load() throws an InvalidArgumentException if the tag in the imported yaml file is not valid');
         }
     }
 
@@ -183,6 +175,7 @@ class YamlFileLoaderTest extends TestCase
 
         self::assertSame([
             'imported_parameter' => 'value when on dev',
+            '.container.known_envs' => ['dev', 'test', 'prod'],
             'root_parameter' => 'value when on dev',
         ], $container->getParameterBag()->all());
 
@@ -191,6 +184,7 @@ class YamlFileLoaderTest extends TestCase
 
         self::assertSame([
             'imported_parameter' => 'value when on test',
+            '.container.known_envs' => ['dev', 'test', 'prod'],
             'root_parameter' => 'value when on test',
         ], $container->getParameterBag()->all());
 
@@ -199,6 +193,7 @@ class YamlFileLoaderTest extends TestCase
 
         self::assertSame([
             'imported_parameter' => 'value when on prod',
+            '.container.known_envs' => ['dev', 'test', 'prod'],
             'root_parameter' => 'value when on prod',
         ], $container->getParameterBag()->all());
 
@@ -207,6 +202,7 @@ class YamlFileLoaderTest extends TestCase
 
         self::assertSame([
             'imported_parameter' => 'default value',
+            '.container.known_envs' => ['dev', 'test', 'prod'],
             'root_parameter' => 'default value',
         ], $container->getParameterBag()->all());
     }
@@ -247,6 +243,21 @@ class YamlFileLoaderTest extends TestCase
         $this->assertEquals(['decorated', 'decorated.pif-pouf', 0], $services['decorator_service_with_name']->getDecoratedService());
         $this->assertEquals(['decorated', 'decorated.pif-pouf', 5], $services['decorator_service_with_name_and_priority']->getDecoratedService());
         $this->assertEquals(['decorated', 'decorated.pif-pouf', 5, ContainerInterface::IGNORE_ON_INVALID_REFERENCE], $services['decorator_service_with_name_and_priority_and_on_invalid']->getDecoratedService());
+    }
+
+    public function testResourceTags()
+    {
+        $container = new ContainerBuilder();
+        $loader = new YamlFileLoader($container, new FileLocator(self::$fixturesPath.'/yaml'));
+        $loader->load('services_resource_tags.yml');
+
+        $def = $container->getDefinition('foo');
+        $this->assertTrue($def->hasTag('container.excluded'));
+        $this->assertTrue($def->hasTag('my.tag'));
+        $this->assertTrue($def->hasTag('another.tag'));
+        $this->assertSame([['foo' => 'bar']], $def->getTag('my.tag'));
+        $this->assertSame([[]], $def->getTag('another.tag'));
+        $this->assertFalse($def->isAbstract());
     }
 
     public function testLoadShortSyntax()
@@ -349,6 +360,20 @@ class YamlFileLoaderTest extends TestCase
         }
     }
 
+    public function testPrependExtensionConfig()
+    {
+        $container = new ContainerBuilder();
+        $container->prependExtensionConfig('project', ['foo' => 'bar']);
+        $loader = new YamlFileLoader($container, new FileLocator(self::$fixturesPath.'/yaml'), prepend: true);
+        $loader->load('services10.yml');
+
+        $expected = [
+            ['test' => '%project.parameter.foo%'],
+            ['foo' => 'bar'],
+        ];
+        $this->assertSame($expected, $container->getExtensionConfig('project'));
+    }
+
     public function testExtensionWithNullConfig()
     {
         $container = new ContainerBuilder();
@@ -423,13 +448,8 @@ class YamlFileLoaderTest extends TestCase
         $this->assertEquals(new ServiceLocatorArgument($taggedIterator), $container->getDefinition('bar_service_tagged_locator')->getArgument(0));
     }
 
-    /**
-     * @group legacy
-     */
     public function testServiceWithServiceLocatorArgument()
     {
-        $this->expectDeprecation('Since symfony/dependency-injection 6.3: Using integers as keys in a "!service_locator" tag is deprecated. The keys will default to the IDs of the original services in 7.0.');
-
         $container = new ContainerBuilder();
         $loader = new YamlFileLoader($container, new FileLocator(self::$fixturesPath.'/yaml'));
         $loader->load('services_with_service_locator_argument.yml');
@@ -455,6 +475,15 @@ class YamlFileLoaderTest extends TestCase
         $loader->load('services_with_service_closure.yml');
 
         $this->assertEquals(new ServiceClosureArgument(new Reference('bar', ContainerInterface::IGNORE_ON_INVALID_REFERENCE)), $container->getDefinition('foo')->getArgument(0));
+    }
+
+    public function testParseShortServiceClosure()
+    {
+        $container = new ContainerBuilder();
+        $loader = new YamlFileLoader($container, new FileLocator(self::$fixturesPath.'/yaml'));
+        $loader->load('services_with_short_service_closure.yml');
+
+        $this->assertEquals(new ServiceClosureArgument(new Reference('bar')), $container->getDefinition('foo')->getArgument(0));
     }
 
     public function testNameOnlyTagsAreAllowedAsString()
@@ -545,7 +574,7 @@ class YamlFileLoaderTest extends TestCase
 
         $ids = array_keys(array_filter($container->getDefinitions(), static fn ($def) => !$def->hasTag('container.excluded')));
         sort($ids);
-        $this->assertSame([Prototype\Foo::class, Prototype\Sub\Bar::class, 'service_container'], $ids);
+        $this->assertSame([Prototype\Foo::class, Prototype\NotFoo::class, Prototype\Sub\Bar::class, 'service_container'], $ids);
 
         $resources = array_map('strval', $container->getResources());
 
@@ -559,6 +588,7 @@ class YamlFileLoaderTest extends TestCase
             true,
             false, [
                 str_replace(\DIRECTORY_SEPARATOR, '/', $prototypeRealPath.\DIRECTORY_SEPARATOR.'BadClasses') => true,
+                str_replace(\DIRECTORY_SEPARATOR, '/', $prototypeRealPath.\DIRECTORY_SEPARATOR.'BadAttributes') => true,
                 str_replace(\DIRECTORY_SEPARATOR, '/', $prototypeRealPath.\DIRECTORY_SEPARATOR.'OtherDir') => true,
                 str_replace(\DIRECTORY_SEPARATOR, '/', $prototypeRealPath.\DIRECTORY_SEPARATOR.'SinglyImplementedInterface') => true,
                 str_replace(\DIRECTORY_SEPARATOR, '/', $prototypeRealPath.\DIRECTORY_SEPARATOR.'StaticConstructor') => true,
@@ -569,9 +599,7 @@ class YamlFileLoaderTest extends TestCase
         $this->assertContains('reflection.Symfony\Component\DependencyInjection\Tests\Fixtures\Prototype\Sub\Bar', $resources);
     }
 
-    /**
-     * @dataProvider prototypeWithNullOrEmptyNodeDataProvider
-     */
+    #[DataProvider('prototypeWithNullOrEmptyNodeDataProvider')]
     public function testPrototypeWithNullOrEmptyNode(string $fileName)
     {
         $this->expectException(InvalidArgumentException::class);
@@ -749,7 +777,7 @@ class YamlFileLoaderTest extends TestCase
     public function testInvalidTagsWithDefaults()
     {
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessageMatches('/Parameter "tags" must be an array for service "Foo\\\Bar" in ".+services31_invalid_tags\.yml"\. Check your YAML syntax./');
+        $this->expectExceptionMessageMatches('/Parameter "tags" must be an array for service "Foo\\\Bar" in ".+services31_invalid_tags\.yml"\./');
         $loader = new YamlFileLoader(new ContainerBuilder(), new FileLocator(self::$fixturesPath.'/yaml'));
         $loader->load('services31_invalid_tags.yml');
     }
@@ -856,7 +884,7 @@ class YamlFileLoaderTest extends TestCase
         $anonymous = $container->getDefinition((string) $args['foo']);
         $this->assertEquals('Anonymous', $anonymous->getClass());
         $this->assertFalse($anonymous->isPublic());
-        $this->assertEmpty($anonymous->getInstanceofConditionals());
+        $this->assertSame([], $anonymous->getInstanceofConditionals());
 
         $this->assertFalse($container->has('Bar'));
     }
@@ -1054,7 +1082,13 @@ class YamlFileLoaderTest extends TestCase
         $loader = new YamlFileLoader($container, new FileLocator(self::$fixturesPath.'/yaml'));
 
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('The constant "Symfony\Component\DependencyInjection\Tests\Fixtures\FooUnitEnum::BAZ" is not defined');
+
+        if (str_starts_with(Yaml::dump(FooUnitEnum::BAR), '!php/enum')) {
+            $this->expectExceptionMessage('The string "Symfony\Component\DependencyInjection\Tests\Fixtures\FooUnitEnum::BAZ" is not the name of a valid enum');
+        } else {
+            $this->expectExceptionMessage('The enum "Symfony\Component\DependencyInjection\Tests\Fixtures\FooUnitEnum::BAZ" is not defined');
+        }
+
         $loader->load('services_with_invalid_enumeration.yml');
     }
 
@@ -1179,7 +1213,11 @@ class YamlFileLoaderTest extends TestCase
         $loader = new YamlFileLoader($container, new FileLocator(self::$fixturesPath.'/yaml'), 'some-env');
         $loader->load('when-env.yaml');
 
-        $this->assertSame(['foo' => 234, 'bar' => 345], $container->getParameterBag()->all());
+        $this->assertSame([
+            'foo' => 234,
+            '.container.known_envs' => ['some-env', 'some-other-env'],
+            'bar' => 345,
+        ], $container->getParameterBag()->all());
     }
 
     public function testClosure()
@@ -1210,5 +1248,78 @@ class YamlFileLoaderTest extends TestCase
 
         $definition = $container->getDefinition('static_constructor');
         $this->assertEquals((new Definition('stdClass'))->setFactory([null, 'create']), $definition);
+    }
+
+    #[RequiresMethod(Validator::class, 'validate')]
+    public function testSchemaAcceptsTheFilesTheLoaderAccepts()
+    {
+        $validator = new Validator(null, 100, false);
+        $schema = json_decode(file_get_contents(\dirname(self::$fixturesPath, 2).'/Loader/schema/services.schema.json'));
+        // A service without a class cannot be compiled, so the schema rejects the short syntax for ids that are not class names.
+        $ignored = ['services_short_syntax.yml'];
+        $failures = [];
+
+        foreach (array_merge(glob(self::$fixturesPath.'/yaml/*.yml'), glob(self::$fixturesPath.'/yaml/*.yaml')) as $file) {
+            if (\in_array(basename($file), $ignored, true)) {
+                continue;
+            }
+
+            set_error_handler(static fn (int $type, string $message) => throw new \ErrorException($message, 0, $type));
+            try {
+                (new YamlFileLoader(new ContainerBuilder(), new FileLocator(\dirname($file)), 'dev'))->load(basename($file));
+            } catch (\Exception) {
+                continue;
+            } finally {
+                restore_error_handler();
+            }
+
+            if (null === $data = Yaml::parseFile($file, Yaml::PARSE_CONSTANT | Yaml::PARSE_CUSTOM_TAGS | Yaml::PARSE_OBJECT_FOR_MAP)) {
+                continue;
+            }
+
+            $result = $validator->validate(self::toJsonData($data), $schema);
+
+            if (!$result->isValid()) {
+                $failures[basename($file)] = (new ErrorFormatter())->format($result->error(), false);
+            }
+        }
+
+        $this->assertSame([], $failures);
+    }
+
+    #[RequiresMethod(Validator::class, 'validate')]
+    public function testSchemaRejectsTagsGivenAsAMap()
+    {
+        $schema = json_decode(file_get_contents(\dirname(self::$fixturesPath, 2).'/Loader/schema/services.schema.json'));
+        $data = Yaml::parse(<<<YAML
+            services:
+                App\\Processor:
+                    tags: { name: monolog.processor, handler: main }
+            YAML, Yaml::PARSE_OBJECT_FOR_MAP);
+
+        $this->assertFalse((new Validator())->validate(self::toJsonData($data), $schema)->isValid());
+    }
+
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testDeprecatedTagged()
+    {
+        $container = new ContainerBuilder();
+        $loader = new YamlFileLoader($container, new FileLocator(self::$fixturesPath.'/yaml'));
+
+        $this->expectUserDeprecationMessage(\sprintf('Since symfony/dependency-injection 7.2: Using "!tagged" is deprecated, use "!tagged_iterator" instead in "%s/yaml%stagged_deprecated.yml".', self::$fixturesPath, \DIRECTORY_SEPARATOR));
+
+        $loader->load('tagged_deprecated.yml');
+    }
+
+    private static function toJsonData(mixed $value): mixed
+    {
+        return match (true) {
+            $value instanceof TaggedValue => self::toJsonData($value->getValue()),
+            $value instanceof \UnitEnum => $value->name,
+            $value instanceof \stdClass => (object) array_map(self::toJsonData(...), (array) $value),
+            \is_array($value) => array_map(self::toJsonData(...), $value),
+            default => $value,
+        };
     }
 }

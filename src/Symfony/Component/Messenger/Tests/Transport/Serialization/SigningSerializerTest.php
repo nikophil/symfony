@@ -1,0 +1,634 @@
+<?php
+
+/*
+ * This file is part of the Symfony package.
+ *
+ * (c) Fabien Potencier <fabien@symfony.com>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace Symfony\Component\Messenger\Tests\Transport\Serialization;
+
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\Exception\InvalidMessageSignatureException;
+use Symfony\Component\Messenger\Exception\MessageDecodingFailedException;
+use Symfony\Component\Messenger\Stamp\BusNameStamp;
+use Symfony\Component\Messenger\Tests\Fixtures\ChildDummyMessage;
+use Symfony\Component\Messenger\Tests\Fixtures\DummyMessage;
+use Symfony\Component\Messenger\Tests\Fixtures\DummyMessageEnum;
+use Symfony\Component\Messenger\Tests\Fixtures\DummyMessageInterface;
+use Symfony\Component\Messenger\Tests\Fixtures\DummyStampHoldingAnObject;
+use Symfony\Component\Messenger\Transport\Serialization\MessageTypeAwareSerializerInterface;
+use Symfony\Component\Messenger\Transport\Serialization\PhpSerializer;
+use Symfony\Component\Messenger\Transport\Serialization\Serializer;
+use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
+use Symfony\Component\Messenger\Transport\Serialization\SigningSerializer;
+
+class SigningSerializerTest extends TestCase
+{
+    public function testEncodeAddsSignatureHeadersWhenTypeIsSigned()
+    {
+        $serializer = $this->createSerializer([DummyMessage::class]);
+        $envelope = new Envelope(new DummyMessage('hello'));
+
+        $encoded = $serializer->encode($envelope);
+
+        $this->assertArrayHasKey('headers', $encoded);
+        $this->assertArrayHasKey('Body-Sign', $encoded['headers']);
+        $this->assertArrayHasKey('Sign-Algo', $encoded['headers']);
+        $this->assertSame('sha256', $encoded['headers']['Sign-Algo']);
+        $this->assertNotEmpty($encoded['headers']['Body-Sign']);
+    }
+
+    public function testEncodeDoesNotAddSignatureForUnsignedType()
+    {
+        $serializer = $this->createSerializer([]);
+        $envelope = new Envelope(new DummyMessage('hello'));
+
+        $encoded = $serializer->encode($envelope);
+
+        $this->assertArrayNotHasKey('headers', $encoded);
+    }
+
+    public function testDecodeAcceptsValidSignature()
+    {
+        $serializer = $this->createSerializer([DummyMessage::class]);
+        $envelope = new Envelope(new DummyMessage('hello'));
+        $encoded = $serializer->encode($envelope);
+
+        $decoded = $serializer->decode($encoded);
+        $this->assertInstanceOf(Envelope::class, $decoded);
+        $this->assertInstanceOf(DummyMessage::class, $decoded->getMessage());
+    }
+
+    public function testDecodeRejectsMissingSignature()
+    {
+        $serializer = $this->createSerializer([DummyMessage::class]);
+        $inner = new PhpSerializer();
+        $envelope = new Envelope(new DummyMessage('hello'));
+        $encoded = $inner->encode($envelope);
+
+        $this->expectException(MessageDecodingFailedException::class);
+        $this->expectExceptionMessage(\sprintf('Message "%s" requires a signature but none was found.', DummyMessage::class));
+        $serializer->decode($encoded);
+    }
+
+    public function testDecodeRejectsInvalidSignature()
+    {
+        $serializer = $this->createSerializer([DummyMessage::class]);
+        $envelope = new Envelope(new DummyMessage('hello'));
+        $encoded = $serializer->encode($envelope);
+        $encoded['headers']['Body-Sign'] = 'tampered';
+
+        $this->expectException(MessageDecodingFailedException::class);
+        $this->expectExceptionMessage(\sprintf('Invalid signature for message "%s".', DummyMessage::class));
+        $serializer->decode($encoded);
+    }
+
+    public function testDecodeDoesNotInvokeInnerSerializerWhenSignatureIsInvalid()
+    {
+        $inner = new class implements SerializerInterface, MessageTypeAwareSerializerInterface {
+            public bool $decoded = false;
+
+            public function getMessageType(array $encodedEnvelope): ?string
+            {
+                return DummyMessage::class;
+            }
+
+            public function decode(array $encodedEnvelope): Envelope
+            {
+                $this->decoded = true;
+
+                return new Envelope(new DummyMessage('hello'));
+            }
+
+            public function encode(Envelope $envelope): array
+            {
+                return ['body' => 'irrelevant'];
+            }
+        };
+
+        $serializer = new SigningSerializer($inner, 'secret-key', [DummyMessage::class]);
+
+        try {
+            $serializer->decode(['body' => 'irrelevant', 'headers' => ['Body-Sign' => 'tampered', 'Sign-Algo' => 'sha256']]);
+            $this->fail(\sprintf('Expected "%s" to be thrown.', MessageDecodingFailedException::class));
+        } catch (MessageDecodingFailedException) {
+        }
+
+        $this->assertFalse($inner->decoded, 'The inner serializer must not be invoked when a signed message has an invalid signature.');
+    }
+
+    public function testDecodeRejectsNonStringSignature()
+    {
+        $serializer = $this->createSerializer([DummyMessage::class]);
+        $envelope = new Envelope(new DummyMessage('hello'));
+        $encoded = $serializer->encode($envelope);
+        $encoded['headers']['Body-Sign'] = [$encoded['headers']['Body-Sign']];
+
+        $this->expectException(MessageDecodingFailedException::class);
+        $this->expectExceptionMessage(\sprintf('Message "%s" requires a signature but none was found.', DummyMessage::class));
+        $serializer->decode($encoded);
+    }
+
+    public function testDecodeRejectsMissingSignatureBeforeInvokingTypeAwareInnerSerializer()
+    {
+        $inner = new class implements SerializerInterface, MessageTypeAwareSerializerInterface {
+            public bool $decoded = false;
+
+            public function getMessageType(array $encodedEnvelope): ?string
+            {
+                return $encodedEnvelope['headers']['type'] ?? null;
+            }
+
+            public function decode(array $encodedEnvelope): Envelope
+            {
+                $this->decoded = true;
+
+                return new Envelope(new DummyMessage('hello'));
+            }
+
+            public function encode(Envelope $envelope): array
+            {
+                return ['body' => 'irrelevant', 'headers' => ['type' => $envelope->getMessage()::class]];
+            }
+        };
+
+        $serializer = new SigningSerializer($inner, 'secret-key', [DummyMessage::class]);
+
+        try {
+            $serializer->decode(['body' => 'irrelevant', 'headers' => ['type' => DummyMessage::class]]);
+            $this->fail(\sprintf('Expected "%s" to be thrown.', MessageDecodingFailedException::class));
+        } catch (MessageDecodingFailedException) {
+        }
+
+        $this->assertFalse($inner->decoded, 'A signed message arriving without a signature must be rejected before the inner serializer is invoked.');
+    }
+
+    public function testDecodeDoesNotRejectUnsignedTypeReportedByTypeAwareInnerSerializer()
+    {
+        $inner = new class implements SerializerInterface, MessageTypeAwareSerializerInterface {
+            public function getMessageType(array $encodedEnvelope): ?string
+            {
+                return $encodedEnvelope['headers']['type'] ?? null;
+            }
+
+            public function decode(array $encodedEnvelope): Envelope
+            {
+                return new Envelope(new DummyMessage('hello'));
+            }
+
+            public function encode(Envelope $envelope): array
+            {
+                return ['body' => 'irrelevant', 'headers' => ['type' => $envelope->getMessage()::class]];
+            }
+        };
+
+        $serializer = new SigningSerializer($inner, 'secret-key', []);
+
+        // a stray (and here invalid) signature on a type that is not configured for signing is ignored
+        $decoded = $serializer->decode(['body' => 'irrelevant', 'headers' => ['type' => DummyMessage::class, 'Body-Sign' => 'not-a-valid-signature', 'Sign-Algo' => 'sha256']]);
+        $this->assertInstanceOf(DummyMessage::class, $decoded->getMessage());
+    }
+
+    public function testDecodeRejectsMissingSignatureOfTheDecodedMessageWhateverTheReportedType()
+    {
+        $inner = new class implements SerializerInterface, MessageTypeAwareSerializerInterface {
+            public function getMessageType(array $encodedEnvelope): ?string
+            {
+                return \stdClass::class;
+            }
+
+            public function decode(array $encodedEnvelope): Envelope
+            {
+                return new Envelope(new DummyMessage('hello'));
+            }
+
+            public function encode(Envelope $envelope): array
+            {
+                return ['body' => 'irrelevant'];
+            }
+        };
+
+        $this->expectException(MessageDecodingFailedException::class);
+        $this->expectExceptionMessage(\sprintf('Message "%s" requires a signature but none was found.', DummyMessage::class));
+        (new SigningSerializer($inner, 'secret-key', [DummyMessage::class]))->decode(['body' => 'irrelevant', 'headers' => []]);
+    }
+
+    public function testDecodeDoesNotRejectUnknownTypeWhenNoMessageTypeRequiresSignature()
+    {
+        $inner = new class implements SerializerInterface, MessageTypeAwareSerializerInterface {
+            public function getMessageType(array $encodedEnvelope): ?string
+            {
+                return null;
+            }
+
+            public function decode(array $encodedEnvelope): Envelope
+            {
+                return new Envelope(new DummyMessage('hello'));
+            }
+
+            public function encode(Envelope $envelope): array
+            {
+                return ['body' => 'irrelevant'];
+            }
+        };
+
+        $serializer = new SigningSerializer($inner, 'secret-key', []);
+
+        $decoded = $serializer->decode(['body' => 'irrelevant']);
+
+        $this->assertInstanceOf(DummyMessage::class, $decoded->getMessage());
+    }
+
+    public function testDecodePassesHeadersThroughWhenNoMessageTypeRequiresSignature()
+    {
+        $inner = new class implements SerializerInterface, MessageTypeAwareSerializerInterface {
+            public array $receivedHeaders = [];
+
+            public function getMessageType(array $encodedEnvelope): ?string
+            {
+                return null;
+            }
+
+            public function decode(array $encodedEnvelope): Envelope
+            {
+                $this->receivedHeaders = $encodedEnvelope['headers'] ?? [];
+
+                return new Envelope(new DummyMessage('hello'));
+            }
+
+            public function encode(Envelope $envelope): array
+            {
+                return ['body' => 'irrelevant'];
+            }
+        };
+
+        $serializer = new SigningSerializer($inner, 'secret-key', []);
+
+        $decoded = $serializer->decode(['body' => 'irrelevant', 'headers' => ['Body-Sign' => 'not-a-valid-signature', 'Sign-Algo' => 'sha256']]);
+
+        $this->assertInstanceOf(DummyMessage::class, $decoded->getMessage());
+        $this->assertSame(['Body-Sign' => 'not-a-valid-signature', 'Sign-Algo' => 'sha256'], $inner->receivedHeaders);
+    }
+
+    public function testDecodeRejectsMessageWithoutSignatureWhenTypeAwareInnerSerializerCannotDetermineType()
+    {
+        $inner = new class implements SerializerInterface, MessageTypeAwareSerializerInterface {
+            public bool $decoded = false;
+
+            public function getMessageType(array $encodedEnvelope): ?string
+            {
+                return null;
+            }
+
+            public function decode(array $encodedEnvelope): Envelope
+            {
+                $this->decoded = true;
+
+                return new Envelope(new DummyMessage('hello'));
+            }
+
+            public function encode(Envelope $envelope): array
+            {
+                return ['body' => 'irrelevant'];
+            }
+        };
+
+        $serializer = new SigningSerializer($inner, 'secret-key', [DummyMessage::class]);
+
+        try {
+            $serializer->decode(['body' => 'irrelevant']);
+            $this->fail(\sprintf('Expected "%s" to be thrown.', MessageDecodingFailedException::class));
+        } catch (MessageDecodingFailedException) {
+        }
+
+        $this->assertFalse($inner->decoded, 'A message whose type cannot be determined and that carries no signature must not be decoded.');
+    }
+
+    public function testDecodeAcceptsValidSignatureRegardlessOfReportedType()
+    {
+        $inner = new class implements SerializerInterface, MessageTypeAwareSerializerInterface {
+            public function getMessageType(array $encodedEnvelope): ?string
+            {
+                return null; // not consulted: a valid signature is enough
+            }
+
+            public function decode(array $encodedEnvelope): Envelope
+            {
+                return new Envelope(new DummyMessage('hello'));
+            }
+
+            public function encode(Envelope $envelope): array
+            {
+                return ['body' => 'the-body'];
+            }
+        };
+
+        $serializer = new SigningSerializer($inner, 'secret-key', [DummyMessage::class]);
+
+        $decoded = $serializer->decode($serializer->encode(new Envelope(new DummyMessage('hello'))));
+        $this->assertInstanceOf(DummyMessage::class, $decoded->getMessage());
+    }
+
+    public function testEncodeSignsWhenSignedTypeIsInterfaceImplementedByMessage()
+    {
+        $serializer = $this->createSerializer([DummyMessageInterface::class]);
+        $envelope = new Envelope(new DummyMessage('hello'));
+
+        $encoded = $serializer->encode($envelope);
+
+        $this->assertArrayHasKey('headers', $encoded);
+        $this->assertArrayHasKey('Body-Sign', $encoded['headers']);
+        $this->assertArrayHasKey('Sign-Algo', $encoded['headers']);
+    }
+
+    public function testDecodeVerifiesWhenSignedTypeIsParentClassOfMessage()
+    {
+        $serializer = $this->createSerializer([DummyMessage::class]);
+
+        // Encode with signature by using the SigningSerializer against a child instance
+        $encoded = $serializer->encode(new Envelope(new ChildDummyMessage('child')));
+
+        // Tamper by removing signature to ensure verification occurs for child type
+        unset($encoded['headers']['Body-Sign']);
+
+        $this->expectException(MessageDecodingFailedException::class);
+        $this->expectExceptionMessage(\sprintf('Message "%s" requires a signature but none was found.', ChildDummyMessage::class));
+        $serializer->decode($encoded);
+    }
+
+    public function testDecodeRejectsATamperedTypeHeader()
+    {
+        $serializer = $this->createJsonSerializer([DummyMessage::class]);
+        $encoded = $serializer->encode(new Envelope(new DummyMessage('hello')));
+        $encoded['headers']['type'] = ChildDummyMessage::class;
+
+        $this->expectException(MessageDecodingFailedException::class);
+        $this->expectExceptionMessage(\sprintf('Invalid signature for message "%s".', ChildDummyMessage::class));
+        $serializer->decode($encoded);
+    }
+
+    public function testDecodeRejectsAGraftedStampHeader()
+    {
+        $serializer = $this->createJsonSerializer([DummyMessage::class]);
+        $encoded = $serializer->encode(new Envelope(new DummyMessage('hello')));
+        $encoded['headers']['X-Message-Stamp-'.BusNameStamp::class] = '[{"busName":"other_bus"}]';
+
+        $this->expectException(MessageDecodingFailedException::class);
+        $this->expectExceptionMessage(\sprintf('Invalid signature for message "%s".', DummyMessage::class));
+        $serializer->decode($encoded);
+    }
+
+    public function testDecodeIgnoresHeadersThatDoNotDescribeTheMessage()
+    {
+        $serializer = $this->createJsonSerializer([DummyMessage::class]);
+        $encoded = $serializer->encode(new Envelope(new DummyMessage('hello')));
+        $encoded['headers']['Content-Type'] = 'application/x-something-else';
+        $encoded['headers']['x-death'] = 'added by the broker';
+
+        $decoded = $serializer->decode($encoded);
+
+        $this->assertSame('hello', $decoded->getMessage()->getMessage());
+    }
+
+    public function testDecodeAcceptsSignedHeadersInAnyOrder()
+    {
+        $serializer = $this->createJsonSerializer([DummyMessage::class]);
+        $encoded = $serializer->encode(new Envelope(new DummyMessage('hello'), [new BusNameStamp('the_bus')]));
+        $encoded['headers'] = array_reverse($encoded['headers'], true);
+
+        $decoded = $serializer->decode($encoded);
+
+        $this->assertSame('the_bus', $decoded->last(BusNameStamp::class)->getBusName());
+    }
+
+    public function testEncodeMarksTheSignatureAsCoveringTheHeaders()
+    {
+        $serializer = $this->createJsonSerializer([DummyMessage::class]);
+
+        $encoded = $serializer->encode(new Envelope(new DummyMessage('hello')));
+
+        $this->assertStringStartsWith('v2:', $encoded['headers']['Body-Sign']);
+    }
+
+    public function testDecodeAcceptsABodyOnlySignature()
+    {
+        $inner = new Serializer();
+        $serializer = new SigningSerializer($inner, 'secret-key', [DummyMessage::class]);
+
+        $decoded = $serializer->decode($this->signBodyOnly($inner->encode(new Envelope(new DummyMessage('hello')))));
+
+        $this->assertSame('hello', $decoded->getMessage()->getMessage());
+    }
+
+    public function testDecodeAcceptsTamperedHeadersOnABodyOnlySignature()
+    {
+        $inner = new Serializer();
+        $serializer = new SigningSerializer($inner, 'secret-key', [DummyMessage::class]);
+        $encoded = $this->signBodyOnly($inner->encode(new Envelope(new DummyMessage('hello'))));
+        $encoded['headers']['type'] = ChildDummyMessage::class;
+
+        // messages signed before the headers were covered keep working, headers included
+        $decoded = $serializer->decode($encoded);
+
+        $this->assertInstanceOf(ChildDummyMessage::class, $decoded->getMessage());
+    }
+
+    public function testDecodeRejectsASignatureStrippedOfItsMarker()
+    {
+        $serializer = $this->createJsonSerializer([DummyMessage::class]);
+        $encoded = $serializer->encode(new Envelope(new DummyMessage('hello')));
+        $encoded['headers']['Body-Sign'] = substr($encoded['headers']['Body-Sign'], \strlen('v2:'));
+        $encoded['headers']['type'] = ChildDummyMessage::class;
+
+        $this->expectException(MessageDecodingFailedException::class);
+        $this->expectExceptionMessage(\sprintf('Invalid signature for message "%s".', ChildDummyMessage::class));
+        $serializer->decode($encoded);
+    }
+
+    public function testDecodeRejectsAHeaderCoveringSignatureReplayedAsBodyOnly()
+    {
+        $serializer = $this->createJsonSerializer([DummyMessage::class]);
+        $encoded = $serializer->encode(new Envelope(new DummyMessage('hello')));
+
+        // the signed payload is built from public data: replay it as the body of a message bearing a body-only signature
+        $forged = [
+            'body' => serialize([$encoded['body'], ['type' => $encoded['headers']['type']]]),
+            'headers' => [
+                'type' => ChildDummyMessage::class,
+                'Body-Sign' => substr($encoded['headers']['Body-Sign'], \strlen('v2:')),
+            ],
+        ];
+
+        $this->expectException(MessageDecodingFailedException::class);
+        $this->expectExceptionMessage(\sprintf('Invalid signature for message "%s".', ChildDummyMessage::class));
+        $serializer->decode($forged);
+    }
+
+    #[DataProvider('provideEnumCasesCarriedBySignedMessages')]
+    public function testDecodeRejectsMissingSignatureWithoutAutoloadingTheEnumsTheBodyCarries(string $search, string $replace)
+    {
+        $serializer = $this->createSerializer([DummyMessage::class]);
+        $body = str_replace($search, $replace, serialize(new Envelope(new DummyMessage('hello'))));
+        $requested = [];
+        $autoloader = static function (string $class) use (&$requested) {
+            $requested[] = $class;
+        };
+        $refusal = null;
+        spl_autoload_register($autoloader, true, true);
+
+        try {
+            $serializer->decode(['body' => addslashes($body), 'headers' => []]);
+        } catch (MessageDecodingFailedException $e) {
+            $refusal = $e->getMessage();
+        } finally {
+            spl_autoload_unregister($autoloader);
+        }
+
+        $this->assertNotContains('Unknown\Missing\EnumName', $requested);
+        $this->assertSame(\sprintf('Message "%s" requires a signature but none was found.', DummyMessage::class), $refusal);
+    }
+
+    public static function provideEnumCasesCarriedBySignedMessages(): iterable
+    {
+        $stamps = serialize([DummyStampHoldingAnObject::class => [new DummyStampHoldingAnObject(DummyMessageEnum::A)]]);
+
+        yield 'in the stamps' => ['a:0:{}', str_replace(serialize(DummyMessageEnum::A), 'E:33:"Unknown\Missing\EnumName:CaseName";', $stamps)];
+        yield 'in a property of the message' => ['s:5:"hello"', 'E:33:"Unknown\Missing\EnumName:CaseName"'];
+    }
+
+    #[DataProvider('provideMessagesThatAStampHoldsToo')]
+    public function testDecodeRejectsMissingSignatureOfAMessageThatAStampHoldsToo(string $search, string $replace)
+    {
+        $message = new DummyMessage('hello');
+        $body = str_replace($search, $replace, serialize(new Envelope($message, [new DummyStampHoldingAnObject($message)])));
+
+        $this->expectException(MessageDecodingFailedException::class);
+        $this->expectExceptionMessage(\sprintf('Message "%s" requires a signature but none was found.', DummyMessage::class));
+        $this->createSerializer([DummyMessage::class])->decode(['body' => addslashes($body), 'headers' => []]);
+    }
+
+    public static function provideMessagesThatAStampHoldsToo(): iterable
+    {
+        yield 'carrying an enum case whose class is not loaded' => ['s:5:"hello"', 'E:33:"Unknown\Missing\EnumName:CaseName"'];
+        yield 'carrying a string that contains "C:"' => ['s:5:"hello"', 's:6:"C:\foo"'];
+    }
+
+    public function testDecodeAcceptsUnsignedMessageThatAStampHoldsToo()
+    {
+        $serializer = $this->createSerializer([DummyMessageEnum::class]);
+        $message = new DummyMessage('C:\foo');
+
+        $envelope = $serializer->decode($serializer->encode(new Envelope($message, [new DummyStampHoldingAnObject($message)])));
+
+        $this->assertEquals($message, $envelope->getMessage());
+    }
+
+    #[DataProvider('provideUnsignedMessagesOfClassesThatDoNotExist')]
+    public function testDecodeRejectsUnsignedMessageOfAClassThatDoesNotExist(string $message)
+    {
+        $serializer = $this->createSerializer([DummyMessage::class]);
+        $body = str_replace('O:8:"stdClass":0:{}', $message, serialize(new Envelope(new \stdClass())));
+
+        $this->expectException(MessageDecodingFailedException::class);
+        $serializer->decode(['body' => addslashes($body), 'headers' => []]);
+    }
+
+    public static function provideUnsignedMessagesOfClassesThatDoNotExist(): iterable
+    {
+        yield 'object' => ['O:25:"Unknown\Missing\ClassName":0:{}'];
+        yield 'enum case' => ['E:33:"Unknown\Missing\EnumName:CaseName";'];
+    }
+
+    public function testDecodeRejectsUnsignedEnumCaseOfASignedType()
+    {
+        $serializer = $this->createSerializer([DummyMessageEnum::class]);
+        $case = DummyMessageEnum::class.':A';
+        $body = str_replace('O:8:"stdClass":0:{}', 'E:'.\strlen($case).':"'.$case.'";', serialize(new Envelope(new \stdClass())));
+
+        $this->expectException(MessageDecodingFailedException::class);
+        $this->expectExceptionMessage(\sprintf('Message "%s" requires a signature but none was found.', DummyMessageEnum::class));
+        $serializer->decode(['body' => addslashes($body), 'headers' => []]);
+    }
+
+    #[DataProvider('provideRefusedMessages')]
+    public function testDecodeReportsARefusedMessageAsADecodingFailure(array $encoded, string $refusal)
+    {
+        $serializer = $this->createJsonSerializer([DummyMessage::class]);
+
+        try {
+            $serializer->decode($encoded);
+            $this->fail(\sprintf('Expected "%s" to be thrown.', MessageDecodingFailedException::class));
+        } catch (MessageDecodingFailedException $e) {
+            $this->assertSame($refusal, $e->getMessage());
+            $this->assertInstanceOf(InvalidMessageSignatureException::class, $e->getPrevious());
+            $this->assertSame($refusal, $e->getPrevious()->getMessage());
+        }
+    }
+
+    public static function provideRefusedMessages(): iterable
+    {
+        $body = (new Serializer())->encode(new Envelope(new DummyMessage('hello')))['body'];
+
+        yield 'missing signature' => [['body' => $body, 'headers' => ['type' => DummyMessage::class]], \sprintf('Message "%s" requires a signature but none was found.', DummyMessage::class)];
+        yield 'unexpected algorithm' => [['body' => $body, 'headers' => ['type' => DummyMessage::class, 'Body-Sign' => 'tampered', 'Sign-Algo' => 'md5']], \sprintf('Expected "sha256" signature algorithm for message "%s", "md5" given.', DummyMessage::class)];
+        yield 'invalid signature' => [['body' => $body, 'headers' => ['type' => DummyMessage::class, 'Body-Sign' => 'tampered', 'Sign-Algo' => 'sha256']], \sprintf('Invalid signature for message "%s".', DummyMessage::class)];
+        yield 'undeterminable type' => [['body' => $body, 'headers' => []], 'The message could not be verified and its type could not be determined; refusing to decode it.'];
+        yield 'type that is not a string' => [['body' => $body, 'headers' => ['type' => [DummyMessage::class]]], 'The message could not be verified and its type could not be determined; refusing to decode it.'];
+        yield 'algorithm that is not a string' => [['body' => $body, 'headers' => ['type' => DummyMessage::class, 'Body-Sign' => 'tampered', 'Sign-Algo' => ['md5']]], \sprintf('Invalid signature for message "%s".', DummyMessage::class)];
+        yield 'body-only signature of a body that is not a string' => [['body' => ['foo'], 'headers' => ['type' => DummyMessage::class, 'Body-Sign' => 'tampered', 'Sign-Algo' => 'sha256']], \sprintf('Invalid signature for message "%s".', DummyMessage::class)];
+    }
+
+    public function testDecodeLetsTheDecodingFailuresOfTheInnerSerializerThrough()
+    {
+        $failure = new MessageDecodingFailedException('Could not decode the body.');
+        $inner = new class($failure) implements SerializerInterface {
+            public function __construct(
+                private MessageDecodingFailedException $failure,
+            ) {
+            }
+
+            public function decode(array $encodedEnvelope): Envelope
+            {
+                throw $this->failure;
+            }
+
+            public function encode(Envelope $envelope): array
+            {
+                return ['body' => 'irrelevant'];
+            }
+        };
+
+        $serializer = new SigningSerializer($inner, 'secret-key', [DummyMessage::class]);
+
+        try {
+            $serializer->decode(['body' => 'irrelevant', 'headers' => []]);
+            $this->fail(\sprintf('Expected "%s" to be thrown.', MessageDecodingFailedException::class));
+        } catch (MessageDecodingFailedException $e) {
+            $this->assertSame($failure, $e);
+        }
+    }
+
+    private function createSerializer(array $signedTypes): SerializerInterface
+    {
+        return new SigningSerializer(new PhpSerializer(), 'secret-key', $signedTypes);
+    }
+
+    private function createJsonSerializer(array $signedTypes): SerializerInterface
+    {
+        return new SigningSerializer(new Serializer(), 'secret-key', $signedTypes);
+    }
+
+    private function signBodyOnly(array $encoded): array
+    {
+        $encoded['headers']['Body-Sign'] = hash_hmac('sha256', $encoded['body'] ?? '', 'secret-key');
+        $encoded['headers']['Sign-Algo'] = 'sha256';
+
+        return $encoded;
+    }
+}

@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Cache\Tests\Adapter;
 
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Cache\Adapter\AbstractAdapter;
 use Symfony\Component\Cache\Adapter\CouchbaseBucketAdapter;
@@ -40,6 +42,8 @@ class AbstractAdapterCreateConnectionTest extends TestCase
         }
     }
 
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
     public function testCouchbaseBucketOptionsAreNotExposedInTrace()
     {
         if (!class_exists(\SensitiveParameterValue::class)) {

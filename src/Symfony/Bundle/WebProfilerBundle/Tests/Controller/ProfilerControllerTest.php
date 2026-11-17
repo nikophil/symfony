@@ -11,6 +11,7 @@
 
 namespace Symfony\Bundle\WebProfilerBundle\Tests\Controller;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\MockObject\MockObject;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
@@ -121,9 +122,7 @@ class ProfilerControllerTest extends WebTestCase
         $this->assertSame('_', $crawler->filter('.metrics .metric .value')->eq(0)->text());
     }
 
-    /**
-     * @dataProvider provideRefererLinks
-     */
+    #[DataProvider('provideRefererLinks')]
     public function testPanelActionLinksToHttpRefererOnly(string $referer, bool $isLinked)
     {
         $kernel = new WebProfilerBundleKernel();
@@ -143,9 +142,7 @@ class ProfilerControllerTest extends WebTestCase
         yield [' javascript:alert(1)', false];
     }
 
-    /**
-     * @dataProvider provideRedirectLocations
-     */
+    #[DataProvider('provideRedirectLocations')]
     public function testToolbarRedirectLinksToHttpLocationOnly(string $location, bool $isLinked)
     {
         $kernel = new WebProfilerBundleKernel(true);
@@ -184,9 +181,7 @@ class ProfilerControllerTest extends WebTestCase
         $controller->toolbarAction(Request::create('/_wdt/foo-token'), null);
     }
 
-    /**
-     * @dataProvider getEmptyTokenCases
-     */
+    #[DataProvider('getEmptyTokenCases')]
     public function testToolbarActionWithEmptyToken($token)
     {
         $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
@@ -196,6 +191,32 @@ class ProfilerControllerTest extends WebTestCase
 
         $response = $controller->toolbarAction(Request::create('/_wdt/empty'), $token);
         $this->assertEquals(200, $response->getStatusCode());
+    }
+
+    public function testToolbarStylesheetActionWithProfilerDisabled()
+    {
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+
+        $controller = new ProfilerController($urlGenerator, null, new Environment(new ArrayLoader()), []);
+
+        $this->expectException(NotFoundHttpException::class);
+        $this->expectExceptionMessage('The profiler must be enabled.');
+
+        $controller->toolbarStylesheetAction();
+    }
+
+    public function testToolbarStylesheetAction()
+    {
+        $kernel = new WebProfilerBundleKernel();
+        $client = new KernelBrowser($kernel);
+
+        $client->request('GET', '/_wdt/styles');
+
+        $response = $client->getResponse();
+
+        $this->assertSame(200, $response->getStatusCode());
+        $this->assertSame('text/css; charset=UTF-8', $response->headers->get('Content-Type'));
+        $this->assertSame('max-age=600, private', $response->headers->get('Cache-Control'));
     }
 
     public static function getEmptyTokenCases()
@@ -212,16 +233,14 @@ class ProfilerControllerTest extends WebTestCase
         $this->expectException(NotFoundHttpException::class);
         $this->expectExceptionMessage('The profiler must be enabled.');
 
-        $urlGenerator = $this->createMock(UrlGeneratorInterface::class);
-        $twig = $this->createMock(Environment::class);
+        $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
+        $twig = $this->createStub(Environment::class);
 
         $controller = new ProfilerController($urlGenerator, null, $twig, [], null, __DIR__.'/../..');
         $controller->openAction(Request::create('/_profiler/open', Request::METHOD_GET, ['file' => 'README.md']));
     }
 
-    /**
-     * @dataProvider getOpenFileCases
-     */
+    #[DataProvider('getOpenFileCases')]
     public function testOpeningDisallowedPaths($path, $isAllowed)
     {
         $urlGenerator = $this->createStub(UrlGeneratorInterface::class);
@@ -231,7 +250,7 @@ class ProfilerControllerTest extends WebTestCase
         $controller = new ProfilerController($urlGenerator, $profiler, $twig, [], null, __DIR__.'/../..');
 
         try {
-            $response = $controller->openAction(Request::create('/_wdt/open', Request::METHOD_GET, ['file' => $path]));
+            $response = $controller->openAction(Request::create('/_wdt/open', 'GET', ['file' => $path]));
             $this->assertEquals(200, $response->getStatusCode());
             $this->assertTrue($isAllowed);
         } catch (NotFoundHttpException $e) {
@@ -286,9 +305,7 @@ class ProfilerControllerTest extends WebTestCase
         $this->assertSame([12, 0], $lines);
     }
 
-    /**
-     * @dataProvider provideCspVariants
-     */
+    #[DataProvider('provideCspVariants')]
     public function testReturns404onTokenNotFound($withCsp)
     {
         $twig = $this->createStub(Environment::class);
@@ -335,9 +352,7 @@ class ProfilerControllerTest extends WebTestCase
         }
     }
 
-    /**
-     * @dataProvider provideCspVariants
-     */
+    #[DataProvider('provideCspVariants')]
     public function testSearchResultsAction($withCsp)
     {
         $twig = $this->createMock(Environment::class);
@@ -509,9 +524,7 @@ class ProfilerControllerTest extends WebTestCase
         ];
     }
 
-    /**
-     * @dataProvider defaultPanelProvider
-     */
+    #[DataProvider('defaultPanelProvider')]
     public function testDefaultPanel(string $expectedPanel, Profile $profile)
     {
         $this->assertDefaultPanel($expectedPanel, $profile);

@@ -20,14 +20,13 @@ use Symfony\Contracts\HttpClient\ResponseInterface;
  */
 trait HttpExceptionTrait
 {
-    private ResponseInterface $response;
-
     /**
      * @param (\Closure(): string)|null $getErrorBody Returns the part of the body the message is parsed from
      */
-    public function __construct(ResponseInterface $response, ?\Closure $getErrorBody = null)
-    {
-        $this->response = $response;
+    public function __construct(
+        private ResponseInterface $response,
+        ?\Closure $getErrorBody = null,
+    ) {
         $code = $response->getInfo('http_code');
         $url = $response->getInfo('url');
         $message = \sprintf('HTTP %d returned for "%s".', $code, $url);

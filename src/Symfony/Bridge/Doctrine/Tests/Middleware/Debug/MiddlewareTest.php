@@ -21,15 +21,15 @@ use Doctrine\DBAL\Schema\DefaultSchemaManagerFactory;
 use Doctrine\DBAL\Statement;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\ORMSetup;
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bridge\Doctrine\Middleware\Debug\DebugDataHolder;
 use Symfony\Bridge\Doctrine\Middleware\Debug\Middleware;
 use Symfony\Bridge\PhpUnit\ClockMock;
 use Symfony\Component\Stopwatch\Stopwatch;
 
-/**
- * @requires extension pdo_sqlite
- */
+#[RequiresPhpExtension('pdo_sqlite')]
 class MiddlewareTest extends TestCase
 {
     private DebugDataHolder $debugDataHolder;
@@ -38,8 +38,6 @@ class MiddlewareTest extends TestCase
 
     protected function setUp(): void
     {
-        parent::setUp();
-
         if (!interface_exists(MiddlewareInterface::class)) {
             $this->markTestSkipped(\sprintf('%s needed to run this test', MiddlewareInterface::class));
         }
@@ -52,12 +50,8 @@ class MiddlewareTest extends TestCase
         $this->stopwatch = $withStopwatch ? new Stopwatch() : null;
 
         $config = ORMSetup::createConfiguration(true);
-        if (class_exists(DefaultSchemaManagerFactory::class)) {
-            $config->setSchemaManagerFactory(new DefaultSchemaManagerFactory());
-        }
-        if (!class_exists(\Doctrine\Persistence\Mapping\Driver\AnnotationDriver::class)) { // doctrine/persistence >= 3.0
-            $config->setLazyGhostObjectEnabled(true);
-        }
+        $config->setSchemaManagerFactory(new DefaultSchemaManagerFactory());
+        $config->setLazyGhostObjectEnabled(true);
         $this->debugDataHolder = new DebugDataHolder();
         $config->setMiddlewares([new Middleware($this->debugDataHolder, $this->stopwatch)]);
 
@@ -99,9 +93,7 @@ class MiddlewareTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider provideExecuteMethod
-     */
+    #[DataProvider('provideExecuteMethod')]
     public function testWithoutBinding(callable $executeMethod)
     {
         $this->init();
@@ -116,9 +108,7 @@ class MiddlewareTest extends TestCase
         $this->assertGreaterThan(0, $debug[1]['executionMS']);
     }
 
-    /**
-     * @dataProvider provideExecuteMethod
-     */
+    #[DataProvider('provideExecuteMethod')]
     public function testWithValueBound(callable $executeMethod)
     {
         $this->init();
@@ -146,9 +136,7 @@ class MiddlewareTest extends TestCase
         $this->assertGreaterThan(0, $debug[1]['executionMS']);
     }
 
-    /**
-     * @dataProvider provideExecuteMethod
-     */
+    #[DataProvider('provideExecuteMethod')]
     public function testWithParamBound(callable $executeMethod)
     {
         $this->init();
@@ -185,9 +173,7 @@ class MiddlewareTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider provideEndTransactionMethod
-     */
+    #[DataProvider('provideEndTransactionMethod')]
     public function testTransaction(callable $endTransactionMethod, string $expectedEndTransactionDebug)
     {
         $this->init();
@@ -243,9 +229,7 @@ class MiddlewareTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider provideExecuteAndEndTransactionMethods
-     */
+    #[DataProvider('provideExecuteAndEndTransactionMethods')]
     public function testGlobalDoctrineDuration(callable $sqlMethod, callable $endTransactionMethod)
     {
         $this->init();
@@ -269,9 +253,7 @@ class MiddlewareTest extends TestCase
         $this->assertCount(4, $this->stopwatch->getEvent('doctrine')->getPeriods());
     }
 
-    /**
-     * @dataProvider provideExecuteAndEndTransactionMethods
-     */
+    #[DataProvider('provideExecuteAndEndTransactionMethods')]
     public function testWithoutStopwatch(callable $sqlMethod, callable $endTransactionMethod)
     {
         $this->init(false);

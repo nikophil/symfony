@@ -15,6 +15,7 @@ Definitions
 - Autowired: no
 - Autoconfigured: no
 - Deprecated: no
+- Arguments: no
 - Tag: `tag1`
     - Priority: 20
 - Usages: none
@@ -30,6 +31,7 @@ Definitions
 - Autowired: no
 - Autoconfigured: yes
 - Deprecated: no
+- Arguments: no
 - Tag: `tag1`
     - Priority: 10
 - Tag: `tag1`
@@ -47,6 +49,7 @@ Definitions
 - Autowired: no
 - Autoconfigured: no
 - Deprecated: no
+- Arguments: no
 - Tag: `tag1`
     - Attr1: val1
 - Usages: none
@@ -62,6 +65,7 @@ Definitions
 - Autowired: no
 - Autoconfigured: yes
 - Deprecated: no
+- Arguments: no
 - Tag: `tag1`
     - Attr1: val1
     - Priority: 30

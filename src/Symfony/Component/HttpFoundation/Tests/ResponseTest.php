@@ -11,13 +11,13 @@
 
 namespace Symfony\Component\HttpFoundation\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\HttpFoundation\Cookie;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class ResponseTest extends ResponseTestCase
 {
     public function testToString()
@@ -63,7 +63,7 @@ class ResponseTest extends ResponseTestCase
     public function testGetCharset()
     {
         $response = new Response();
-        $charsetOrigin = 'UTF-8';
+        $charsetOrigin = 'utf-8';
         $response->setCharset($charsetOrigin);
         $charset = $response->getCharset();
         $this->assertEquals($charsetOrigin, $charset);
@@ -127,7 +127,7 @@ class ResponseTest extends ResponseTestCase
         ob_start();
         $modified->sendContent();
         $string = ob_get_clean();
-        $this->assertEmpty($string);
+        $this->assertSame('', $string);
     }
 
     public function testIsSuccessful()
@@ -173,6 +173,41 @@ class ResponseTest extends ResponseTestCase
 
         $response->headers->set('Last-Modified', '');
         $this->assertFalse($response->isNotModified($request));
+    }
+
+    public function testIsNotModifiedIgnoresInvalidDates()
+    {
+        $request = new Request();
+        $response = new Response();
+
+        $request->headers->set('If-Modified-Since', '-1');
+        $response->headers->set('Last-Modified', 'Sun, 25 Aug 2013 18:33:31 GMT');
+        $this->assertFalse($response->isNotModified($request));
+
+        $request->headers->set('If-Modified-Since', 'Mon, 25 Aug 2013 18:33:31 GMT');
+        $this->assertFalse($response->isNotModified($request));
+
+        $request->headers->set('If-Modified-Since', 'Sun, 25 Aug 2013 18:33:31 GMT');
+        $response->headers->set('Last-Modified', 'not a date');
+        $this->assertFalse($response->isNotModified($request));
+    }
+
+    public function testIsNotModifiedReadsAsctimeDatesAsUtc()
+    {
+        $previousTimezone = date_default_timezone_get();
+        date_default_timezone_set('Europe/Paris');
+
+        try {
+            $request = new Request();
+            $request->headers->set('If-Modified-Since', 'Sun Aug 25 18:33:31 2013');
+
+            $response = new Response();
+            $response->headers->set('Last-Modified', 'Sun, 25 Aug 2013 18:33:31 GMT');
+
+            $this->assertTrue($response->isNotModified($request));
+        } finally {
+            date_default_timezone_set($previousTimezone);
+        }
     }
 
     public function testIsNotModifiedEtag()
@@ -342,6 +377,28 @@ class ResponseTest extends ResponseTestCase
 
         $response = new Response();
         $this->assertNull($response->getMaxAge(), '->getMaxAge() returns null if no freshness information available');
+    }
+
+    public function testGetMaxAgeReadsExpiresInEachHttpDateFormat()
+    {
+        $expires = time() + 3600;
+        $response = new Response('', 200, ['Date' => gmdate('D, d M Y H:i:s \G\M\T', $expires - 3600)]);
+
+        $response->headers->set('Expires', gmdate('l, d-M-y H:i:s \G\M\T', $expires));
+        $this->assertSame(3600, $response->getMaxAge());
+
+        $response->headers->set('Expires', \sprintf('%s %2d %s', gmdate('D M', $expires), gmdate('j', $expires), gmdate('H:i:s Y', $expires)));
+        $this->assertSame(3600, $response->getMaxAge());
+
+        $response->headers->set('Expires', gmdate('D', $expires + 86400).gmdate(', d M Y H:i:s \G\M\T', $expires));
+        $this->assertSame(0, $response->getMaxAge());
+    }
+
+    public function testGetExpiresAfter2038()
+    {
+        $response = new Response('', 200, ['Expires' => 'Thu, 31 Dec 2099 23:59:59 GMT']);
+
+        $this->assertSame('2099-12-31 23:59:59', $response->getExpires()->format('Y-m-d H:i:s'));
     }
 
     public function testSetSharedMaxAge()
@@ -534,7 +591,7 @@ class ResponseTest extends ResponseTestCase
         $response = new Response('foo');
         $response->prepare(new Request());
 
-        $this->assertSame('text/html; charset=UTF-8', $response->headers->get('Content-Type'));
+        $this->assertSame('text/html; charset=utf-8', $response->headers->get('Content-Type'));
     }
 
     public function testContentTypeCharset()
@@ -545,7 +602,7 @@ class ResponseTest extends ResponseTestCase
         // force fixContentType() to be called
         $response->prepare(new Request());
 
-        $this->assertEquals('text/css; charset=UTF-8', $response->headers->get('Content-Type'));
+        $this->assertEquals('text/css; charset=utf-8', $response->headers->get('Content-Type'));
     }
 
     public function testContentTypeIsNull()
@@ -565,7 +622,7 @@ class ResponseTest extends ResponseTestCase
 
         $response->prepare(new Request());
 
-        $this->assertEquals('text/plain; charset=UTF-8', $response->headers->get('content-type'));
+        $this->assertEquals('text/plain; charset=utf-8', $response->headers->get('content-type'));
     }
 
     public function testPrepareDoesNothingIfRequestFormatIsNotDefined()
@@ -574,7 +631,7 @@ class ResponseTest extends ResponseTestCase
 
         $response->prepare(new Request());
 
-        $this->assertEquals('text/html; charset=UTF-8', $response->headers->get('content-type'));
+        $this->assertEquals('text/html; charset=utf-8', $response->headers->get('content-type'));
     }
 
     /**
@@ -588,7 +645,7 @@ class ResponseTest extends ResponseTestCase
         $request->headers->set('Accept', 'application/json');
         $response->prepare($request);
 
-        $this->assertSame('text/html; charset=UTF-8', $response->headers->get('content-type'));
+        $this->assertSame('text/html; charset=utf-8', $response->headers->get('content-type'));
     }
 
     public function testPrepareSetContentType()
@@ -879,9 +936,7 @@ class ResponseTest extends ResponseTestCase
         $this->assertFalse($response->isInvalid());
     }
 
-    /**
-     * @dataProvider getStatusCodeFixtures
-     */
+    #[DataProvider('getStatusCodeFixtures')]
     public function testSetStatusCode($code, $text, $expectedText)
     {
         $response = new Response();
@@ -897,10 +952,10 @@ class ResponseTest extends ResponseTestCase
     {
         return [
             ['200', null, 'OK'],
-            ['200', false, ''],
+            ['200', '', ''],
             ['200', 'foo', 'foo'],
             ['199', null, 'unknown status'],
-            ['199', false, ''],
+            ['199', '', ''],
             ['199', 'foo', 'foo'],
         ];
     }
@@ -1005,9 +1060,7 @@ class ResponseTest extends ResponseTestCase
         $this->assertNull($response->headers->get('Etag'), '->setEtag() removes Etags when call with null');
     }
 
-    /**
-     * @dataProvider validContentProvider
-     */
+    #[DataProvider('validContentProvider')]
     public function testSetContent($content)
     {
         $response = new Response();
@@ -1021,7 +1074,7 @@ class ResponseTest extends ResponseTestCase
 
         $setters = [
             'setProtocolVersion' => '1.0',
-            'setCharset' => 'UTF-8',
+            'setCharset' => 'utf-8',
             'setPublic' => null,
             'setPrivate' => null,
             'setDate' => $this->createDateTimeNow(),
@@ -1128,9 +1181,7 @@ class ResponseTest extends ResponseTestCase
         return $ianaCodesReasonPhrases;
     }
 
-    /**
-     * @dataProvider ianaCodesReasonPhrasesProvider
-     */
+    #[DataProvider('ianaCodesReasonPhrasesProvider')]
     public function testReasonPhraseDefaultsAgainstIana($code, $reasonPhrase)
     {
         $this->assertEquals($reasonPhrase, Response::$statusTexts[$code]);

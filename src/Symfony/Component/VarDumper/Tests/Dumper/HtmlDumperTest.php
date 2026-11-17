@@ -11,11 +11,14 @@
 
 namespace Symfony\Component\VarDumper\Tests\Dumper;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresPhp;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\VarDumper\Caster\EnumStub;
 use Symfony\Component\VarDumper\Caster\ImgStub;
 use Symfony\Component\VarDumper\Cloner\VarCloner;
 use Symfony\Component\VarDumper\Dumper\HtmlDumper;
+use Symfony\Component\VarDumper\Tests\Fixtures\VirtualProperty;
 
 /**
  * @author Nicolas Grekas <p@tchwork.com>
@@ -129,6 +132,30 @@ class HtmlDumperTest extends TestCase
         );
     }
 
+    #[RequiresPhp('>=8.4.0')]
+    public function testVirtualProperties()
+    {
+        $dumper = new HtmlDumper('php://output');
+        $dumper->setDumpHeader('<foo></foo>');
+        $dumper->setDumpBoundaries('<bar>', '</bar>');
+        $cloner = new VarCloner();
+
+        $data = $cloner->cloneVar(new VirtualProperty());
+        $out = $dumper->dump($data, true);
+
+        $this->assertStringMatchesFormat(<<<EODUMP
+            <foo></foo><bar>%A<span class=sf-dump-note>Symfony\Component\VarDumper\Tests\Fixtures\VirtualProperty</span>%A {<a class=sf-dump-ref>#%i</a><samp data-depth=1 class=sf-dump-expanded>
+              +<span class=sf-dump-public title="Public property">firstName</span>: "<span class=sf-dump-str title="4 characters">John</span>"
+              +<span class=sf-dump-public title="Public property">lastName</span>: "<span class=sf-dump-str title="3 characters">Doe</span>"
+              +<span class=sf-dump-virtual><span class=sf-dump-public title="Public property">fullName</span></span>: <span class=sf-dump-virtual><span class=sf-dump-const title="Virtual property">~ string</span></span>
+              -<span class=sf-dump-virtual><span class=sf-dump-private title="Private property defined in class:&#10;`Symfony\Component\VarDumper\Tests\Fixtures\VirtualProperty`">noType</span></span>: <span class=sf-dump-virtual><span class=sf-dump-const title="Virtual property">~</span></span>
+            </samp>}
+            </bar>
+            EODUMP,
+            $out
+        );
+    }
+
     public function testCharset()
     {
         $var = mb_convert_encoding('Словарь', 'CP1251', 'UTF-8');
@@ -211,9 +238,7 @@ class HtmlDumperTest extends TestCase
         $this->assertStringContainsString('&lt;b&gt;', $out);
     }
 
-    /**
-     * @dataProvider varToDumpProvider
-     */
+    #[DataProvider('varToDumpProvider')]
     public function testDumpString($var, $needle)
     {
         $dumper = new HtmlDumper();

@@ -73,6 +73,8 @@ class XmlReferenceDumperTest extends TestCase
             <!-- scalar-deprecated-with-message: Deprecated (Since vendor/package 1.1: Deprecation custom message for "scalar_deprecated_with_message" at "acme_root") -->
             <!-- enum-with-default: One of "this"; "that" -->
             <!-- enum: One of "this"; "that"; Symfony\Component\Config\Tests\Fixtures\TestEnum::Ccc -->
+            <!-- enum-with-class: One of "foo"; "bar baz" -->
+            <!-- unit-enum-with-class: One of Symfony\Component\Config\Tests\Fixtures\TestEnum::Foo; Symfony\Component\Config\Tests\Fixtures\TestEnum::Bar; Symfony\Component\Config\Tests\Fixtures\TestEnum::Ccc -->
             <!-- variable: Example: foo, bar -->
             <config
                 boolean="true"
@@ -89,6 +91,8 @@ class XmlReferenceDumperTest extends TestCase
                 node-with-a-looong-name=""
                 enum-with-default="this"
                 enum=""
+                enum-with-class=""
+                unit-enum-with-class=""
                 variable=""
                 custom-node="true"
             >
@@ -108,6 +112,9 @@ class XmlReferenceDumperTest extends TestCase
 
                 <!-- prototype -->
                 <scalar-prototyped>scalar value</scalar-prototyped>
+
+                <!-- prototype -->
+                <string-list-default-null>value</string-list-default-null>
 
                 <!-- prototype: Parameter name -->
                 <parameter name="parameter name">scalar value</parameter>

@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Messenger\Tests\Command;
 
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Tester\CommandCompletionTester;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -18,11 +19,14 @@ use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Messenger\Command\FailedMessagesRetryCommand;
 use Symfony\Component\Messenger\Envelope;
+use Symfony\Component\Messenger\EventListener\SendFailedMessageToFailureTransportListener;
 use Symfony\Component\Messenger\MessageBus;
 use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Messenger\Stamp\SentToFailureTransportStamp;
 use Symfony\Component\Messenger\Stamp\TransportMessageIdStamp;
 use Symfony\Component\Messenger\Transport\Receiver\ListableReceiverInterface;
 use Symfony\Component\Messenger\Transport\Receiver\MessageCountAwareInterface;
+use Symfony\Component\Messenger\Transport\Sender\SenderInterface;
 
 class FailedMessagesRetryCommandTest extends TestCase
 {
@@ -207,8 +211,8 @@ class FailedMessagesRetryCommandTest extends TestCase
     public function testSuccessMessageGoesToStdout()
     {
         $envelope = new Envelope(new \stdClass(), [new TransportMessageIdStamp('some_id')]);
-        $receiver = $this->createStub(ListableReceiverInterface::class);
-        $receiver->method('find')->with('some_id')->willReturn($envelope);
+        $receiver = $this->createMock(ListableReceiverInterface::class);
+        $receiver->expects($this->once())->method('find')->with('some_id')->willReturn($envelope);
 
         $command = new FailedMessagesRetryCommand(
             'failure_receiver',
@@ -231,8 +235,8 @@ class FailedMessagesRetryCommandTest extends TestCase
     public function testCommentsGoToStderr()
     {
         $envelope = new Envelope(new \stdClass(), [new TransportMessageIdStamp('some_id')]);
-        $receiver = $this->createStub(ListableReceiverInterface::class);
-        $receiver->method('find')->with('some_id')->willReturn($envelope);
+        $receiver = $this->createMock(ListableReceiverInterface::class);
+        $receiver->expects($this->once())->method('find')->with('some_id')->willReturn($envelope);
 
         $command = new FailedMessagesRetryCommand(
             'failure_receiver',
@@ -303,9 +307,71 @@ class FailedMessagesRetryCommandTest extends TestCase
         $this->assertStringNotContainsString('messages pending', $stderr);
     }
 
-    /**
-     * @requires extension pcntl
-     */
+    public function testSkipRunWithServiceLocator()
+    {
+        $failureTransportName = 'failure_receiver';
+        $originalTransportName = 'original_receiver';
+
+        $receiver = $this->createMock(ListableReceiverInterface::class);
+
+        $dispatcher = new EventDispatcher();
+
+        $receiver->expects($this->once())->method('find')
+            ->willReturn(Envelope::wrap(new \stdClass(), [
+                new SentToFailureTransportStamp($originalTransportName),
+            ]));
+
+        $receiver->expects($this->never())->method('ack');
+        $receiver->expects($this->once())->method('reject');
+
+        $command = new FailedMessagesRetryCommand(
+            $failureTransportName,
+            new ServiceLocator([$failureTransportName => static fn () => $receiver]),
+            new MessageBus(),
+            $dispatcher
+        );
+
+        $tester = new CommandTester($command);
+        $tester->setInputs(['skip']);
+
+        $tester->execute(['id' => ['10']]);
+        $this->assertStringContainsString('[OK]', $tester->getDisplay());
+    }
+
+    public function testSkipRequeuesMessageWithoutOriginalTransportInFailureTransport()
+    {
+        $failureTransportName = 'failure_receiver';
+
+        $message = new \stdClass();
+
+        $receiver = $this->createMock(ListableReceiverInterface::class);
+        $receiver->expects($this->once())->method('find')->willReturn(new Envelope($message));
+        $receiver->expects($this->never())->method('ack');
+        $receiver->expects($this->once())->method('reject');
+
+        $sender = $this->createMock(SenderInterface::class);
+        $sender->expects($this->once())->method('send')
+            ->with($this->callback(static fn (Envelope $envelope) => $message === $envelope->getMessage()))
+            ->willReturnArgument(0);
+
+        $dispatcher = new EventDispatcher();
+        $dispatcher->addSubscriber(new SendFailedMessageToFailureTransportListener(new ServiceLocator([$failureTransportName => static fn () => $sender])));
+
+        $command = new FailedMessagesRetryCommand(
+            $failureTransportName,
+            new ServiceLocator([$failureTransportName => static fn () => $receiver]),
+            new MessageBus(),
+            $dispatcher
+        );
+
+        $tester = new CommandTester($command);
+        $tester->setInputs(['skip']);
+
+        $tester->execute(['id' => ['10']]);
+        $this->assertStringContainsString('[OK]', $tester->getDisplay());
+    }
+
+    #[RequiresPhpExtension('pcntl')]
     public function testRunStopsWhenSignalWasReceivedBeforeTheWorkerWasCreated()
     {
         $receiver = $this->createMock(ListableReceiverInterface::class);
@@ -324,5 +390,26 @@ class FailedMessagesRetryCommandTest extends TestCase
 
         $tester->assertCommandIsSuccessful();
         $this->assertStringNotContainsString('[OK]', $tester->getDisplay());
+    }
+
+    #[RequiresPhpExtension('pcntl')]
+    public function testRunIgnoresKeepaliveSignalReceivedBeforeTheWorkerWasCreated()
+    {
+        $receiver = $this->createMock(ListableReceiverInterface::class);
+        $receiver->method('find')->willReturn(new Envelope(new \stdClass()));
+        $receiver->expects($this->once())->method('ack');
+
+        $bus = $this->createMock(MessageBusInterface::class);
+        $bus->expects($this->once())->method('dispatch')->willReturn(new Envelope(new \stdClass()));
+
+        $command = new FailedMessagesRetryCommand('failure_receiver', new ServiceLocator(['failure_receiver' => static fn () => $receiver]), $bus, new EventDispatcher());
+
+        $this->assertFalse($command->handleSignal(\SIGALRM));
+
+        $tester = new CommandTester($command);
+        $tester->execute(['id' => [10], '--force' => true]);
+
+        $tester->assertCommandIsSuccessful();
+        $this->assertStringContainsString('[OK]', $tester->getDisplay());
     }
 }

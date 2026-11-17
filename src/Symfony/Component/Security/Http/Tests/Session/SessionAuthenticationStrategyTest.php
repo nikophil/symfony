@@ -31,12 +31,14 @@ class SessionAuthenticationStrategyTest extends TestCase
 
     public function testUnsupportedStrategy()
     {
-        $this->expectException(\RuntimeException::class);
-        $this->expectExceptionMessage('Invalid session authentication strategy "foo"');
         $request = $this->createMock(Request::class);
         $request->expects($this->never())->method('getSession');
 
         $strategy = new SessionAuthenticationStrategy('foo');
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('Invalid session authentication strategy "foo"');
+
         $strategy->onAuthentication($request, new NullToken());
     }
 

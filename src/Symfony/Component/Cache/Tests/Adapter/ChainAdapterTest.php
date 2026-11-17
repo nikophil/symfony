@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Cache\Tests\Adapter;
 
+use PHPUnit\Framework\Attributes\Group;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\Cache\Adapter\AdapterInterface;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
@@ -27,9 +28,8 @@ use Symfony\Contracts\Cache\ItemInterface;
 
 /**
  * @author Kévin Dunglas <dunglas@gmail.com>
- *
- * @group time-sensitive
  */
+#[Group('time-sensitive')]
 class ChainAdapterTest extends AdapterTestCase
 {
     public function createCachePool(int $defaultLifetime = 0, ?string $testMethod = null): CacheItemPoolInterface

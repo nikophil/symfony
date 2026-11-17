@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Mime\Tests\Header;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Mime\Exception\RfcComplianceException;
 use Symfony\Component\Mime\Header\ParameterizedHeader;
@@ -332,18 +333,14 @@ class ParameterizedHeaderTest extends TestCase
         $this->assertEquals('utf-8', $header->getParameter('charset'));
     }
 
-    /**
-     * @dataProvider provideInvalidParameterNames
-     */
+    #[DataProvider('provideInvalidParameterNames')]
     public function testConstructorRejectsInvalidParameterName(string $name)
     {
         $this->expectException(RfcComplianceException::class);
         new ParameterizedHeader('Content-Type', 'text/plain', [$name => 'value']);
     }
 
-    /**
-     * @dataProvider provideInvalidParameterNames
-     */
+    #[DataProvider('provideInvalidParameterNames')]
     public function testSetParameterRejectsInvalidParameterName(string $name)
     {
         $header = new ParameterizedHeader('Content-Type', 'text/plain');
@@ -351,9 +348,7 @@ class ParameterizedHeaderTest extends TestCase
         $header->setParameter($name, 'value');
     }
 
-    /**
-     * @dataProvider provideInvalidParameterNames
-     */
+    #[DataProvider('provideInvalidParameterNames')]
     public function testSetParametersRejectsInvalidParameterName(string $name)
     {
         $header = new ParameterizedHeader('Content-Type', 'text/plain');

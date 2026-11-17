@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Lock\Tests\Store;
 
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use Symfony\Component\Lock\Exception\LockConflictedException;
 use Symfony\Component\Lock\Key;
 use Symfony\Component\Lock\PersistingStoreInterface;
@@ -24,11 +26,8 @@ trait MysqlDaylightSavingTimeTestTrait
      */
     abstract protected function createMysqlStore(array $params): array;
 
-    /**
-     * @requires extension pdo_mysql
-     *
-     * @group integration
-     */
+    #[RequiresPhpExtension('pdo_mysql')]
+    #[Group('integration')]
     public function testMysqlLockSurvivesDaylightSavingTimeChange()
     {
         // On 2025-11-02, America/Chicago went from 02:00 CDT back to 01:00 CST at 07:00 UTC, so 01:00-02:00 local happened twice.

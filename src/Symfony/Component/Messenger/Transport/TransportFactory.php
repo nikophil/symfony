@@ -21,14 +21,12 @@ use Symfony\Component\Messenger\Transport\Serialization\SerializerInterface;
  */
 class TransportFactory implements TransportFactoryInterface
 {
-    private iterable $factories;
-
     /**
      * @param iterable<mixed, TransportFactoryInterface> $factories
      */
-    public function __construct(iterable $factories)
-    {
-        $this->factories = $factories;
+    public function __construct(
+        private iterable $factories,
+    ) {
     }
 
     public function createTransport(#[\SensitiveParameter] string $dsn, #[\SensitiveParameter] array $options, SerializerInterface $serializer): TransportInterface
@@ -47,6 +45,8 @@ class TransportFactory implements TransportFactoryInterface
             $packageSuggestion = ' Run "composer require symfony/doctrine-messenger" to install Doctrine transport.';
         } elseif (str_starts_with($dsn, 'redis://') || str_starts_with($dsn, 'rediss://')) {
             $packageSuggestion = ' Run "composer require symfony/redis-messenger" to install Redis transport.';
+        } elseif (str_starts_with($dsn, 'valkey://') || str_starts_with($dsn, 'valkeys://')) {
+            $packageSuggestion = ' Run "composer require symfony/redis-messenger" to install Valkey transport.';
         } elseif (str_starts_with($dsn, 'sqs://') || preg_match('#^https://sqs\.[\w\-]+\.amazonaws\.com/.+#', $dsn)) {
             $packageSuggestion = ' Run "composer require symfony/amazon-sqs-messenger" to install Amazon SQS transport.';
         } elseif (str_starts_with($dsn, 'beanstalkd://')) {

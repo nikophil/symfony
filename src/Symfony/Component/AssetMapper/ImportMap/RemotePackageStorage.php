@@ -12,6 +12,8 @@
 namespace Symfony\Component\AssetMapper\ImportMap;
 
 use Symfony\Component\AssetMapper\Exception\RuntimeException;
+use Symfony\Component\Filesystem\Exception\IOException;
+use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Filesystem\Path;
 
 /**
@@ -19,8 +21,11 @@ use Symfony\Component\Filesystem\Path;
  */
 class RemotePackageStorage
 {
+    private readonly Filesystem $filesystem;
+
     public function __construct(private readonly string $vendorDir)
     {
+        $this->filesystem = new Filesystem();
     }
 
     public function getStorageDir(): string
@@ -54,9 +59,10 @@ class RemotePackageStorage
 
         $vendorPath = $this->getDownloadPath($entry->packageModuleSpecifier, $entry->type);
 
-        @mkdir(\dirname($vendorPath), 0o777, true);
-        if (false === @file_put_contents($vendorPath, $contents)) {
-            throw new RuntimeException(error_get_last()['message'] ?? \sprintf('Failed to write file "%s".', $vendorPath));
+        try {
+            $this->filesystem->dumpFile($vendorPath, $contents);
+        } catch (IOException $e) {
+            throw new RuntimeException(\sprintf('Failed to write file "%s".', $vendorPath), 0, $e);
         }
     }
 
@@ -68,9 +74,10 @@ class RemotePackageStorage
 
         $vendorPath = $this->getExtraFileDownloadPath($entry, $extraFilename);
 
-        @mkdir(\dirname($vendorPath), 0o777, true);
-        if (false === @file_put_contents($vendorPath, $contents)) {
-            throw new RuntimeException(error_get_last()['message'] ?? \sprintf('Failed to write file "%s".', $vendorPath));
+        try {
+            $this->filesystem->dumpFile($vendorPath, $contents);
+        } catch (IOException $e) {
+            throw new RuntimeException(\sprintf('Failed to write file "%s".', $vendorPath), 0, $e);
         }
     }
 

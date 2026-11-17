@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Messenger\Transport\Serialization;
 
+use Symfony\Component\Lock\Serializer\LockKeyNormalizer;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Exception\LogicException;
 use Symfony\Component\Messenger\Exception\MessageDecodingFailedException;
@@ -21,6 +22,7 @@ use Symfony\Component\Messenger\Stamp\SerializerStamp;
 use Symfony\Component\Messenger\Stamp\StampInterface;
 use Symfony\Component\Messenger\Stamp\ValidationStamp;
 use Symfony\Component\Messenger\Transport\Serialization\Normalizer\FlattenExceptionNormalizer;
+use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
 use Symfony\Component\Serializer\Encoder\DecoderInterface;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\Encoder\XmlEncoder;
@@ -37,7 +39,7 @@ use Symfony\Component\Validator\Constraints\GroupSequence;
 /**
  * @author Samuel Roze <samuel.roze@gmail.com>
  */
-class Serializer implements SerializerInterface
+class Serializer implements SerializerInterface, MessageTypeAwareSerializerInterface
 {
     public const MESSENGER_SERIALIZATION_CONTEXT = 'messenger_serialization';
     private const STAMP_HEADER_PREFIX = 'X-Message-Stamp-';
@@ -51,16 +53,16 @@ class Serializer implements SerializerInterface
     ];
 
     private SymfonySerializerInterface $serializer;
-    private string $format;
-    private array $context;
     private array $stampContext;
     private static \WeakMap $decoders;
 
-    public function __construct(?SymfonySerializerInterface $serializer = null, string $format = 'json', array $context = [])
-    {
+    public function __construct(
+        ?SymfonySerializerInterface $serializer = null,
+        private string $format = 'json',
+        private array $context = [],
+    ) {
         $this->serializer = $serializer ?? self::create()->serializer;
-        $this->format = $format;
-        $this->context = $context + [self::MESSENGER_SERIALIZATION_CONTEXT => true];
+        $this->context += [self::MESSENGER_SERIALIZATION_CONTEXT => true];
         // stamps have no serialization metadata, so selecting the attributes of the message would encode them empty
         $this->stampContext = array_diff_key($this->context, array_flip([AbstractNormalizer::ATTRIBUTES, AbstractNormalizer::GROUPS, AbstractNormalizer::IGNORED_ATTRIBUTES]));
     }
@@ -72,7 +74,16 @@ class Serializer implements SerializerInterface
         }
 
         $encoders = [new XmlEncoder(), new JsonEncoder()];
-        $normalizers = [new FlattenExceptionNormalizer(), new DateTimeNormalizer(), new ArrayDenormalizer(), new ObjectNormalizer()];
+        $normalizers = [
+            new FlattenExceptionNormalizer(),
+            new DateTimeNormalizer(),
+            new ArrayDenormalizer(),
+            new ObjectNormalizer(propertyTypeExtractor: new ReflectionExtractor()),
+        ];
+        if (class_exists(LockKeyNormalizer::class)) {
+            array_unshift($normalizers, new LockKeyNormalizer());
+        }
+
         $serializer = new SymfonySerializer($normalizers, $encoders);
 
         return new self($serializer);
@@ -108,6 +119,11 @@ class Serializer implements SerializerInterface
         self::$decoders[$serializedMessageStamp] = [$this, \WeakReference::create($message)];
 
         return new Envelope($message, $stamps);
+    }
+
+    public function getMessageType(array $encodedEnvelope): ?string
+    {
+        return \is_string($type = $encodedEnvelope['headers']['type'] ?? null) ? $type : null;
     }
 
     public function encode(Envelope $envelope): array
@@ -250,7 +266,7 @@ class Serializer implements SerializerInterface
             'json' => 'application/json',
             'xml' => 'application/xml',
             'yml',
-            'yaml' => 'application/x-yaml',
+            'yaml' => 'application/yaml',
             'csv' => 'text/csv',
             default => null,
         };

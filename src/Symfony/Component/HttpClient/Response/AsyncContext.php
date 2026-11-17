@@ -27,25 +27,25 @@ final class AsyncContext
 {
     /** @var callable|null */
     private $passthru;
-    private HttpClientInterface $client;
     private ResponseInterface $response;
     private array $info = [];
-    /** @var resource|null */
-    private $content;
-    private int $offset;
     private float $maxDurationExpiry;
 
     /**
      * @param resource|null $content
      */
-    public function __construct(?callable &$passthru, HttpClientInterface $client, ResponseInterface &$response, array &$info, $content, int $offset, float &$maxDurationExpiry = 0.0)
-    {
+    public function __construct(
+        ?callable &$passthru,
+        private HttpClientInterface $client,
+        ResponseInterface &$response,
+        array &$info,
+        private $content,
+        private int $offset,
+        float &$maxDurationExpiry = 0.0,
+    ) {
         $this->passthru = &$passthru;
-        $this->client = $client;
         $this->response = &$response;
         $this->info = &$info;
-        $this->content = $content;
-        $this->offset = $offset;
         $this->maxDurationExpiry = &$maxDurationExpiry;
     }
 

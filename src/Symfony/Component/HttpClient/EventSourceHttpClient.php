@@ -16,6 +16,7 @@ use Symfony\Component\HttpClient\Chunk\ServerSentEvent;
 use Symfony\Component\HttpClient\Exception\EventSourceException;
 use Symfony\Component\HttpClient\Response\AsyncContext;
 use Symfony\Component\HttpClient\Response\AsyncResponse;
+use Symfony\Component\HttpClient\Retry\GenericRetryStrategy;
 use Symfony\Contracts\HttpClient\ChunkInterface;
 use Symfony\Contracts\HttpClient\Exception\TransportExceptionInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -32,12 +33,11 @@ final class EventSourceHttpClient implements HttpClientInterface, ResetInterface
         AsyncDecoratorTrait::withOptions insteadof HttpClientTrait;
     }
 
-    private float $reconnectionTime;
-
-    public function __construct(?HttpClientInterface $client = null, float $reconnectionTime = 10.0)
-    {
+    public function __construct(
+        ?HttpClientInterface $client = null,
+        private float $reconnectionTime = 10.0,
+    ) {
         $this->client = $client ?? HttpClient::create();
-        $this->reconnectionTime = $reconnectionTime;
     }
 
     public function connect(string $url, array $options = [], string $method = 'GET'): ResponseInterface
@@ -89,7 +89,7 @@ final class EventSourceHttpClient implements HttpClientInterface, ResetInterface
             } catch (TransportExceptionInterface) {
                 $state->lastError = $lastError ?? hrtime(true) / 1E9;
 
-                if (null === $state->buffer || ($isTimeout && hrtime(true) / 1E9 - $state->lastError < $state->reconnectionTime)) {
+                if (null === $state->buffer || !\in_array($method, GenericRetryStrategy::IDEMPOTENT_METHODS, true) || ($isTimeout && hrtime(true) / 1E9 - $state->lastError < $state->reconnectionTime)) {
                     yield $chunk;
                 } else {
                     $options['headers']['Last-Event-ID'] = $state->lastEventId;

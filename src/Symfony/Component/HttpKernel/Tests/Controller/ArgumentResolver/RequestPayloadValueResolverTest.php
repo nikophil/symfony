@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\HttpKernel\Tests\Controller\ArgumentResolver;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Attribute\MapQueryString;
@@ -20,13 +22,16 @@ use Symfony\Component\HttpKernel\Controller\ArgumentResolver\RequestPayloadValue
 use Symfony\Component\HttpKernel\ControllerMetadata\ArgumentMetadata;
 use Symfony\Component\HttpKernel\Event\ControllerArgumentsEvent;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Symfony\Component\HttpKernel\Exception\NearMissValueResolverException;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
-use Symfony\Component\PropertyAccess\Exception\InvalidTypeException;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
+use Symfony\Component\Serializer\Encoder\CsvEncoder;
+use Symfony\Component\Serializer\Encoder\DecoderInterface;
 use Symfony\Component\Serializer\Encoder\JsonEncoder;
 use Symfony\Component\Serializer\Encoder\XmlEncoder;
 use Symfony\Component\Serializer\Exception\NotNormalizableValueException;
 use Symfony\Component\Serializer\Exception\PartialDenormalizationException;
+use Symfony\Component\Serializer\Normalizer\ArrayDenormalizer;
 use Symfony\Component\Serializer\Normalizer\BackedEnumNormalizer;
 use Symfony\Component\Serializer\Normalizer\DenormalizerInterface;
 use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
@@ -51,7 +56,7 @@ class RequestPayloadValueResolverTest extends TestCase
         $argument = new ArgumentMetadata('notTyped', null, false, false, null, false, [
             MapRequestPayload::class => new MapRequestPayload(),
         ]);
-        $request = Request::create('/', 'POST', server: ['HTTP_CONTENT_TYPE' => 'application/json']);
+        $request = Request::create('/', 'POST', [], [], [], ['HTTP_CONTENT_TYPE' => 'application/json']);
 
         $kernel = $this->createStub(HttpKernelInterface::class);
         $arguments = $resolver->resolve($request, $argument);
@@ -76,7 +81,7 @@ class RequestPayloadValueResolverTest extends TestCase
         $argument = new ArgumentMetadata('valid', RequestPayload::class, false, true, $payload, false, [
             MapRequestPayload::class => new MapRequestPayload(),
         ]);
-        $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json']);
+        $request = Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json']);
 
         $kernel = $this->createStub(HttpKernelInterface::class);
         $arguments = $resolver->resolve($request, $argument);
@@ -117,12 +122,12 @@ class RequestPayloadValueResolverTest extends TestCase
         $validator->expects($this->never())
             ->method('validate');
 
-        $resolver = new RequestPayloadValueResolver(new Serializer(), $validator);
+        $resolver = new RequestPayloadValueResolver(new Serializer([new ObjectNormalizer()], ['json' => new JsonEncoder()]), $validator);
 
         $argument = new ArgumentMetadata('valid', RequestPayload::class, false, false, null, true, [
             MapRequestPayload::class => new MapRequestPayload(),
         ]);
-        $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json']);
+        $request = Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json']);
 
         $kernel = $this->createStub(HttpKernelInterface::class);
         $arguments = $resolver->resolve($request, $argument);
@@ -139,9 +144,9 @@ class RequestPayloadValueResolverTest extends TestCase
         $validator->expects($this->never())
             ->method('validate');
 
-        $resolver = new RequestPayloadValueResolver(new Serializer(), $validator);
+        $resolver = new RequestPayloadValueResolver(new Serializer([new ObjectNormalizer()], ['json' => new JsonEncoder()]), $validator);
 
-        $argument = new ArgumentMetadata('valid', RequestPayload::class, false, false, null, true, [
+        $argument = new ArgumentMetadata('valid', QueryPayload::class, false, false, null, true, [
             MapQueryString::class => new MapQueryString(),
         ]);
         $request = Request::create('/', 'GET');
@@ -161,12 +166,12 @@ class RequestPayloadValueResolverTest extends TestCase
         $validator->expects($this->never())
             ->method('validate');
 
-        $resolver = new RequestPayloadValueResolver(new Serializer(), $validator);
+        $resolver = new RequestPayloadValueResolver(new Serializer([new ObjectNormalizer()], ['json' => new JsonEncoder()]), $validator);
 
         $argument = new ArgumentMetadata('valid', RequestPayload::class, false, false, null, false, [
             MapRequestPayload::class => new MapRequestPayload(),
         ]);
-        $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json']);
+        $request = Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json']);
 
         $kernel = $this->createStub(HttpKernelInterface::class);
         $arguments = $resolver->resolve($request, $argument);
@@ -176,7 +181,7 @@ class RequestPayloadValueResolverTest extends TestCase
             $resolver->onKernelControllerArguments($event);
             $this->fail(\sprintf('Expected "%s" to be thrown.', HttpException::class));
         } catch (HttpException $e) {
-            $this->assertSame(422, $e->getStatusCode());
+            $this->assertSame(400, $e->getStatusCode());
         }
     }
 
@@ -208,9 +213,9 @@ class RequestPayloadValueResolverTest extends TestCase
         $validator->expects($this->never())
             ->method('validate');
 
-        $resolver = new RequestPayloadValueResolver(new Serializer(), $validator);
+        $resolver = new RequestPayloadValueResolver(new Serializer([new ObjectNormalizer()]), $validator);
 
-        $argument = new ArgumentMetadata('valid', RequestPayload::class, false, false, null, false, [
+        $argument = new ArgumentMetadata('valid', QueryPayload::class, false, false, null, false, [
             MapQueryString::class => new MapQueryString(),
         ]);
         $request = Request::create('/', 'GET');
@@ -237,7 +242,7 @@ class RequestPayloadValueResolverTest extends TestCase
         $argument = new ArgumentMetadata('invalid', RequestPayload::class, false, false, null, false, [
             MapRequestPayload::class => new MapRequestPayload(),
         ]);
-        $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json'], content: $content);
+        $request = Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], $content);
 
         $kernel = $this->createStub(HttpKernelInterface::class);
         $arguments = $resolver->resolve($request, $argument);
@@ -253,7 +258,7 @@ class RequestPayloadValueResolverTest extends TestCase
 
     public function testValidationNotPassed()
     {
-        $content = '{"price": 50, "title": ["not a string"]}';
+        $content = '{"price": 50.0, "title": ["not a string"]}';
         $serializer = new Serializer([new ObjectNormalizer()], ['json' => new JsonEncoder()]);
 
         $validator = $this->createMock(ValidatorInterface::class);
@@ -265,7 +270,7 @@ class RequestPayloadValueResolverTest extends TestCase
         $argument = new ArgumentMetadata('invalid', RequestPayload::class, false, false, null, false, [
             MapRequestPayload::class => new MapRequestPayload(),
         ]);
-        $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json'], content: $content);
+        $request = Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], $content);
 
         $kernel = $this->createStub(HttpKernelInterface::class);
         $arguments = $resolver->resolve($request, $argument);
@@ -278,7 +283,7 @@ class RequestPayloadValueResolverTest extends TestCase
             $validationFailedException = $e->getPrevious();
             $this->assertSame(422, $e->getStatusCode());
             $this->assertInstanceOf(ValidationFailedException::class, $validationFailedException);
-            $this->assertSame(\sprintf('This value should be of type %s.', class_exists(InvalidTypeException::class) ? 'string' : 'unknown'), $validationFailedException->getViolations()[0]->getMessage());
+            $this->assertSame('This value should be of type string.', $validationFailedException->getViolations()[0]->getMessage());
         }
     }
 
@@ -296,7 +301,7 @@ class RequestPayloadValueResolverTest extends TestCase
         $argument = new ArgumentMetadata('invalid', RequestPayloadWithBackedEnum::class, false, false, null, false, [
             MapRequestPayload::class => new MapRequestPayload(),
         ]);
-        $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json'], content: $content);
+        $request = Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], $content);
 
         $kernel = $this->createStub(HttpKernelInterface::class);
         $arguments = $resolver->resolve($request, $argument);
@@ -310,6 +315,7 @@ class RequestPayloadValueResolverTest extends TestCase
             $this->assertSame(422, $e->getStatusCode());
             $this->assertInstanceOf(ValidationFailedException::class, $validationFailedException);
             $this->assertContains($validationFailedException->getViolations()[0]->getMessage(), [
+                'This value was of an unexpected type.',
                 'This value should be of type int|string.',
                 'The data must belong to a backed enumeration of type Symfony\\Component\\HttpKernel\\Tests\\Controller\\ArgumentResolver\\RequestMethod',
             ]);
@@ -330,7 +336,7 @@ class RequestPayloadValueResolverTest extends TestCase
         $argument = new ArgumentMetadata('invalid', User::class, false, false, null, false, [
             MapRequestPayload::class => new MapRequestPayload(),
         ]);
-        $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json'], content: $content);
+        $request = Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], $content);
 
         $kernel = $this->createStub(HttpKernelInterface::class);
         $arguments = $resolver->resolve($request, $argument);
@@ -355,7 +361,7 @@ class RequestPayloadValueResolverTest extends TestCase
         $argument = new ArgumentMetadata('invalid', \stdClass::class, false, false, null, false, [
             MapRequestPayload::class => new MapRequestPayload(),
         ]);
-        $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => 'foo/bar'], content: 'foo-bar');
+        $request = Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => 'foo/bar'], 'foo-bar');
 
         $kernel = $this->createStub(HttpKernelInterface::class);
         $arguments = $resolver->resolve($request, $argument);
@@ -385,7 +391,7 @@ class RequestPayloadValueResolverTest extends TestCase
         $argument = new ArgumentMetadata('valid', RequestPayload::class, false, false, null, false, [
             MapRequestPayload::class => new MapRequestPayload(),
         ]);
-        $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json'], content: $content);
+        $request = Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], $content);
 
         $kernel = $this->createStub(HttpKernelInterface::class);
         $arguments = $resolver->resolve($request, $argument);
@@ -396,10 +402,8 @@ class RequestPayloadValueResolverTest extends TestCase
         $this->assertEquals([$payload], $event->getArguments());
     }
 
-    /**
-     * @testWith [null]
-     *           [[]]
-     */
+    #[TestWith([null])]
+    #[TestWith([[]])]
     public function testRequestContentWithUntypedErrors(?array $types)
     {
         $this->expectException(HttpException::class);
@@ -414,7 +418,7 @@ class RequestPayloadValueResolverTest extends TestCase
         $serializer->method('deserialize')->willThrowException(new PartialDenormalizationException([], [$exception]));
 
         $resolver = new RequestPayloadValueResolver($serializer, (new ValidatorBuilder())->getValidator());
-        $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json'], content: '{"price": 50}');
+        $request = Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], '{"price": 50}');
 
         $arguments = $resolver->resolve($request, new ArgumentMetadata('valid', RequestPayload::class, false, false, null, false, [
             MapRequestPayload::class => new MapRequestPayload(),
@@ -512,6 +516,40 @@ class RequestPayloadValueResolverTest extends TestCase
         $this->assertEquals([$payload], $event->getArguments());
     }
 
+    public function testRequestArrayDenormalization()
+    {
+        $input = [
+            ['price' => '50'],
+            ['price' => '23'],
+        ];
+        $payload = [
+            new RequestPayload(50),
+            new RequestPayload(23),
+        ];
+
+        $serializer = new Serializer([new ArrayDenormalizer(), new ObjectNormalizer()], ['json' => new JsonEncoder()]);
+
+        $validator = $this->createMock(ValidatorInterface::class);
+        $validator->expects($this->once())
+            ->method('validate')
+            ->willReturn(new ConstraintViolationList());
+
+        $resolver = new RequestPayloadValueResolver($serializer, $validator);
+
+        $argument = new ArgumentMetadata('prices', 'array', false, false, null, false, [
+            MapRequestPayload::class => new MapRequestPayload(type: RequestPayload::class),
+        ]);
+        $request = Request::create('/', 'POST', $input);
+
+        $kernel = $this->createStub(HttpKernelInterface::class);
+        $arguments = $resolver->resolve($request, $argument);
+        $event = new ControllerArgumentsEvent($kernel, static function () {}, $arguments, $request, HttpKernelInterface::MAIN_REQUEST);
+
+        $resolver->onKernelControllerArguments($event);
+
+        $this->assertEquals([$payload], $event->getArguments());
+    }
+
     public function testRequestInputTypeMismatch()
     {
         $input = ['price' => 'not a float'];
@@ -544,6 +582,40 @@ class RequestPayloadValueResolverTest extends TestCase
         }
     }
 
+    public function testItThrowsOnMissingAttributeType()
+    {
+        $serializer = new Serializer();
+        $validator = (new ValidatorBuilder())->getValidator();
+        $resolver = new RequestPayloadValueResolver($serializer, $validator);
+
+        $argument = new ArgumentMetadata('prices', 'array', false, false, null, false, [
+            MapRequestPayload::class => new MapRequestPayload(),
+        ]);
+        $request = Request::create('/', 'POST');
+        $request->attributes->set('_controller', 'App\Controller\SomeController::someMethod');
+
+        $this->expectException(NearMissValueResolverException::class);
+        $this->expectExceptionMessage('Please set the $type argument of the #[Symfony\Component\HttpKernel\Attribute\MapRequestPayload] attribute to the type of the objects in the expected array.');
+        $resolver->resolve($request, $argument);
+    }
+
+    public function testItThrowsOnInvalidAttributeTypeUsage()
+    {
+        $serializer = new Serializer();
+        $validator = (new ValidatorBuilder())->getValidator();
+        $resolver = new RequestPayloadValueResolver($serializer, $validator);
+
+        $argument = new ArgumentMetadata('prices', null, false, false, null, false, [
+            MapRequestPayload::class => new MapRequestPayload(type: RequestPayload::class),
+        ]);
+        $request = Request::create('/', 'POST');
+        $request->attributes->set('_controller', 'App\Controller\SomeController::someMethod');
+
+        $this->expectException(NearMissValueResolverException::class);
+        $this->expectExceptionMessage('Please set its type to "array" when using argument $type of #[Symfony\Component\HttpKernel\Attribute\MapRequestPayload].');
+        $resolver->resolve($request, $argument);
+    }
+
     public function testItThrowsOnVariadicArgument()
     {
         $serializer = new Serializer();
@@ -560,17 +632,15 @@ class RequestPayloadValueResolverTest extends TestCase
         $resolver->resolve($request, $argument);
     }
 
-    /**
-     * @dataProvider provideMatchedFormatContext
-     */
+    #[DataProvider('provideMatchedFormatContext')]
     public function testAcceptFormatPassed(mixed $acceptFormat, string $contentType, string $content)
     {
-        $encoders = ['json' => new JsonEncoder(), 'xml' => new XmlEncoder()];
+        $encoders = [new JsonEncoder(), new XmlEncoder(), new CsvEncoder([CsvEncoder::AS_COLLECTION_KEY => false])];
         $serializer = new Serializer([new ObjectNormalizer()], $encoders);
         $validator = (new ValidatorBuilder())->getValidator();
         $resolver = new RequestPayloadValueResolver($serializer, $validator);
 
-        $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => $contentType], content: $content);
+        $request = Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => $contentType], $content);
 
         $argument = new ArgumentMetadata('valid', RequestPayload::class, false, false, null, false, [
             MapRequestPayload::class => new MapRequestPayload(acceptFormat: $acceptFormat),
@@ -622,18 +692,118 @@ class RequestPayloadValueResolverTest extends TestCase
             'contentType' => 'application/xml',
             'content' => '<?xml version="1.0"?><request><price>50</price></request>',
         ];
+
+        yield 'configure with no format, sends json' => [
+            'acceptFormat' => null,
+            'contentType' => 'application/json',
+            'content' => '{"price": 50}',
+        ];
+
+        yield 'configure with no format, sends xml' => [
+            'acceptFormat' => null,
+            'contentType' => 'application/xml',
+            'content' => '<?xml version="1.0"?><request><price>50</price></request>',
+        ];
+
+        yield 'configure with csv, sends csv' => [
+            'acceptFormat' => 'csv',
+            'contentType' => 'text/csv',
+            'content' => "price\n50",
+        ];
+
+        yield 'configure with no format, sends jsonld without a decoder' => [
+            'acceptFormat' => null,
+            'contentType' => 'application/ld+json',
+            'content' => '{"price": 50}',
+        ];
+
+        yield 'configure with no format, sends jsonapi without a decoder' => [
+            'acceptFormat' => null,
+            'contentType' => 'application/vnd.api+json',
+            'content' => '{"price": 50}',
+        ];
+
+        yield 'configure with no format, sends a json variant with parameters' => [
+            'acceptFormat' => null,
+            'contentType' => 'application/ld+json; charset=utf-8; profile="urn:example+yaml"',
+            'content' => '{"price": 50}',
+        ];
+
+        yield 'configure with no format, sends an xml variant without a decoder' => [
+            'acceptFormat' => null,
+            'contentType' => 'application/hal+xml',
+            'content' => '<?xml version="1.0"?><request><price>50</price></request>',
+        ];
+
+        yield 'configure with no format, sends an xml variant with parameters' => [
+            'acceptFormat' => null,
+            'contentType' => 'application/atom+xml; charset=utf-8',
+            'content' => '<?xml version="1.0"?><request><price>50</price></request>',
+        ];
+
+        yield 'configure with jsonapi, sends jsonapi without a decoder' => [
+            'acceptFormat' => 'jsonapi',
+            'contentType' => 'application/vnd.api+json',
+            'content' => '{"price": 50}',
+        ];
+
+        yield 'configure with hal, sends an xml variant without a decoder' => [
+            'acceptFormat' => 'hal',
+            'contentType' => 'application/hal+xml',
+            'content' => '<?xml version="1.0"?><request><price>50</price></request>',
+        ];
     }
 
-    /**
-     * @dataProvider provideMismatchedFormatContext
-     */
+    #[DataProvider('providePayloadFormatsSupportedByTheSerializer')]
+    public function testPayloadFormatSupportedByTheSerializerIsNotNormalized(string $format, string $contentType, string $content, ?string $acceptFormat, DecoderInterface $decoder)
+    {
+        $decoder = new class($format, $decoder) implements DecoderInterface {
+            public function __construct(private string $format, private DecoderInterface $decoder)
+            {
+            }
+
+            public function decode(string $data, string $format, array $context = []): mixed
+            {
+                $decoded = $this->decoder->decode($data, $format, $context);
+                $decoded['price'] *= 21;
+
+                return $decoded;
+            }
+
+            public function supportsDecoding(string $format): bool
+            {
+                return $this->format === $format;
+            }
+        };
+        $serializer = new Serializer([new ObjectNormalizer()], [new JsonEncoder(), new XmlEncoder(), $decoder]);
+        $resolver = new RequestPayloadValueResolver($serializer);
+        $request = Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => $contentType], $content);
+        $argument = new ArgumentMetadata('valid', RequestPayload::class, false, false, null, false, [new MapRequestPayload(acceptFormat: $acceptFormat)]);
+        $event = new ControllerArgumentsEvent($this->createStub(HttpKernelInterface::class), static function () {}, [...$resolver->resolve($request, $argument)], $request, HttpKernelInterface::MAIN_REQUEST);
+
+        $resolver->onKernelControllerArguments($event);
+
+        $this->assertEquals([new RequestPayload(1050)], $event->getArguments());
+    }
+
+    public static function providePayloadFormatsSupportedByTheSerializer(): iterable
+    {
+        yield 'jsonld' => ['jsonld', 'application/ld+json', '{"price": 50}', null, new JsonEncoder()];
+        yield 'jsonapi' => ['jsonapi', 'application/vnd.api+json', '{"price": 50}', null, new JsonEncoder()];
+        yield 'xml' => ['hal', 'application/hal+xml', '<request><price>50</price></request>', null, new XmlEncoder()];
+        yield 'explicit format' => ['jsonld', 'application/ld+json', '{"price": 50}', 'jsonld', new JsonEncoder()];
+        yield 'parameters' => ['jsonld', 'application/ld+json; charset=utf-8', '{"price": 50}', null, new JsonEncoder()];
+    }
+
+    #[DataProvider('provideMismatchedFormatContext')]
     public function testAcceptFormatNotPassed(mixed $acceptFormat, string $contentType, string $content, string $expectedExceptionMessage)
     {
-        $serializer = new Serializer([new ObjectNormalizer()]);
+        $encoders = [new JsonEncoder(), new XmlEncoder(), new CsvEncoder([CsvEncoder::AS_COLLECTION_KEY => false])];
+        $serializer = new Serializer([new ObjectNormalizer()], $encoders);
         $validator = (new ValidatorBuilder())->getValidator();
         $resolver = new RequestPayloadValueResolver($serializer, $validator);
 
-        $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => $contentType], content: $content);
+        $request = Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => $contentType], $content);
 
         $argument = new ArgumentMetadata('valid', RequestPayload::class, false, false, null, false, [
             MapRequestPayload::class => new MapRequestPayload(acceptFormat: $acceptFormat),
@@ -688,11 +858,58 @@ class RequestPayloadValueResolverTest extends TestCase
             'content' => '{"@context": "https://schema.org", "@type": "FakeType", "price": 50}',
             'expectedExceptionMessage' => 'Unsupported format, expects "json", "xml", but "jsonld" given.',
         ];
+
+        yield 'configure with no format, sends yaml' => [
+            'acceptFormat' => null,
+            'contentType' => 'application/x-yaml',
+            'content' => 'price: 50',
+            'expectedExceptionMessage' => 'Unsupported format, "yaml" must be explicitly listed in "acceptFormat".',
+        ];
+
+        yield 'configure with no format, sends a +yaml media type' => [
+            'acceptFormat' => null,
+            'contentType' => 'application/vnd.example+yaml',
+            'content' => 'price: 50',
+            'expectedExceptionMessage' => 'Unsupported format, "yaml" must be explicitly listed in "acceptFormat".',
+        ];
+
+        yield 'configure with no format, sends csv' => [
+            'acceptFormat' => null,
+            'contentType' => 'text/csv',
+            'content' => "price\n50",
+            'expectedExceptionMessage' => 'Unsupported format, "csv" must be explicitly listed in "acceptFormat".',
+        ];
+
+        yield 'configure with no format, sends plain text' => [
+            'acceptFormat' => null,
+            'contentType' => 'text/plain',
+            'content' => 'price: 50',
+            'expectedExceptionMessage' => 'Unsupported format, "txt" must be explicitly listed in "acceptFormat".',
+        ];
+
+        yield 'configure with xml, sends an xml variant' => [
+            'acceptFormat' => 'xml',
+            'contentType' => 'application/hal+xml',
+            'content' => '<request><price>50</price></request>',
+            'expectedExceptionMessage' => 'Unsupported format, expects "xml", but "hal" given.',
+        ];
+
+        yield 'configure with no format, sends yaml with a json suffix in a parameter' => [
+            'acceptFormat' => null,
+            'contentType' => 'application/x-yaml; profile=+json',
+            'content' => 'price: 50',
+            'expectedExceptionMessage' => 'Unsupported format, "yaml" must be explicitly listed in "acceptFormat".',
+        ];
+
+        yield 'configure with no format, sends plain text with an xml suffix in a parameter' => [
+            'acceptFormat' => null,
+            'contentType' => 'text/plain; profile=+xml',
+            'content' => 'price: 50',
+            'expectedExceptionMessage' => 'Unsupported format, "txt" must be explicitly listed in "acceptFormat".',
+        ];
     }
 
-    /**
-     * @dataProvider provideValidationGroupsOnManyTypes
-     */
+    #[DataProvider('provideValidationGroupsOnManyTypes')]
     public function testValidationGroupsPassed(string $method, ValueResolver $attribute)
     {
         $input = ['price' => '50', 'title' => 'A long title, so the validation passes'];
@@ -719,9 +936,7 @@ class RequestPayloadValueResolverTest extends TestCase
         $this->assertEquals([$payload], $event->getArguments());
     }
 
-    /**
-     * @dataProvider provideValidationGroupsOnManyTypes
-     */
+    #[DataProvider('provideValidationGroupsOnManyTypes')]
     public function testValidationGroupsNotPassed(string $method, ValueResolver $attribute)
     {
         $input = ['price' => '50', 'title' => 'Too short'];
@@ -829,7 +1044,7 @@ class RequestPayloadValueResolverTest extends TestCase
         $argument = new ArgumentMetadata('invalid', RequestPayload::class, false, false, null, false, [
             MapRequestPayload::class => new MapRequestPayload(validationFailedStatusCode: 400),
         ]);
-        $request = Request::create('/', 'POST', server: ['CONTENT_TYPE' => 'application/json'], content: $content);
+        $request = Request::create('/', 'POST', [], [], [], ['CONTENT_TYPE' => 'application/json'], $content);
 
         $kernel = $this->createStub(HttpKernelInterface::class);
         $arguments = $resolver->resolve($request, $argument);
@@ -842,8 +1057,107 @@ class RequestPayloadValueResolverTest extends TestCase
             $validationFailedException = $e->getPrevious();
             $this->assertSame(400, $e->getStatusCode());
             $this->assertInstanceOf(ValidationFailedException::class, $validationFailedException);
-            $this->assertSame(\sprintf('This value should be of type %s.', class_exists(InvalidTypeException::class) ? 'string' : 'unknown'), $validationFailedException->getViolations()[0]->getMessage());
+            $this->assertSame('This value should be of type string.', $validationFailedException->getViolations()[0]->getMessage());
         }
+    }
+
+    #[DataProvider('provideBoolArgument')]
+    public function testBoolArgumentInQueryString(mixed $expectedValue, ?string $parameterValue)
+    {
+        $serializer = new Serializer([new ObjectNormalizer()]);
+        $validator = (new ValidatorBuilder())->getValidator();
+        $resolver = new RequestPayloadValueResolver($serializer, $validator);
+
+        $argument = new ArgumentMetadata('filtered', ObjectWithBoolArgument::class, false, false, null, false, [
+            MapQueryString::class => new MapQueryString(),
+        ]);
+        $request = Request::create('/', 'GET', ['value' => $parameterValue]);
+
+        $kernel = $this->createStub(HttpKernelInterface::class);
+        $arguments = $resolver->resolve($request, $argument);
+        $event = new ControllerArgumentsEvent($kernel, static function () {}, $arguments, $request, HttpKernelInterface::MAIN_REQUEST);
+
+        $resolver->onKernelControllerArguments($event);
+
+        $this->assertSame($expectedValue, $event->getArguments()[0]->value);
+    }
+
+    #[DataProvider('provideBoolArgument')]
+    public function testBoolArgumentInBody(mixed $expectedValue, ?string $parameterValue)
+    {
+        $serializer = new Serializer([new ObjectNormalizer()]);
+        $validator = (new ValidatorBuilder())->getValidator();
+        $resolver = new RequestPayloadValueResolver($serializer, $validator);
+
+        $argument = new ArgumentMetadata('filtered', ObjectWithBoolArgument::class, false, false, null, false, [
+            MapRequestPayload::class => new MapRequestPayload(),
+        ]);
+        $request = Request::create('/', 'POST', ['value' => $parameterValue], [], [], ['CONTENT_TYPE' => 'multipart/form-data']);
+
+        $kernel = $this->createStub(HttpKernelInterface::class);
+        $arguments = $resolver->resolve($request, $argument);
+        $event = new ControllerArgumentsEvent($kernel, static function () {}, $arguments, $request, HttpKernelInterface::MAIN_REQUEST);
+
+        $resolver->onKernelControllerArguments($event);
+
+        $this->assertSame($expectedValue, $event->getArguments()[0]->value);
+    }
+
+    public static function provideBoolArgument()
+    {
+        yield 'default value' => [null, null];
+        yield '"0"' => [false, '0'];
+        yield '"false"' => [false, 'false'];
+        yield '"no"' => [false, 'no'];
+        yield '"off"' => [false, 'off'];
+        yield '"1"' => [true, '1'];
+        yield '"true"' => [true, 'true'];
+        yield '"yes"' => [true, 'yes'];
+        yield '"on"' => [true, 'on'];
+    }
+
+    /**
+     * Boolean filtering must be disabled for content types other than form data.
+     */
+    public function testBoolArgumentInJsonBody()
+    {
+        $serializer = new Serializer([new ObjectNormalizer()]);
+        $validator = (new ValidatorBuilder())->getValidator();
+        $resolver = new RequestPayloadValueResolver($serializer, $validator);
+
+        $argument = new ArgumentMetadata('filtered', ObjectWithBoolArgument::class, false, false, null, false, [
+            MapRequestPayload::class => new MapRequestPayload(),
+        ]);
+        $request = Request::create('/', 'POST', ['value' => 'off'], [], [], ['CONTENT_TYPE' => 'application/json']);
+
+        $kernel = $this->createStub(HttpKernelInterface::class);
+        $arguments = $resolver->resolve($request, $argument);
+        $event = new ControllerArgumentsEvent($kernel, static function () {}, $arguments, $request, HttpKernelInterface::MAIN_REQUEST);
+
+        $resolver->onKernelControllerArguments($event);
+
+        $this->assertTrue($event->getArguments()[0]->value);
+    }
+
+    public function testConfigKeyForQueryString()
+    {
+        $serializer = new Serializer([new ObjectNormalizer()]);
+        $validator = (new ValidatorBuilder())->getValidator();
+        $resolver = new RequestPayloadValueResolver($serializer, $validator);
+
+        $argument = new ArgumentMetadata('filtered', QueryPayload::class, false, false, null, false, [
+            MapQueryString::class => new MapQueryString(key: 'value'),
+        ]);
+        $request = Request::create('/', 'GET', ['value' => ['page' => 1.0]]);
+
+        $kernel = $this->createStub(HttpKernelInterface::class);
+        $arguments = $resolver->resolve($request, $argument);
+        $event = new ControllerArgumentsEvent($kernel, static function () {}, $arguments, $request, HttpKernelInterface::MAIN_REQUEST);
+
+        $resolver->onKernelControllerArguments($event);
+
+        $this->assertInstanceOf(QueryPayload::class, $event->getArguments()[0]);
+        $this->assertSame(1.0, $event->getArguments()[0]->page);
     }
 
     public function testMapRequestPayloadWithPreParsedJsonIntCoercesToFloat()
@@ -978,6 +1292,13 @@ enum RequestMethod: string
 {
     case GET = 'GET';
     case POST = 'POST';
+}
+
+class ObjectWithBoolArgument
+{
+    public function __construct(public readonly ?bool $value = null)
+    {
+    }
 }
 
 class FormPayloadWithBool

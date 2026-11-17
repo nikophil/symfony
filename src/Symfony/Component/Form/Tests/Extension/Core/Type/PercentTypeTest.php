@@ -37,9 +37,9 @@ class PercentTypeTest extends TypeTestCase
 
     protected function tearDown(): void
     {
-        parent::tearDown();
-
-        \Locale::setDefault($this->defaultLocale);
+        if (isset($this->defaultLocale)) {
+            \Locale::setDefault($this->defaultLocale);
+        }
     }
 
     public function testSubmitWithRoundingMode()

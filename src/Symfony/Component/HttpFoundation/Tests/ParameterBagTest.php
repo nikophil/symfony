@@ -11,8 +11,8 @@
 
 namespace Symfony\Component\HttpFoundation\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Symfony\Bridge\PhpUnit\ExpectDeprecationTrait;
 use Symfony\Component\HttpFoundation\Exception\BadRequestException;
 use Symfony\Component\HttpFoundation\Exception\UnexpectedValueException;
 use Symfony\Component\HttpFoundation\ParameterBag;
@@ -20,8 +20,6 @@ use Symfony\Component\HttpFoundation\Tests\Fixtures\FooEnum;
 
 class ParameterBagTest extends TestCase
 {
-    use ExpectDeprecationTrait;
-
     public function testConstructor()
     {
         $this->testAll();
@@ -187,28 +185,24 @@ class ParameterBagTest extends TestCase
         $this->assertSame(1, $bag->getInt('bool', 0), '->getInt() returns 1 if a parameter is true');
     }
 
-    /**
-     * @group legacy
-     */
     public function testGetIntExceptionWithArray()
     {
-        $this->expectDeprecation(\sprintf('Since symfony/http-foundation 6.3: Ignoring invalid values when using "%s::getInt(\'digits\')" is deprecated and will throw an "%s" in 7.0; use method "filter()" with flag "FILTER_NULL_ON_FAILURE" to keep ignoring them.', ParameterBag::class, UnexpectedValueException::class));
-
         $bag = new ParameterBag(['digits' => ['123']]);
-        $result = $bag->getInt('digits', 0);
-        $this->assertSame(0, $result);
+
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('Parameter value "digits" is invalid and flag "FILTER_NULL_ON_FAILURE" was not set.');
+
+        $bag->getInt('digits');
     }
 
-    /**
-     * @group legacy
-     */
     public function testGetIntExceptionWithInvalid()
     {
-        $this->expectDeprecation(\sprintf('Since symfony/http-foundation 6.3: Ignoring invalid values when using "%s::getInt(\'word\')" is deprecated and will throw an "%s" in 7.0; use method "filter()" with flag "FILTER_NULL_ON_FAILURE" to keep ignoring them.', ParameterBag::class, UnexpectedValueException::class));
-
         $bag = new ParameterBag(['word' => 'foo_BAR_012']);
-        $result = $bag->getInt('word', 0);
-        $this->assertSame(0, $result);
+
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('Parameter value "word" is invalid and flag "FILTER_NULL_ON_FAILURE" was not set.');
+
+        $bag->getInt('word');
     }
 
     public function testGetString()
@@ -260,7 +254,7 @@ class ParameterBagTest extends TestCase
             'array' => ['bang'],
         ]);
 
-        $this->assertEmpty($bag->filter('nokey'), '->filter() should return empty by default if no key is found');
+        $this->assertSame('', $bag->filter('nokey'), '->filter() should return empty by default if no key is found');
 
         $this->assertEquals('0123', $bag->filter('digits', '', \FILTER_SANITIZE_NUMBER_INT), '->filter() gets a value of parameter as integer filtering out invalid characters');
 
@@ -341,23 +335,18 @@ class ParameterBagTest extends TestCase
         $this->assertSame('BAR', $result);
     }
 
-    /**
-     * @group legacy
-     *
-     * @dataProvider provideInvalidFilterArrayValues
-     */
+    #[DataProvider('provideInvalidFilterArrayValues')]
     public function testFilterArrayWithInvalidValue($value, int $filter, $options, array $expected)
     {
-        $this->expectDeprecation('Since symfony/http-foundation 6.3: Ignoring invalid values when using "Symfony\Component\HttpFoundation\ParameterBag::filter(\'foo\')" is deprecated and will throw an "Symfony\Component\HttpFoundation\Exception\UnexpectedValueException" in 7.0; pass flag "FILTER_NULL_ON_FAILURE" to keep ignoring them.');
-
         $bag = new ParameterBag(['foo' => $value]);
 
-        $this->assertSame($expected, $bag->filter('foo', null, $filter, $options));
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('Parameter value "foo" is invalid and flag "FILTER_NULL_ON_FAILURE" was not set.');
+
+        $bag->filter('foo', null, $filter, $options);
     }
 
-    /**
-     * @dataProvider provideInvalidFilterArrayValues
-     */
+    #[DataProvider('provideInvalidFilterArrayValues')]
     public function testFilterArrayWithNullOnFailure($value, int $filter, $options, array $expected)
     {
         if (!\is_array($options)) {
@@ -380,17 +369,15 @@ class ParameterBagTest extends TestCase
         yield 'nested callback' => [['values' => ['valid' => '12', 'invalid' => 'bad']], \FILTER_CALLBACK, ['flags' => \FILTER_REQUIRE_ARRAY, 'options' => $callback], ['values' => ['valid' => 12, 'invalid' => null]]];
         yield 'forced scalar callback' => ['bad', \FILTER_CALLBACK, ['flags' => \FILTER_FORCE_ARRAY, 'options' => $callback], [null]];
         yield 'nested object' => [['values' => [new \stdClass()]], \FILTER_VALIDATE_INT, \FILTER_REQUIRE_ARRAY, ['values' => [null]]];
-        // FILTER_CALLBACK ignores the flags before PHP 8.1.25 and 8.2.12
-        if (\PHP_VERSION_ID >= 80125 && \PHP_VERSION_ID < 80200 || \PHP_VERSION_ID >= 80212) {
+        // FILTER_CALLBACK ignores the flags before PHP 8.2.12
+        if (\PHP_VERSION_ID >= 80212) {
             yield 'nested object with callback' => [['values' => [new \stdClass()]], \FILTER_CALLBACK, ['flags' => \FILTER_REQUIRE_ARRAY, 'options' => static function () {
                 throw new \LogicException('Non-stringable objects must not reach the callback.');
             }], ['values' => [null]]];
         }
     }
 
-    /**
-     * @dataProvider provideValidFilterArrayValues
-     */
+    #[DataProvider('provideValidFilterArrayValues')]
     public function testFilterArrayWithValidValue($value, int $filter, $options, array $expected)
     {
         $bag = new ParameterBag(['foo' => $value]);
@@ -415,16 +402,14 @@ class ParameterBagTest extends TestCase
         yield 'forced scalar array default' => ['bad', \FILTER_VALIDATE_INT, ['flags' => \FILTER_FORCE_ARRAY, 'options' => ['default' => ['optional' => null]]], [['optional' => null]]];
     }
 
-    /**
-     * @group legacy
-     */
     public function testFilterArrayWithInvalidValueWithoutFlags()
     {
-        $this->expectDeprecation('Since symfony/http-foundation 6.3: Ignoring invalid values when using "Symfony\Component\HttpFoundation\ParameterBag::filter(\'foo\')" is deprecated and will throw an "Symfony\Component\HttpFoundation\Exception\UnexpectedValueException" in 7.0; pass flag "FILTER_NULL_ON_FAILURE" to keep ignoring them.');
-
         $bag = new ParameterBag(['foo' => ['12', 'bad']]);
 
-        $this->assertSame([12, null], $bag->filter('foo', null, \FILTER_VALIDATE_INT));
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('Parameter value "foo" is invalid and flag "FILTER_NULL_ON_FAILURE" was not set.');
+
+        $bag->filter('foo', null, \FILTER_VALIDATE_INT);
     }
 
     public function testGetIterator()
@@ -460,16 +445,14 @@ class ParameterBagTest extends TestCase
         $this->assertTrue($bag->getBoolean('unknown', true), '->getBoolean() returns default if a parameter is not defined');
     }
 
-    /**
-     * @group legacy
-     */
     public function testGetBooleanExceptionWithInvalid()
     {
-        $this->expectDeprecation(\sprintf('Since symfony/http-foundation 6.3: Ignoring invalid values when using "%s::getBoolean(\'invalid\')" is deprecated and will throw an "%s" in 7.0; use method "filter()" with flag "FILTER_NULL_ON_FAILURE" to keep ignoring them.', ParameterBag::class, UnexpectedValueException::class));
-
         $bag = new ParameterBag(['invalid' => 'foo']);
-        $result = $bag->getBoolean('invalid', 0);
-        $this->assertFalse($result);
+
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('Parameter value "invalid" is invalid and flag "FILTER_NULL_ON_FAILURE" was not set.');
+
+        $bag->getBoolean('invalid');
     }
 
     public function testGetEnum()
@@ -486,12 +469,8 @@ class ParameterBagTest extends TestCase
     {
         $bag = new ParameterBag(['invalid-value' => 2]);
 
-        $this->expectException(UnexpectedValueException::class);
-        if (\PHP_VERSION_ID >= 80200) {
-            $this->expectExceptionMessage('Parameter "invalid-value" cannot be converted to enum: 2 is not a valid backing value for enum Symfony\Component\HttpFoundation\Tests\Fixtures\FooEnum.');
-        } else {
-            $this->expectExceptionMessage('Parameter "invalid-value" cannot be converted to enum: 2 is not a valid backing value for enum "Symfony\Component\HttpFoundation\Tests\Fixtures\FooEnum".');
-        }
+        $this->expectException(\UnexpectedValueException::class);
+        $this->expectExceptionMessage('Parameter "invalid-value" cannot be converted to enum: 2 is not a valid backing value for enum Symfony\Component\HttpFoundation\Tests\Fixtures\FooEnum.');
 
         $this->assertNull($bag->getEnum('invalid-value', FooEnum::class));
     }

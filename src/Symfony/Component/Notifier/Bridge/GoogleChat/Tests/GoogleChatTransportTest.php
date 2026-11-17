@@ -15,8 +15,8 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\Notifier\Bridge\GoogleChat\GoogleChatOptions;
 use Symfony\Component\Notifier\Bridge\GoogleChat\GoogleChatTransport;
-use Symfony\Component\Notifier\Exception\LogicException;
 use Symfony\Component\Notifier\Exception\TransportException;
+use Symfony\Component\Notifier\Exception\UnsupportedOptionsException;
 use Symfony\Component\Notifier\Message\ChatMessage;
 use Symfony\Component\Notifier\Message\MessageOptionsInterface;
 use Symfony\Component\Notifier\Message\SmsMessage;
@@ -120,14 +120,15 @@ final class GoogleChatTransportTest extends TransportTestCase
 
     public function testSendWithInvalidOptions()
     {
-        $this->expectException(LogicException::class);
-        $this->expectExceptionMessage('The "'.GoogleChatTransport::class.'" transport only supports instances of "'.GoogleChatOptions::class.'" for options.');
+        $options = $this->createStub(MessageOptionsInterface::class);
+        $this->expectException(UnsupportedOptionsException::class);
+        $this->expectExceptionMessage(\sprintf('The "%s" transport only supports instances of "%s" for options (instance of "%s" given).', GoogleChatTransport::class, GoogleChatOptions::class, get_debug_type($options)));
 
         $client = new MockHttpClient(new MockResponse());
 
         $transport = self::createTransport($client);
 
-        $transport->send(new ChatMessage('testMessage', $this->createMock(MessageOptionsInterface::class)));
+        $transport->send(new ChatMessage('testMessage', $options));
     }
 
     public function testSendWith200ResponseButNotOk()

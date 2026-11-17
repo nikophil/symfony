@@ -33,7 +33,7 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           packages=$(php .github/get-modified-packages.php \
-            "$(find src/Symfony -mindepth 2 -type f -name composer.json -printf '%h\n' | grep -v src/Symfony/Component/Intl/Resources/emoji | jq -R -s -c 'split("\n")[:-1]')" \
+            "$(find src/Symfony -mindepth 2 -type f -name composer.json -printf '%h\n' | grep -v src/Symfony/Component/Emoji/Resources/bin | jq -R -s -c 'split("\n")[:-1]')" \
             "$(git diff --name-only "origin/$BASE_REF" HEAD | grep src/ | jq -R -s -c 'split("\n")[:-1]')")
           echo "packages=$packages" >> "$GITHUB_OUTPUT"
 

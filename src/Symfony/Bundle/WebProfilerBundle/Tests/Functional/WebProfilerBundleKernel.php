@@ -46,8 +46,8 @@ class WebProfilerBundleKernel extends Kernel
 
     protected function configureRoutes(RoutingConfigurator $routes): void
     {
-        $routes->import(__DIR__.'/../../Resources/config/routing/profiler.xml')->prefix('/_profiler');
-        $routes->import(__DIR__.'/../../Resources/config/routing/wdt.xml')->prefix('/_wdt');
+        $routes->import(__DIR__.'/../../Resources/config/routing/profiler.php')->prefix('/_profiler');
+        $routes->import(__DIR__.'/../../Resources/config/routing/wdt.php')->prefix('/_wdt');
         $routes->add('_', '/')->controller('kernel::homepageController');
         $routes->add('redirect', '/redirect')->controller('kernel::redirectController');
         $routes->add('csp', '/csp')->controller('kernel::cspController');
@@ -55,21 +55,15 @@ class WebProfilerBundleKernel extends Kernel
 
     protected function configureContainer(ContainerBuilder $container, LoaderInterface $loader): void
     {
-        $config = [
-            'annotations' => false,
+        $container->loadFromExtension('framework', [
             'http_method_override' => false,
+            'handle_all_throwables' => true,
             'php_errors' => ['log' => true],
             'secret' => 'foo-secret',
-            'profiler' => ['only_exceptions' => false],
+            'profiler' => ['only_exceptions' => false, 'collect_serializer_data' => true],
             'session' => ['handler_id' => null, 'storage_factory_id' => 'session.storage.factory.mock_file', 'cookie-secure' => 'auto', 'cookie-samesite' => 'lax'],
             'router' => ['utf8' => true],
-        ];
-
-        if (Kernel::VERSION_ID >= 60400) {
-            $config['handle_all_throwables'] = true;
-        }
-
-        $container->loadFromExtension('framework', $config);
+        ]);
 
         $container->loadFromExtension('web_profiler', [
             'toolbar' => true,

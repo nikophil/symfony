@@ -11,27 +11,29 @@
 
 namespace Symfony\Component\HttpFoundation\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
+use PHPUnit\Framework\Attributes\RequiresPhp;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
-use Symfony\Bridge\PhpUnit\ExpectDeprecationTrait;
 use Symfony\Component\HttpFoundation\Exception\BadRequestException;
 use Symfony\Component\HttpFoundation\Exception\ConflictingHeadersException;
 use Symfony\Component\HttpFoundation\Exception\JsonException;
 use Symfony\Component\HttpFoundation\Exception\SuspiciousOperationException;
-use Symfony\Component\HttpFoundation\InputBag;
 use Symfony\Component\HttpFoundation\IpUtils;
-use Symfony\Component\HttpFoundation\ParameterBag;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Session\Session;
 use Symfony\Component\HttpFoundation\Session\Storage\MockArraySessionStorage;
 
 class RequestTest extends TestCase
 {
-    use ExpectDeprecationTrait;
-
     protected function tearDown(): void
     {
         Request::setTrustedProxies([], -1);
         Request::setTrustedHosts([]);
+        Request::setAllowedHttpMethodOverride(null);
         Request::setFactory(null);
         \Closure::bind(static fn () => self::$formats = null, null, Request::class)();
     }
@@ -83,19 +85,6 @@ class RequestTest extends TestCase
         $isNoCache = $request->isNoCache();
 
         $this->assertFalse($isNoCache);
-    }
-
-    /**
-     * @group legacy
-     */
-    public function testGetContentType()
-    {
-        $this->expectDeprecation('Since symfony/http-foundation 6.2: The "Symfony\Component\HttpFoundation\Request::getContentType()" method is deprecated, use "getContentTypeFormat()" instead.');
-        $request = new Request();
-
-        $contentType = $request->getContentType();
-
-        $this->assertNull($contentType);
     }
 
     public function testGetContentTypeFormat()
@@ -269,6 +258,61 @@ class RequestTest extends TestCase
         $this->assertEquals('http://test.com/foo', $request->getUri());
     }
 
+    public function testHttpMethodOverrideRespectsAllowedListWithHeader()
+    {
+        $request = Request::create('http://example.com/', 'POST');
+        $request->headers->set('X-HTTP-METHOD-OVERRIDE', 'PATCH');
+
+        Request::setAllowedHttpMethodOverride(['PUT', 'PATCH']);
+
+        $this->assertSame('PATCH', $request->getMethod());
+    }
+
+    public function testHttpMethodOverrideDisallowedSkipsOverrideWithHeader()
+    {
+        $request = Request::create('http://example.com/', 'POST');
+        $request->headers->set('X-HTTP-METHOD-OVERRIDE', 'DELETE');
+
+        Request::setAllowedHttpMethodOverride(['PUT', 'PATCH']);
+
+        $this->assertSame('POST', $request->getMethod());
+    }
+
+    public function testHttpMethodOverrideDisabledWithEmptyAllowedList()
+    {
+        $request = Request::create('http://example.com/', 'POST');
+        $request->headers->set('X-HTTP-METHOD-OVERRIDE', 'PUT');
+
+        Request::setAllowedHttpMethodOverride([]);
+
+        $this->assertSame('POST', $request->getMethod());
+    }
+
+    public function testHttpMethodOverrideRespectsAllowedListWithParameter()
+    {
+        Request::enableHttpMethodParameterOverride();
+        Request::setAllowedHttpMethodOverride(['PUT']);
+
+        try {
+            $request = Request::create('http://example.com/', 'POST', ['_method' => 'PUT']);
+
+            $this->assertSame('PUT', $request->getMethod());
+        } finally {
+            (new \ReflectionProperty(Request::class, 'httpMethodParameterOverride'))->setValue(null, false);
+        }
+    }
+
+    #[TestWith(['CONNECT'])]
+    #[TestWith(['GET'])]
+    #[TestWith(['HEAD'])]
+    #[TestWith(['TRACE'])]
+    public function testHttpMethodOverrideCannotBeAppliedToCertainMethods(string $httpOverrideMethod)
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        Request::setAllowedHttpMethodOverride([$httpOverrideMethod]);
+    }
+
     public function testCreateWithRequestUri()
     {
         $request = Request::create('http://test.com:80/foo');
@@ -319,18 +363,18 @@ class RequestTest extends TestCase
         $this->assertEquals('bar=f%5Co', $request->getQueryString());
     }
 
-    /**
-     * @testWith ["http://foo.com\\bar"]
-     *           ["\\\\foo.com/bar"]
-     *           ["a\rb"]
-     *           ["a\nb"]
-     *           ["a\tb"]
-     *           ["\u0000foo"]
-     *           ["foo\u0000"]
-     *           [" foo"]
-     *           ["foo "]
-     *           ["//"]
-     */
+    #[TestWith(['http://foo.com\bar'])]
+    #[TestWith(['\\\foo.com/bar'])]
+    #[TestWith(['a
+b'])]
+    #[TestWith(['a
+b'])]
+    #[TestWith(['a	b'])]
+    #[TestWith([' foo'])]
+    #[TestWith(['foo '])]
+    #[TestWith([' foo'])]
+    #[TestWith(['foo '])]
+    #[TestWith(['//'])]
     public function testCreateWithBadRequestUri(string $uri)
     {
         $this->expectException(BadRequestException::class);
@@ -339,9 +383,7 @@ class RequestTest extends TestCase
         Request::create($uri);
     }
 
-    /**
-     * @dataProvider getRequestUriData
-     */
+    #[DataProvider('getRequestUriData')]
     public function testGetRequestUri($serverRequestUri, $expected, $message)
     {
         $request = new Request();
@@ -479,9 +521,7 @@ class RequestTest extends TestCase
         $this->assertSame('xml', $request->getPreferredFormat());
     }
 
-    /**
-     * @dataProvider getFormatToMimeTypeMapProvider
-     */
+    #[DataProvider('getFormatToMimeTypeMapProvider')]
     public function testGetFormatFromMimeType($format, $mimeTypes)
     {
         $request = new Request();
@@ -507,18 +547,14 @@ class RequestTest extends TestCase
         $this->assertEquals('json', $request->getFormat('application/json ;charset=utf-8'));
     }
 
-    /**
-     * @dataProvider getFormatToMimeTypeMapProvider
-     */
+    #[DataProvider('getFormatToMimeTypeMapProvider')]
     public function testGetMimeTypeFromFormat($format, $mimeTypes)
     {
         $request = new Request();
         $this->assertEquals($mimeTypes[0], $request->getMimeType($format));
     }
 
-    /**
-     * @dataProvider getFormatToMimeTypeMapProvider
-     */
+    #[DataProvider('getFormatToMimeTypeMapProvider')]
     public function testGetMimeTypesFromFormat($format, $mimeTypes)
     {
         $this->assertEquals($mimeTypes, Request::getMimeTypes($format));
@@ -550,6 +586,35 @@ class RequestTest extends TestCase
             ['rdf', ['application/rdf+xml']],
             ['atom', ['application/atom+xml']],
             ['form', ['application/x-www-form-urlencoded', 'multipart/form-data']],
+            ['rss', ['application/rss+xml']],
+            ['soap', ['application/soap+xml']],
+            ['html', ['text/html', 'application/xhtml+xml']],
+            ['problem', ['application/problem+json']],
+            ['hal', ['application/hal+json', 'application/hal+xml']],
+            ['jsonapi', ['application/vnd.api+json']],
+            ['yaml', ['text/yaml', 'application/x-yaml']],
+            ['wbxml', ['application/vnd.wap.wbxml']],
+        ];
+    }
+
+    #[DataProvider('getFormatWithSubtypeFallbackProvider')]
+    public function testGetFormatFromMimeTypeWithSubtypeFallback($expectedFormat, $mimeTypes)
+    {
+        $request = new Request();
+        foreach ($mimeTypes as $mime) {
+            $this->assertEquals($expectedFormat, $request->getFormat($mime, true));
+        }
+    }
+
+    public static function getFormatWithSubtypeFallbackProvider()
+    {
+        return [
+            ['cbor', ['application/example+cbor']],
+            ['asn1', ['application/ber-stream+ber', 'application/secure-data+der']],
+            ['zip', ['application/foobar+zip']],
+            ['tlv', ['application/device-config+tlv']],
+            ['pdf', ['application/pdf']],
+            ['csv', ['text/csv']],
         ];
     }
 
@@ -773,9 +838,7 @@ class RequestTest extends TestCase
         $this->assertEquals('http://servername/some/path', $request->getUriForPath('/some/path'));
     }
 
-    /**
-     * @dataProvider getRelativeUriForPathData
-     */
+    #[DataProvider('getRelativeUriForPathData')]
     public function testGetRelativeUriForPath($expected, $pathinfo, $path)
     {
         $this->assertEquals($expected, Request::create($pathinfo)->getRelativeUriForPath($path));
@@ -833,9 +896,7 @@ class RequestTest extends TestCase
         $this->assertEquals('http://servername:90', $request->getSchemeAndHttpHost());
     }
 
-    /**
-     * @dataProvider getQueryStringNormalizationData
-     */
+    #[DataProvider('getQueryStringNormalizationData')]
     public function testGetQueryString($query, $expectedQuery, $msg)
     {
         $request = new Request();
@@ -1031,9 +1092,19 @@ class RequestTest extends TestCase
         $this->assertSame('POST', $request->getMethod(), '->getMethod() returns the request method if invalid type is defined in query');
     }
 
-    /**
-     * @dataProvider getClientIpsProvider
-     */
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
+    public function testUnsafeMethodOverride()
+    {
+        $request = new Request();
+        $request->setMethod('POST');
+        $request->headers->set('X-HTTP-METHOD-OVERRIDE', 'get');
+
+        $this->expectUserDeprecationMessage('Since symfony/http-foundation 7.4: HTTP method override is deprecated for methods GET, HEAD, CONNECT and TRACE; it will be ignored in Symfony 8.0.');
+        $this->assertSame('GET', $request->getMethod());
+    }
+
+    #[DataProvider('getClientIpsProvider')]
     public function testGetClientIp($expected, $remoteAddr, $httpForwardedFor, $trustedProxies)
     {
         $request = $this->getRequestInstanceForClientIpTests($remoteAddr, $httpForwardedFor, $trustedProxies);
@@ -1041,9 +1112,7 @@ class RequestTest extends TestCase
         $this->assertEquals($expected[0], $request->getClientIp());
     }
 
-    /**
-     * @dataProvider getClientIpsProvider
-     */
+    #[DataProvider('getClientIpsProvider')]
     public function testGetClientIps($expected, $remoteAddr, $httpForwardedFor, $trustedProxies)
     {
         $request = $this->getRequestInstanceForClientIpTests($remoteAddr, $httpForwardedFor, $trustedProxies);
@@ -1051,9 +1120,7 @@ class RequestTest extends TestCase
         $this->assertEquals($expected, $request->getClientIps());
     }
 
-    /**
-     * @dataProvider getClientIpsForwardedProvider
-     */
+    #[DataProvider('getClientIpsForwardedProvider')]
     public function testGetClientIpsForwarded($expected, $remoteAddr, $httpForwarded, $trustedProxies)
     {
         $request = $this->getRequestInstanceForClientIpsForwardedTests($remoteAddr, $httpForwarded, $trustedProxies);
@@ -1143,9 +1210,7 @@ class RequestTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider getClientIpsWithConflictingHeadersProvider
-     */
+    #[DataProvider('getClientIpsWithConflictingHeadersProvider')]
     public function testGetClientIpsWithConflictingHeaders($httpForwarded, $httpXForwardedFor)
     {
         $this->expectException(ConflictingHeadersException::class);
@@ -1164,9 +1229,7 @@ class RequestTest extends TestCase
         $request->getClientIps();
     }
 
-    /**
-     * @dataProvider getClientIpsWithConflictingHeadersProvider
-     */
+    #[DataProvider('getClientIpsWithConflictingHeadersProvider')]
     public function testGetClientIpsOnlyXHttpForwardedForTrusted($httpForwarded, $httpXForwardedFor)
     {
         $request = new Request();
@@ -1196,9 +1259,7 @@ class RequestTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider getClientIpsWithAgreeingHeadersProvider
-     */
+    #[DataProvider('getClientIpsWithAgreeingHeadersProvider')]
     public function testGetClientIpsWithAgreeingHeaders($httpForwarded, $httpXForwardedFor, $expectedIps)
     {
         $request = new Request();
@@ -1275,9 +1336,7 @@ class RequestTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider getContentCanBeCalledTwiceWithResourcesProvider
-     */
+    #[DataProvider('getContentCanBeCalledTwiceWithResourcesProvider')]
     public function testGetContentCanBeCalledTwiceWithResources($first, $second)
     {
         $req = new Request();
@@ -1305,15 +1364,13 @@ class RequestTest extends TestCase
         ];
     }
 
-    public static function provideOverloadedMethods()
+    public static function provideMethodsRequiringExplicitBodyParsing()
     {
         return [
             ['PUT'],
             ['DELETE'],
             ['PATCH'],
-            ['put'],
-            ['delete'],
-            ['patch'],
+            ['QUERY'],
         ];
     }
 
@@ -1355,13 +1412,8 @@ class RequestTest extends TestCase
         $this->assertSame([], $req->getPayload()->all());
     }
 
-    /**
-     * @dataProvider provideOverloadedMethods
-     */
-    public function testCreateFromGlobals($method)
+    public function testCreateFromGlobals()
     {
-        $normalizedMethod = strtoupper($method);
-
         $_GET['foo1'] = 'bar1';
         $_POST['foo2'] = 'bar2';
         $_COOKIE['foo3'] = 'bar3';
@@ -1369,38 +1421,41 @@ class RequestTest extends TestCase
         $_SERVER['foo5'] = 'bar5';
 
         $request = Request::createFromGlobals();
-        $this->assertEquals('bar1', $request->query->get('foo1'), '::fromGlobals() uses values from $_GET');
-        $this->assertEquals('bar2', $request->request->get('foo2'), '::fromGlobals() uses values from $_POST');
-        $this->assertEquals('bar3', $request->cookies->get('foo3'), '::fromGlobals() uses values from $_COOKIE');
-        $this->assertEquals(['bar4'], $request->files->get('foo4'), '::fromGlobals() uses values from $_FILES');
-        $this->assertEquals('bar5', $request->server->get('foo5'), '::fromGlobals() uses values from $_SERVER');
-        $this->assertInstanceOf(InputBag::class, $request->request);
-        $this->assertInstanceOf(ParameterBag::class, $request->request);
+        $this->assertEquals('bar1', $request->query->get('foo1'), '::createFromGlobals() uses values from $_GET');
+        $this->assertEquals('bar2', $request->request->get('foo2'), '::createFromGlobals() uses values from $_POST');
+        $this->assertEquals('bar3', $request->cookies->get('foo3'), '::createFromGlobals() uses values from $_COOKIE');
+        $this->assertEquals(['bar4'], $request->files->get('foo4'), '::createFromGlobals() uses values from $_FILES');
+        $this->assertEquals('bar5', $request->server->get('foo5'), '::createFromGlobals() uses values from $_SERVER');
+    }
 
-        unset($_GET['foo1'], $_POST['foo2'], $_COOKIE['foo3'], $_FILES['foo4'], $_SERVER['foo5']);
+    public function testGetRealMethod()
+    {
+        Request::enableHttpMethodParameterOverride();
+        $request = new Request(request: ['_method' => 'PUT'], server: ['REQUEST_METHOD' => 'PoSt']);
 
+        $this->assertEquals('POST', $request->getRealMethod(), '->getRealMethod() returns the uppercased request method, even if it has been overridden');
+
+        $this->disableHttpMethodParameterOverride();
+    }
+
+    #[RequiresPhp('<8.4.0')]
+    #[DataProvider('provideMethodsRequiringExplicitBodyParsing')]
+    public function testFormUrlEncodedBodyParsing(string $method)
+    {
         $_SERVER['REQUEST_METHOD'] = $method;
         $_SERVER['CONTENT_TYPE'] = 'application/x-www-form-urlencoded';
-        $request = RequestContentProxy::createFromGlobals();
-        $this->assertEquals($normalizedMethod, $request->getMethod());
-        $this->assertEquals('mycontent', $request->request->get('content'));
-        $this->assertInstanceOf(InputBag::class, $request->request);
-        $this->assertInstanceOf(ParameterBag::class, $request->request);
 
-        unset($_SERVER['REQUEST_METHOD'], $_SERVER['CONTENT_TYPE']);
+        MockPhpStreamWrapper::setInputContent('content=mycontent');
+        stream_wrapper_unregister('php');
+        stream_wrapper_register('php', MockPhpStreamWrapper::class);
 
-        Request::createFromGlobals();
-        Request::enableHttpMethodParameterOverride();
-        $_POST['_method'] = $method;
-        $_POST['foo6'] = 'bar6';
-        $_SERVER['REQUEST_METHOD'] = 'PoSt';
-        $request = Request::createFromGlobals();
-        $this->assertEquals($normalizedMethod, $request->getMethod());
-        $this->assertEquals('POST', $request->getRealMethod());
-        $this->assertEquals('bar6', $request->request->get('foo6'));
+        try {
+            $request = Request::createFromGlobals();
 
-        unset($_POST['_method'], $_POST['foo6'], $_SERVER['REQUEST_METHOD']);
-        $this->disableHttpMethodParameterOverride();
+            $this->assertSame('mycontent', $request->request->get('content'));
+        } finally {
+            stream_wrapper_restore('php');
+        }
     }
 
     public function testCreateDoesNotWarnAboutQueryKeysNestedBeyondMaxInputNestingLevel()
@@ -1411,24 +1466,20 @@ class RequestTest extends TestCase
         $this->assertSame(['x' => '2'], $request->query->all());
     }
 
+    #[RequiresPhp('<8.4.0')]
     public function testCreateFromGlobalsDoesNotWarnAboutFormBodyKeysNestedBeyondMaxInputNestingLevel()
     {
-        $requestClass = new class extends Request {
-            public static string $body = '';
-
-            public function getContent(bool $asResource = false): string
-            {
-                return self::$body;
-            }
-        };
-        $requestClass::$body = self::deeplyNestedKey().'=1&x=2';
-
         $_SERVER['REQUEST_METHOD'] = 'PUT';
         $_SERVER['CONTENT_TYPE'] = 'application/x-www-form-urlencoded';
 
+        MockPhpStreamWrapper::setInputContent(self::deeplyNestedKey().'=1&x=2');
+        stream_wrapper_unregister('php');
+        stream_wrapper_register('php', MockPhpStreamWrapper::class);
+
         try {
-            $request = $this->withDisplayErrorsOff(static fn () => $requestClass::createFromGlobals(), $warnings);
+            $request = $this->withDisplayErrorsOff(static fn () => Request::createFromGlobals(), $warnings);
         } finally {
+            stream_wrapper_restore('php');
             unset($_SERVER['REQUEST_METHOD'], $_SERVER['CONTENT_TYPE']);
         }
 
@@ -1600,6 +1651,8 @@ class RequestTest extends TestCase
         $this->assertEquals('/', $request->getPathInfo());
     }
 
+    #[IgnoreDeprecations]
+    #[Group('legacy')]
     public function testGetParameterPrecedence()
     {
         $request = new Request();
@@ -1623,27 +1676,43 @@ class RequestTest extends TestCase
     {
         $request = new Request();
         $this->assertNull($request->getPreferredLanguage());
-        $this->assertNull($request->getPreferredLanguage([]));
-        $this->assertEquals('fr', $request->getPreferredLanguage(['fr']));
-        $this->assertEquals('fr', $request->getPreferredLanguage(['fr', 'en']));
-        $this->assertEquals('en', $request->getPreferredLanguage(['en', 'fr']));
-        $this->assertEquals('fr-ch', $request->getPreferredLanguage(['fr-ch', 'fr-fr']));
+    }
 
+    #[DataProvider('providePreferredLanguage')]
+    public function testPreferredLanguageWithLocales(?string $expectedLocale, ?string $acceptLanguage, array $locales)
+    {
         $request = new Request();
-        $request->headers->set('Accept-language', 'zh, en-us; q=0.8, en; q=0.6');
-        $this->assertEquals('en', $request->getPreferredLanguage(['en', 'en-us']));
+        if ($acceptLanguage) {
+            $request->headers->set('Accept-language', $acceptLanguage);
+        }
+        $this->assertSame($expectedLocale, $request->getPreferredLanguage($locales));
+    }
 
-        $request = new Request();
-        $request->headers->set('Accept-language', 'zh, en-us; q=0.8, en; q=0.6');
-        $this->assertEquals('en', $request->getPreferredLanguage(['fr', 'en']));
-
-        $request = new Request();
-        $request->headers->set('Accept-language', 'zh, en-us; q=0.8');
-        $this->assertEquals('en', $request->getPreferredLanguage(['fr', 'en']));
-
-        $request = new Request();
-        $request->headers->set('Accept-language', 'zh, en-us; q=0.8, fr-fr; q=0.6, fr; q=0.5');
-        $this->assertEquals('en', $request->getPreferredLanguage(['fr', 'en']));
+    public static function providePreferredLanguage(): iterable
+    {
+        yield '"es_PA" is selected as no supported locale is set' => ['es_PA', 'es-pa, en-us; q=0.8, en; q=0.6', []];
+        yield 'No supported locales' => [null, null, []];
+        yield '"fr" selected as first choice when no header is present' => ['fr', null, ['fr', 'en']];
+        yield '"en" selected as first choice when no header is present' => ['en', null, ['en', 'fr']];
+        yield '"fr_CH" selected as first choice when no header is present' => ['fr_CH', null, ['fr-ch', 'fr-fr']];
+        yield '"en_US" is selected as an exact match is found' => ['en_US', 'zh, en-us; q=0.8, en; q=0.6', ['en', 'en-us']];
+        yield '"fr_FR" is selected as it has a higher priority than an exact match' => ['fr_FR', 'ja-JP,fr_CA;q=0.7,fr;q=0.5,en_US;q=0.3', ['en_US', 'fr_FR']];
+        yield '"en" is selected as an exact match is found (1)' => ['en', 'zh, en-us; q=0.8, en; q=0.6', ['fr', 'en']];
+        yield '"en" is selected as an exact match is found (2)' => ['en', 'zh, en-us; q=0.8, fr-fr; q=0.6, fr; q=0.5', ['fr', 'en']];
+        yield '"en" is selected as "en-us" is a similar dialect' => ['en', 'zh, en-us; q=0.8', ['fr', 'en']];
+        yield '"fr_FR" is selected as "fr_CA" is a similar dialect (1)' => ['fr_FR', 'ja-JP,fr_CA;q=0.7,fr;q=0.5', ['en_US', 'fr_FR']];
+        yield '"fr_FR" is selected as "fr_CA" is a similar dialect (2)' => ['fr_FR', 'ja-JP,fr_CA;q=0.7', ['en_US', 'fr_FR']];
+        yield '"fr_FR" is selected as "fr" is a similar dialect (1)' => ['fr_FR', 'ja-JP,fr;q=0.5', ['en_US', 'fr_FR']];
+        yield '"fr_FR" is selected as "fr" is a similar dialect (2)' => ['fr_FR', 'ja-JP,fr;q=0.5,en_US;q=0.3', ['en_US', 'fr_FR']];
+        yield '"fr_FR" is selected as "fr_CA" is a similar dialect and has a greater "q" compared to "en_US" (2)' => ['fr_FR', 'ja-JP,fr_CA;q=0.7,ru-ru;q=0.3', ['en_US', 'fr_FR']];
+        yield '"fr_FR" is selected as "fr_CA" is a similar dialect and has a greater "q" compared to "en"' => ['fr_FR', 'ja-JP,fr_CA;q=0.7,en;q=0.5', ['en_US', 'fr_FR']];
+        yield '"fr_FR" is selected as it is an exact match as well as "en_US", but with a greater "q" parameter' => ['fr_FR', 'en-us;q=0.5,fr-fr', ['en_US', 'fr_FR']];
+        yield '"hi_IN" is selected as "hi_Latn_IN" is a similar dialect' => ['hi_IN', 'fr-fr,hi_Latn_IN;q=0.5', ['hi_IN', 'en_US']];
+        yield '"hi_Latn_IN" is selected as "hi_IN" is a similar dialect' => ['hi_Latn_IN', 'fr-fr,hi_IN;q=0.5', ['hi_Latn_IN', 'en_US']];
+        yield '"en_US" is selected as "en_Latn_US+variants+extensions" is a similar dialect' => ['en_US', 'en-latn-us-fonapi-u-nu-numerical-x-private,fr;q=0.5', ['fr_FR', 'en_US']];
+        yield '"zh_Hans" is selected over "zh_TW" as the script as a greater priority over the region' => ['zh_Hans', 'zh-hans-tw, zh-hant-tw', ['zh_Hans', 'zh_tw']];
+        yield '"en" is selected as "fil" is another language than "fi"' => ['en', 'fi', ['en', 'fil']];
+        yield '"fil" is selected as "fil_PH" is a similar dialect' => ['fil', 'fi, fil-ph;q=0.5', ['en', 'fil']];
     }
 
     public function testIsXmlHttpRequest()
@@ -1658,9 +1727,7 @@ class RequestTest extends TestCase
         $this->assertFalse($request->isXmlHttpRequest());
     }
 
-    /**
-     * @requires extension intl
-     */
+    #[RequiresPhpExtension('intl')]
     public function testIntlLocale()
     {
         $request = new Request();
@@ -1722,30 +1789,26 @@ class RequestTest extends TestCase
         $this->assertEquals(['application/vnd.wap.wmlscriptc', 'text/vnd.wap.wml', 'application/vnd.wap.xhtml+xml', 'application/xhtml+xml', 'text/html', 'multipart/mixed', '*/*'], $request->getAcceptableContentTypes());
     }
 
-    public function testGetLanguages()
+    #[DataProvider('provideLanguages')]
+    public function testGetLanguages(array $expectedLocales, ?string $acceptLanguage)
     {
         $request = new Request();
-        $this->assertEquals([], $request->getLanguages());
+        if ($acceptLanguage) {
+            $request->headers->set('Accept-language', $acceptLanguage);
+        }
+        $this->assertEquals($expectedLocales, $request->getLanguages());
+    }
 
-        $request = new Request();
-        $request->headers->set('Accept-language', 'zh, en-us; q=0.8, en; q=0.6');
-        $this->assertEquals(['zh', 'en_US', 'en'], $request->getLanguages());
-
-        $request = new Request();
-        $request->headers->set('Accept-language', 'zh, en-us; q=0.6, en; q=0.8');
-        $this->assertEquals(['zh', 'en', 'en_US'], $request->getLanguages()); // Test out of order qvalues
-
-        $request = new Request();
-        $request->headers->set('Accept-language', 'zh, en, en-us');
-        $this->assertEquals(['zh', 'en', 'en_US'], $request->getLanguages()); // Test equal weighting without qvalues
-
-        $request = new Request();
-        $request->headers->set('Accept-language', 'zh; q=0.6, en, en-us; q=0.6');
-        $this->assertEquals(['en', 'zh', 'en_US'], $request->getLanguages()); // Test equal weighting with qvalues
-
-        $request = new Request();
-        $request->headers->set('Accept-language', 'zh, i-cherokee; q=0.6');
-        $this->assertEquals(['zh', 'cherokee'], $request->getLanguages());
+    public static function provideLanguages(): iterable
+    {
+        yield 'empty' => [[], null];
+        yield [['zh', 'en_US', 'en'], 'zh, en-us; q=0.8, en; q=0.6'];
+        yield 'Test out of order qvalues' => [['zh', 'en', 'en_US'], 'zh, en-us; q=0.6, en; q=0.8'];
+        yield 'Test equal weighting without qvalues' => [['zh', 'en', 'en_US'], 'zh, en, en-us'];
+        yield 'Test equal weighting with qvalues' => [['en', 'zh', 'en_US'], 'zh; q=0.6, en, en-us; q=0.6'];
+        yield 'Test irregular locale' => [['zh', 'cherokee'], 'zh, i-cherokee; q=0.6'];
+        yield 'Test with variants, unicode extensions and private information' => [['pt_BR', 'hy_Latn_IT', 'zh_Hans_TW'], 'pt-BR-u-ca-gregory-nu-latn, hy-Latn-IT-arevela, zh-Hans-TW-fonapi-u-islamcal-x-AZE-derbend; q=0.6'];
+        yield 'Test multiple regions' => [['en_US', 'en_CA', 'en_GB', 'en'], 'en-us, en-ca, en-gb, en'];
     }
 
     public function testGetAcceptHeadersReturnString()
@@ -1861,9 +1924,7 @@ class RequestTest extends TestCase
         $this->assertFalse($request->isMethod('post'));
     }
 
-    /**
-     * @dataProvider getBaseUrlData
-     */
+    #[DataProvider('getBaseUrlData')]
     public function testGetBaseUrl($uri, $server, $expectedBaseUrl, $expectedPathInfo)
     {
         $request = Request::create($uri, 'GET', [], [], [], $server);
@@ -2139,9 +2200,7 @@ class RequestTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider baseUriDetectionOnIisWithRewriteData
-     */
+    #[DataProvider('baseUriDetectionOnIisWithRewriteData')]
     public function testBaseUriDetectionOnIisWithRewrite(array $server, string $expectedBaseUrl, string $expectedPathInfo)
     {
         $request = new Request([], [], [], [], [], $server);
@@ -2209,9 +2268,7 @@ class RequestTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider urlencodedStringPrefixData
-     */
+    #[DataProvider('urlencodedStringPrefixData')]
     public function testUrlencodedStringPrefix($string, $prefix, $expect)
     {
         $request = new Request();
@@ -2380,9 +2437,7 @@ class RequestTest extends TestCase
         $this->assertTrue($request->isSecure());
     }
 
-    /**
-     * @dataProvider iisRequestUriProvider
-     */
+    #[DataProvider('iisRequestUriProvider')]
     public function testIISRequestUri($headers, $server, $expectedRequestUri)
     {
         $request = new Request();
@@ -2582,6 +2637,22 @@ class RequestTest extends TestCase
         Request::setFactory(null);
     }
 
+    public function testFactoryCallable()
+    {
+        $requestFactory = new class {
+            public function createRequest(): Request
+            {
+                return new NewRequest();
+            }
+        };
+
+        Request::setFactory([$requestFactory, 'createRequest']);
+
+        $this->assertEquals('foo', Request::create('/')->getFoo());
+
+        Request::setFactory(null);
+    }
+
     public function testVeryLongHosts()
     {
         $host = 'a'.str_repeat('.a', 40000);
@@ -2593,9 +2664,7 @@ class RequestTest extends TestCase
         $this->assertLessThan(5, microtime(true) - $start);
     }
 
-    /**
-     * @dataProvider getHostValidities
-     */
+    #[DataProvider('getHostValidities')]
     public function testHostValidity($host, $isValid, $expectedHost = null, $expectedPort = null)
     {
         $request = Request::create('/');
@@ -2627,9 +2696,7 @@ class RequestTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider methodIdempotentProvider
-     */
+    #[DataProvider('methodIdempotentProvider')]
     public function testMethodIdempotent($method, $idempotent)
     {
         $request = new Request();
@@ -2650,12 +2717,11 @@ class RequestTest extends TestCase
             ['OPTIONS', true],
             ['TRACE', true],
             ['CONNECT', false],
+            ['QUERY', true],
         ];
     }
 
-    /**
-     * @dataProvider methodSafeProvider
-     */
+    #[DataProvider('methodSafeProvider')]
     public function testMethodSafe($method, $safe)
     {
         $request = new Request();
@@ -2676,12 +2742,11 @@ class RequestTest extends TestCase
             ['OPTIONS', true],
             ['TRACE', true],
             ['CONNECT', false],
+            ['QUERY', true],
         ];
     }
 
-    /**
-     * @dataProvider methodCacheableProvider
-     */
+    #[DataProvider('methodCacheableProvider')]
     public function testMethodCacheable($method, $cacheable)
     {
         $request = new Request();
@@ -2702,12 +2767,11 @@ class RequestTest extends TestCase
             ['OPTIONS', false],
             ['TRACE', false],
             ['CONNECT', false],
+            ['QUERY', true],
         ];
     }
 
-    /**
-     * @dataProvider protocolVersionProvider
-     */
+    #[DataProvider('protocolVersionProvider')]
     public function testProtocolVersion($serverProtocol, $trustedProxy, $via, $expected)
     {
         if ($trustedProxy) {
@@ -2768,9 +2832,7 @@ class RequestTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider nonstandardRequestsData
-     */
+    #[DataProvider('nonstandardRequestsData')]
     public function testNonstandardRequests($requestUri, $queryString, $expectedPathInfo, $expectedUri, $expectedBasePath = '', $expectedBaseUrl = null)
     {
         $expectedBaseUrl ??= $expectedBasePath;
@@ -2901,9 +2963,7 @@ class RequestTest extends TestCase
         $this->assertSame(80, $request->getPort());
     }
 
-    /**
-     * @dataProvider trustedProxiesRemoteAddr
-     */
+    #[DataProvider('trustedProxiesRemoteAddr')]
     public function testTrustedProxiesRemoteAddr($serverRemoteAddr, $trustedProxies, $result)
     {
         $_SERVER['REMOTE_ADDR'] = $serverRemoteAddr;
@@ -2911,9 +2971,27 @@ class RequestTest extends TestCase
         $this->assertSame($result, Request::getTrustedProxies());
     }
 
+    public static function trustedProxiesRemoteAddr()
+    {
+        return [
+            ['1.1.1.1', ['REMOTE_ADDR'], ['1.1.1.1']],
+            ['1.1.1.1', ['REMOTE_ADDR', '2.2.2.2'], ['1.1.1.1', '2.2.2.2']],
+            [null, ['REMOTE_ADDR'], []],
+            [null, ['REMOTE_ADDR', '2.2.2.2'], ['2.2.2.2']],
+        ];
+    }
+
+    #[TestWith(['PRIVATE_SUBNETS'])]
+    #[TestWith(['private_ranges'])]
+    public function testTrustedProxiesPrivateSubnets(string $key)
+    {
+        Request::setTrustedProxies([$key], Request::HEADER_X_FORWARDED_FOR);
+        $this->assertSame(IpUtils::PRIVATE_RANGES, Request::getTrustedProxies());
+    }
+
     public function testPrivateRangesDoNotTrustAddressesEmbeddingARemoteIpv4()
     {
-        Request::setTrustedProxies(IpUtils::PRIVATE_RANGES, Request::HEADER_X_FORWARDED_FOR);
+        Request::setTrustedProxies(['private_ranges'], Request::HEADER_X_FORWARDED_FOR);
 
         foreach (['::ffff:8.8.8.8', '::8.8.8.8', '2002:808:808::1', '2001:0:4136:e378:8000:63bf:3fff:fdd2', '64:ff9b::8.8.8.8'] as $remoteAddr) {
             $request = Request::create('/');
@@ -2951,19 +3029,7 @@ class RequestTest extends TestCase
         $this->assertFalse($request->isSecure());
     }
 
-    public static function trustedProxiesRemoteAddr()
-    {
-        return [
-            ['1.1.1.1', ['REMOTE_ADDR'], ['1.1.1.1']],
-            ['1.1.1.1', ['REMOTE_ADDR', '2.2.2.2'], ['1.1.1.1', '2.2.2.2']],
-            [null, ['REMOTE_ADDR'], []],
-            [null, ['REMOTE_ADDR', '2.2.2.2'], ['2.2.2.2']],
-        ];
-    }
-
-    /**
-     * @dataProvider preferSafeContentData
-     */
+    #[DataProvider('preferSafeContentData')]
     public function testPreferSafeContent($server, bool $safePreferenceExpected)
     {
         $request = new Request([], [], [], [], [], $server);
@@ -3026,9 +3092,7 @@ class RequestTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider provideMalformedUrls
-     */
+    #[DataProvider('provideMalformedUrls')]
     public function testMalformedUrls(string $url, string $expectedException)
     {
         $this->expectException(BadRequestException::class);
@@ -3063,9 +3127,7 @@ class RequestTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider provideLegitimateUrls
-     */
+    #[DataProvider('provideLegitimateUrls')]
     public function testLegitimateUrls(string $url)
     {
         $request = Request::create($url);
@@ -3091,9 +3153,7 @@ class RequestTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider provideAcceptableContentTypesRfc9110
-     */
+    #[DataProvider('provideAcceptableContentTypesRfc9110')]
     public function testGetAcceptableContentTypesRfc9110(string $acceptHeader, array $expectedContentTypes)
     {
         $request = new Request();
@@ -3202,9 +3262,7 @@ class RequestTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider providePreferredFormatRfc9110
-     */
+    #[DataProvider('providePreferredFormatRfc9110')]
     public function testGetPreferredFormatRfc9110(string $acceptHeader, ?string $expectedFormat, ?string $default = 'html')
     {
         $request = new Request();
@@ -3353,11 +3411,56 @@ class RequestTest extends TestCase
     }
 }
 
-class RequestContentProxy extends Request
+class MockPhpStreamWrapper
 {
-    public function getContent($asResource = false)
+    /** @var resource|null */
+    public $context;
+
+    private static string $inputContent = '';
+    private string $content = '';
+    private int $position = 0;
+
+    public static function setInputContent(string $content): void
     {
-        return http_build_query(['_method' => 'PUT', 'content' => 'mycontent'], '', '&');
+        self::$inputContent = $content;
+    }
+
+    public function stream_open(string $path, string $mode, int $options, ?string &$opened_path): bool
+    {
+        if ('php://input' === $path) {
+            $this->content = self::$inputContent;
+            $this->position = 0;
+
+            return true;
+        }
+
+        return false;
+    }
+
+    public function stream_read(int $count): string
+    {
+        $result = substr($this->content, $this->position, $count);
+        $this->position += \strlen($result);
+
+        return $result;
+    }
+
+    public function stream_eof(): bool
+    {
+        return $this->position >= \strlen($this->content);
+    }
+
+    public function stream_stat(): array
+    {
+        return [
+            'size' => \strlen($this->content),
+            'mode' => 0,
+            'uid' => 0,
+            'gid' => 0,
+            'atime' => 0,
+            'mtime' => 0,
+            'ctime' => 0,
+        ];
     }
 }
 

@@ -27,91 +27,90 @@ use Symfony\Contracts\Service\ResetInterface;
 final class TraceableFirewallListener extends FirewallListener implements ResetInterface
 {
     private array $wrappedListeners = [];
-    private array $authenticatorsInfo = [];
+    private ?TraceableAuthenticatorManagerListener $authenticatorManagerListener = null;
 
-    /**
-     * @return array
-     */
-    public function getWrappedListeners()
+    public function getWrappedListeners(): array
     {
-        return $this->wrappedListeners;
+        return array_map(
+            static fn (WrappedListener|WrappedLazyListener $listener) => $listener->getInfo(),
+            $this->wrappedListeners
+        );
     }
 
     public function getAuthenticatorsInfo(): array
     {
-        return $this->authenticatorsInfo;
+        return $this->authenticatorManagerListener?->getAuthenticatorsInfo() ?? [];
     }
 
     public function reset(): void
     {
         $this->wrappedListeners = [];
-        $this->authenticatorsInfo = [];
+        $this->authenticatorManagerListener = null;
     }
 
     protected function callListeners(RequestEvent $event, iterable $listeners): void
     {
-        $wrappedListeners = [];
-        $wrappedLazyListeners = [];
-        $authenticatorManagerListener = null;
-
+        $requestListeners = [];
+        $contexts = [];
         foreach ($listeners as $listener) {
             if ($listener instanceof LazyFirewallContext) {
                 $contextListeners = [];
-                \Closure::bind(function () use (&$wrappedLazyListeners, &$wrappedListeners, &$authenticatorManagerListener, &$contextListeners) {
-                    $listeners = [];
+                $contextWrappedListeners = [];
+                $contextAuthenticatorManagerListener = null;
+
+                \Closure::bind(function () use (&$contextListeners, &$contextWrappedListeners, &$contextAuthenticatorManagerListener) {
                     foreach ($this->listeners as $listener) {
                         $contextListeners[] = $listener;
-                        if (!$authenticatorManagerListener && $listener instanceof TraceableAuthenticatorManagerListener) {
-                            $authenticatorManagerListener = $listener;
+                        if ($listener instanceof TraceableAuthenticatorManagerListener) {
+                            $contextAuthenticatorManagerListener ??= $listener;
                         }
-                        if ($listener instanceof FirewallListenerInterface) {
-                            $listener = new WrappedLazyListener($listener);
-                            $listeners[] = $listener;
-                            $wrappedLazyListeners[] = $listener;
-                        } else {
-                            $listeners[] = static function (RequestEvent $event) use ($listener, &$wrappedListeners) {
-                                $wrappedListener = new WrappedListener($listener);
-                                $wrappedListener($event);
-                                $wrappedListeners[] = $wrappedListener->getInfo();
-                            };
-                        }
+                        $contextWrappedListeners[] = $listener instanceof FirewallListenerInterface
+                            ? new WrappedLazyListener($listener)
+                            : new WrappedListener($listener)
+                        ;
                     }
-                    $this->listeners = $listeners;
+                    $this->listeners = $contextWrappedListeners;
                 }, $listener, FirewallContext::class)();
 
-                try {
-                    $listener($event);
-                } finally {
-                    // The context outlives the request: put its listeners back so that the next request does not wrap the wrapped ones.
-                    // Listeners that run lazily keep their wrapper, the context captured them when it was called.
-                    \Closure::bind(function () use ($contextListeners) {
-                        $this->listeners = $contextListeners;
-                    }, $listener, FirewallContext::class)();
-                }
+                $this->authenticatorManagerListener ??= $contextAuthenticatorManagerListener;
+                $this->wrappedListeners = array_merge($this->wrappedListeners, $contextWrappedListeners);
+
+                $contexts[] = [$listener, $contextListeners];
+                $requestListeners[] = $listener;
             } else {
-                $wrappedListener = $listener instanceof FirewallListenerInterface ? new WrappedLazyListener($listener) : new WrappedListener($listener);
-                $wrappedListener($event);
-                $wrappedListeners[] = $wrappedListener->getInfo();
-                if (!$authenticatorManagerListener && $listener instanceof TraceableAuthenticatorManagerListener) {
-                    $authenticatorManagerListener = $listener;
+                if ($listener instanceof TraceableAuthenticatorManagerListener) {
+                    $this->authenticatorManagerListener ??= $listener;
+                }
+                $wrappedListener = $listener instanceof FirewallListenerInterface
+                    ? new WrappedLazyListener($listener)
+                    : new WrappedListener($listener)
+                ;
+                $this->wrappedListeners[] = $wrappedListener;
+
+                $requestListeners[] = $wrappedListener;
+            }
+        }
+
+        try {
+            foreach ($requestListeners as $listener) {
+                if (!$listener instanceof FirewallListenerInterface) {
+                    $listener($event);
+                } elseif (false !== $listener->supports($event->getRequest())) {
+                    $listener->authenticate($event);
+                }
+
+                if ($event->hasResponse()) {
+                    break;
                 }
             }
-
-            if ($event->hasResponse()) {
-                break;
+        } finally {
+            // The contexts outlive the request: put their listeners back so that the next request does not wrap the wrapped ones.
+            // Listeners that run lazily keep their wrapper, the contexts captured them when they were called.
+            foreach ($contexts as [$context, $contextListeners]) {
+                \Closure::bind(function () use ($contextListeners) {
+                    $this->listeners = $contextListeners;
+                }, $context, FirewallContext::class)();
             }
-        }
-
-        if ($wrappedLazyListeners) {
-            foreach ($wrappedLazyListeners as $lazyListener) {
-                $this->wrappedListeners[] = $lazyListener->getInfo();
-            }
-        }
-
-        $this->wrappedListeners = array_merge($this->wrappedListeners, $wrappedListeners);
-
-        if ($authenticatorManagerListener) {
-            $this->authenticatorsInfo = $authenticatorManagerListener->getAuthenticatorsInfo();
         }
     }
 }

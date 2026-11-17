@@ -11,13 +11,12 @@
 
 namespace Symfony\Component\Cache\Tests\Adapter;
 
+use PHPUnit\Framework\Attributes\Group;
 use Psr\Cache\CacheItemPoolInterface;
 use Symfony\Component\Cache\Adapter\FilesystemTagAwareAdapter;
 use Symfony\Component\Cache\Tests\Fixtures\FailingTagFilesystemAdapter;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class FilesystemTagAwareAdapterTest extends FilesystemAdapterTest
 {
     use TagAwareTestTrait;

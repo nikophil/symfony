@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Lock\Tests\Store;
 
+use PHPUnit\Framework\Attributes\Group;
 use Predis\Command\CommandInterface;
 use Predis\Connection\Parameters;
 use Predis\Connection\StreamConnection;
@@ -20,13 +21,17 @@ use Symfony\Component\Lock\Key;
 use Symfony\Component\Lock\Store\RedisStore;
 
 /**
- * @group integration
+ * @author Jérémy Derussé <jeremy@derusse.com>
  */
+#[Group('integration')]
 class PredisStoreWithoutExceptionsTest extends AbstractRedisStoreTestCase
 {
     public static function setUpBeforeClass(): void
     {
-        $redis = new \Predis\Client(array_combine(['host', 'port'], explode(':', getenv('REDIS_HOST')) + [1 => null]), ['exceptions' => false]);
+        $redis = new \Predis\Client(
+            array_combine(['host', 'port'], explode(':', getenv('REDIS_HOST')) + [1 => null]),
+            ['exceptions' => false],
+        );
         try {
             $redis->connect();
         } catch (\Exception $e) {
@@ -36,7 +41,10 @@ class PredisStoreWithoutExceptionsTest extends AbstractRedisStoreTestCase
 
     protected function getRedisConnection(): \Predis\Client
     {
-        $redis = new \Predis\Client(array_combine(['host', 'port'], explode(':', getenv('REDIS_HOST')) + [1 => null]), ['exceptions' => false]);
+        $redis = new \Predis\Client(
+            array_combine(['host', 'port'], explode(':', getenv('REDIS_HOST')) + [1 => null]),
+            ['exceptions' => false],
+        );
         $redis->connect();
 
         return $redis;

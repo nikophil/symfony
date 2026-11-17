@@ -16,11 +16,14 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\Translation\Bridge\Loco\LocoProviderFactory;
 use Symfony\Component\Translation\Loader\ArrayLoader;
 use Symfony\Component\Translation\Provider\ProviderFactoryInterface;
-use Symfony\Component\Translation\Test\ProviderFactoryTestCase;
+use Symfony\Component\Translation\Test\AbstractProviderFactoryTestCase;
+use Symfony\Component\Translation\Test\IncompleteDsnTestTrait;
 use Symfony\Component\Translation\TranslatorBag;
 
-class LocoProviderFactoryTest extends ProviderFactoryTestCase
+class LocoProviderFactoryTest extends AbstractProviderFactoryTestCase
 {
+    use IncompleteDsnTestTrait;
+
     public static function supportsProvider(): iterable
     {
         yield [true, 'loco://API_KEY@default'];
@@ -38,6 +41,11 @@ class LocoProviderFactoryTest extends ProviderFactoryTestCase
             'loco://localise.biz',
             'loco://API_KEY@default',
         ];
+
+        yield [
+            'loco://localise.biz?status=translated,provisional',
+            'loco://API_KEY@default?status=translated,provisional',
+        ];
     }
 
     public static function incompleteDsnProvider(): iterable
@@ -47,6 +55,6 @@ class LocoProviderFactoryTest extends ProviderFactoryTestCase
 
     public function createFactory(): ProviderFactoryInterface
     {
-        return new LocoProviderFactory(new MockHttpClient(), new NullLogger(), $this->getDefaultLocale(), new ArrayLoader(), new TranslatorBag());
+        return new LocoProviderFactory(new MockHttpClient(), new NullLogger(), 'en', new ArrayLoader(), new TranslatorBag());
     }
 }

@@ -869,9 +869,6 @@ class CheckTypeDeclarationsPassTest extends TestCase
         $this->addToAssertionCount(1);
     }
 
-    /**
-     * @requires PHP 8.2
-     */
     public function testUnionTypePassesWithTrue()
     {
         $container = new ContainerBuilder();
@@ -1048,6 +1045,18 @@ class CheckTypeDeclarationsPassTest extends TestCase
 
         (new CheckTypeDeclarationsPass(true))->process($container);
     }
+
+    public function testStringableCanBePassedToStringTypeParameter()
+    {
+        $container = new ContainerBuilder();
+        $container->register('stringable', StringableClass::class);
+        $container->register('consumer', StringConsumer::class)
+            ->setArguments([new Reference('stringable')]);
+
+        (new CheckTypeDeclarationsPass(true))->process($container);
+
+        $this->addToAssertionCount(1);
+    }
 }
 
 class CallableClass
@@ -1067,6 +1076,21 @@ class StaticCallableClass
 class ServiceWithTwoInts
 {
     public function __construct(int $a, int $b)
+    {
+    }
+}
+
+class StringableClass implements \Stringable
+{
+    public function __toString(): string
+    {
+        return 'stringable';
+    }
+}
+
+class StringConsumer
+{
+    public function __construct(string $value)
     {
     }
 }

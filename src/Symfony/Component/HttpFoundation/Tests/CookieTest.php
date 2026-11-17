@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\HttpFoundation\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Cookie;
 
@@ -19,9 +21,8 @@ use Symfony\Component\HttpFoundation\Cookie;
  *
  * @author John Kary <john@johnkary.net>
  * @author Hugo Hamon <hugo.hamon@sensio.com>
- *
- * @group time-sensitive
  */
+#[Group('time-sensitive')]
 class CookieTest extends TestCase
 {
     public static function namesWithSpecialCharacters()
@@ -38,27 +39,21 @@ class CookieTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider namesWithSpecialCharacters
-     */
+    #[DataProvider('namesWithSpecialCharacters')]
     public function testInstantiationThrowsExceptionIfRawCookieNameContainsSpecialCharacters($name)
     {
         $this->expectException(\InvalidArgumentException::class);
         Cookie::create($name, null, 0, null, null, null, false, true);
     }
 
-    /**
-     * @dataProvider namesWithSpecialCharacters
-     */
+    #[DataProvider('namesWithSpecialCharacters')]
     public function testWithRawThrowsExceptionIfCookieNameContainsSpecialCharacters($name)
     {
         $this->expectException(\InvalidArgumentException::class);
         Cookie::create($name)->withRaw();
     }
 
-    /**
-     * @dataProvider namesWithSpecialCharacters
-     */
+    #[DataProvider('namesWithSpecialCharacters')]
     public function testInstantiationSucceedNonRawCookieNameContainsSpecialCharacters($name)
     {
         $this->assertInstanceOf(Cookie::class, Cookie::create($name));
@@ -102,36 +97,28 @@ class CookieTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider pathsAndDomainsWithSpecialCharacters
-     */
+    #[DataProvider('pathsAndDomainsWithSpecialCharacters')]
     public function testInstantiationThrowsExceptionIfPathContainsSpecialCharacters($path)
     {
         $this->expectException(\InvalidArgumentException::class);
         Cookie::create('MyCookie', 'MyValue', 0, $path);
     }
 
-    /**
-     * @dataProvider pathsAndDomainsWithSpecialCharacters
-     */
+    #[DataProvider('pathsAndDomainsWithSpecialCharacters')]
     public function testInstantiationThrowsExceptionIfDomainContainsSpecialCharacters($domain)
     {
         $this->expectException(\InvalidArgumentException::class);
         Cookie::create('MyCookie', 'MyValue', 0, '/', $domain);
     }
 
-    /**
-     * @dataProvider pathsAndDomainsWithSpecialCharacters
-     */
+    #[DataProvider('pathsAndDomainsWithSpecialCharacters')]
     public function testWithPathThrowsExceptionIfPathContainsSpecialCharacters($path)
     {
         $this->expectException(\InvalidArgumentException::class);
         Cookie::create('MyCookie')->withPath($path);
     }
 
-    /**
-     * @dataProvider pathsAndDomainsWithSpecialCharacters
-     */
+    #[DataProvider('pathsAndDomainsWithSpecialCharacters')]
     public function testWithDomainThrowsExceptionIfDomainContainsSpecialCharacters($domain)
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -159,9 +146,7 @@ class CookieTest extends TestCase
         ];
     }
 
-    /**
-     * @dataProvider validPathsAndDomains
-     */
+    #[DataProvider('validPathsAndDomains')]
     public function testOrdinaryPathsAndDomainsAreAccepted($value)
     {
         $cookie = Cookie::create('MyCookie', 'MyValue', 0, $value, $value);
@@ -515,9 +500,7 @@ class CookieTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider quotedValues
-     */
+    #[DataProvider('quotedValues')]
     public function testFromStringPreservesQuotes(string $header, bool $decode, string $value)
     {
         $cookie = Cookie::fromString($header, $decode);
@@ -594,9 +577,7 @@ class CookieTest extends TestCase
         $this->assertTrue($cookie->isHttpOnly());
     }
 
-    /**
-     * @dataProvider rawAttributes
-     */
+    #[DataProvider('rawAttributes')]
     public function testFromStringIgnoresRawAttribute(bool $decode, string $raw)
     {
         $cookie = Cookie::fromString('foo=bar%20baz; raw='.$raw, $decode);
@@ -625,9 +606,7 @@ class CookieTest extends TestCase
         $this->assertSame(\PHP_INT_MAX, $cookie->getExpiresTime());
     }
 
-    /**
-     * @dataProvider nonPositiveMaxAges
-     */
+    #[DataProvider('nonPositiveMaxAges')]
     public function testFromStringExpiresNonPositiveMaxAge(string $maxAge)
     {
         $cookie = Cookie::fromString('foo=bar; Max-Age='.$maxAge);
@@ -642,9 +621,7 @@ class CookieTest extends TestCase
         return [['0'], ['-1'], ['-9999999999999999999999999999999999999999']];
     }
 
-    /**
-     * @dataProvider invalidMaxAges
-     */
+    #[DataProvider('invalidMaxAges')]
     public function testFromStringIgnoresInvalidMaxAge(string $maxAge)
     {
         $cookie = Cookie::fromString('foo=bar; Max-Age='.$maxAge);

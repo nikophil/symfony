@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Form\Tests\Extension\PasswordHasher\Type;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\EventDispatcher\EventDispatcher;
 use Symfony\Component\Form\Exception\InvalidConfigurationException;
 use Symfony\Component\Form\Extension\Core\Type\FormType;
@@ -45,7 +46,7 @@ class PasswordTypePasswordHasherExtensionTest extends TypeTestCase
         parent::setUp();
     }
 
-    protected function getExtensions()
+    protected function getExtensions(): array
     {
         return array_merge(parent::getExtensions(), [
             new PasswordHasherExtension(new PasswordHasherListener($this->passwordHasher)),
@@ -128,9 +129,7 @@ class PasswordTypePasswordHasherExtensionTest extends TypeTestCase
         $this->assertSame($user->getPassword(), $hashedPassword);
     }
 
-    /**
-     * @dataProvider provideRepeatedPasswordField
-     */
+    #[DataProvider('provideRepeatedPasswordField')]
     public function testRepeatedPasswordField(string $type, array $options = [])
     {
         $user = new User();
@@ -141,7 +140,7 @@ class PasswordTypePasswordHasherExtensionTest extends TypeTestCase
         $this->assertNull($user->getPassword());
 
         $form = $this->factory
-            ->createBuilder(data: $user)
+            ->createBuilder(FormType::class, $user)
             ->add('plainPassword', $type, $options)
             ->getForm()
         ;

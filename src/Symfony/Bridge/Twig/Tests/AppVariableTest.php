@@ -11,6 +11,8 @@
 
 namespace Symfony\Bridge\Twig\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bridge\Twig\AppVariable;
 use Symfony\Component\HttpFoundation\Request;
@@ -32,9 +34,7 @@ class AppVariableTest extends TestCase
         $this->appVariable = new AppVariable();
     }
 
-    /**
-     * @dataProvider debugDataProvider
-     */
+    #[DataProvider('debugDataProvider')]
     public function testDebug($debugFlag)
     {
         $this->appVariable->setDebug($debugFlag);
@@ -57,9 +57,7 @@ class AppVariableTest extends TestCase
         $this->assertEquals('dev', $this->appVariable->getEnvironment());
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testGetSession()
     {
         $session = new Session();
@@ -188,18 +186,14 @@ class AppVariableTest extends TestCase
         $this->assertEquals([], $this->appVariable->getFlashes());
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testGetFlashesWithNoSessionStarted()
     {
         $flashMessages = $this->setFlashMessages(false);
         $this->assertEquals($flashMessages, $this->appVariable->getFlashes());
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testGetFlashes()
     {
         $flashMessages = $this->setFlashMessages();
@@ -255,7 +249,7 @@ class AppVariableTest extends TestCase
 
     public function testGetCurrentRoute()
     {
-        $this->setRequestStack(new Request(attributes: ['_route' => 'some_route']));
+        $this->setRequestStack(new Request([], [], ['_route' => 'some_route']));
 
         $this->assertSame('some_route', $this->appVariable->getCurrent_route());
     }
@@ -269,7 +263,7 @@ class AppVariableTest extends TestCase
     public function testGetCurrentRouteParameters()
     {
         $routeParams = ['some_param' => true];
-        $this->setRequestStack(new Request(attributes: ['_route_params' => $routeParams]));
+        $this->setRequestStack(new Request([], [], ['_route_params' => $routeParams]));
 
         $this->assertSame($routeParams, $this->appVariable->getCurrent_route_parameters());
     }
@@ -287,12 +281,15 @@ class AppVariableTest extends TestCase
         $this->appVariable->getCurrent_route_parameters();
     }
 
-    protected function setRequestStack($request)
+    protected function setRequestStack(?Request $request)
     {
-        $requestStackMock = $this->createMock(RequestStack::class);
-        $requestStackMock->method('getCurrentRequest')->willReturn($request);
+        $requestStack = new RequestStack();
 
-        $this->appVariable->setRequestStack($requestStackMock);
+        if (null !== $request) {
+            $requestStack->push($request);
+        }
+
+        $this->appVariable->setRequestStack($requestStack);
     }
 
     protected function setTokenStorage($user)

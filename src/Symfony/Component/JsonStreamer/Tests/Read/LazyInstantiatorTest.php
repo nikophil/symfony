@@ -1,0 +1,85 @@
+<?php
+
+/*
+ * This file is part of the Symfony package.
+ *
+ * (c) Fabien Potencier <fabien@symfony.com>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace Symfony\Component\JsonStreamer\Tests\Read;
+
+use PHPUnit\Framework\Attributes\RequiresPhp;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\JsonStreamer\Exception\InvalidArgumentException;
+use Symfony\Component\JsonStreamer\Read\LazyInstantiator;
+use Symfony\Component\JsonStreamer\Tests\Fixtures\Model\ClassicDummy;
+
+class LazyInstantiatorTest extends TestCase
+{
+    private string $lazyGhostsDir;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $this->lazyGhostsDir = \sprintf('%s/symfony_json_streamer_test/lazy_ghost', sys_get_temp_dir());
+
+        if (is_dir($this->lazyGhostsDir)) {
+            array_map('unlink', glob($this->lazyGhostsDir.'/*'));
+            rmdir($this->lazyGhostsDir);
+        }
+    }
+
+    #[RequiresPhp('<8.4.0')]
+    public function testCreateLazyGhostUsingVarExporter()
+    {
+        $ghost = (new LazyInstantiator($this->lazyGhostsDir))->instantiate(ClassicDummy::class, static function (ClassicDummy $object): void {
+            $object->id = 123;
+        });
+
+        $this->assertSame(123, $ghost->id);
+    }
+
+    #[RequiresPhp('<8.4.0')]
+    public function testCreateCacheFile()
+    {
+        // use DummyForLazyInstantiation class to be sure that the instantiated object is not already in cache.
+        (new LazyInstantiator($this->lazyGhostsDir))->instantiate(DummyForLazyInstantiation::class, static function (DummyForLazyInstantiation $object): void {});
+
+        $this->assertCount(1, glob($this->lazyGhostsDir.'/*'));
+    }
+
+    #[RequiresPhp('<8.4.0')]
+    public function testThrowIfLazyGhostDirNotDefined()
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        (new LazyInstantiator())->instantiate(ClassicDummy::class, static function (ClassicDummy $object): void {
+        });
+    }
+
+    #[RequiresPhp('>=8.4.0')]
+    public function testCreateLazyGhostUsingPhp()
+    {
+        $ghost = (new LazyInstantiator())->instantiate(ClassicDummy::class, static function (ClassicDummy $object): void {
+            $object->id = 123;
+        });
+
+        $this->assertSame(123, $ghost->id);
+    }
+
+    public function testInstantiateInternalClassEagerly()
+    {
+        $object = (new LazyInstantiator())->instantiate(\DateTimeImmutable::class, static function (\DateTimeImmutable $object): void {
+        });
+
+        $this->assertInstanceOf(\DateTimeImmutable::class, $object);
+    }
+}
+
+class DummyForLazyInstantiation
+{
+}

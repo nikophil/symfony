@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\BrowserKit\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\BrowserKit\Cookie;
 use Symfony\Component\BrowserKit\CookieJar;
@@ -240,9 +241,7 @@ class CookieJarTest extends TestCase
         $this->assertEquals($timestamp, $phpCookie->getExpiresTime());
     }
 
-    /**
-     * @dataProvider provideAllValuesValues
-     */
+    #[DataProvider('provideAllValuesValues')]
     public function testAllValues($uri, $values)
     {
         $cookieJar = new CookieJar();
@@ -417,7 +416,7 @@ class CookieJarTest extends TestCase
         $cookieJar->set(new Cookie('foo', 'bar', null, '/', '.example.com'));
 
         $this->assertEquals(['foo' => 'bar'], $cookieJar->allValues('http://www.example.com'));
-        $this->assertEmpty($cookieJar->allValues('http://wwwexample.com'));
+        $this->assertSame([], $cookieJar->allValues('http://wwwexample.com'));
     }
 
     public function testCookiePathMatchesAtSegmentBoundaries()

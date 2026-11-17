@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\Mailer\Tests\Transport;
 
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\Transport\FailoverTransport;
@@ -18,9 +19,7 @@ use Symfony\Component\Mailer\Transport\RoundRobinTransport;
 use Symfony\Component\Mailer\Transport\TransportInterface;
 use Symfony\Component\Mime\RawMessage;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class FailoverTransportTest extends TestCase
 {
     public function testSendNoTransports()
@@ -88,13 +87,14 @@ class FailoverTransportTest extends TestCase
 
     public function testSendOneDeadAndRecoveryWithinRetryPeriod()
     {
-        $t1 = $this->createMock(TransportInterface::class);
+        $t1 = $this->createStub(TransportInterface::class);
 
-        $t1Matcher = $this->any();
-        $t1->expects($t1Matcher)
+        $t1
             ->method('send')
-            ->willReturnCallback(static function () use ($t1Matcher) {
-                if (1 === $t1Matcher->getInvocationCount()) {
+            ->willReturnCallback(static function () {
+                static $call = 0;
+
+                if (1 === ++$call) {
                     throw new TransportException();
                 }
 
@@ -102,11 +102,12 @@ class FailoverTransportTest extends TestCase
             });
 
         $t2 = $this->createMock(TransportInterface::class);
-        $t2Matcher = $this->exactly(4);
-        $t2->expects($t2Matcher)
+        $t2->expects($this->exactly(4))
             ->method('send')
-            ->willReturnCallback(static function () use ($t2Matcher) {
-                if (4 === $t2Matcher->getInvocationCount()) {
+            ->willReturnCallback(static function () {
+                static $call = 0;
+
+                if (4 === ++$call) {
                     throw new TransportException();
                 }
 
@@ -136,11 +137,12 @@ class FailoverTransportTest extends TestCase
         $t1->method('send')->willThrowException(new TransportException());
         $t1->expects($this->once())->method('send');
         $t2 = $this->createMock(TransportInterface::class);
-        $matcher = $this->exactly(3);
-        $t2->expects($matcher)
+        $t2->expects($this->exactly(3))
             ->method('send')
-            ->willReturnCallback(static function () use ($matcher) {
-                if (3 === $matcher->getInvocationCount()) {
+            ->willReturnCallback(static function () {
+                static $call = 0;
+
+                if (3 === ++$call) {
                     throw new TransportException();
                 }
 
@@ -158,10 +160,11 @@ class FailoverTransportTest extends TestCase
 
     public function testSendOneDeadButRecover()
     {
-        $t1Matcher = $this->any();
-        $t1 = $this->createMock(TransportInterface::class);
-        $t1->expects($t1Matcher)->method('send')->willReturnCallback(static function () use ($t1Matcher) {
-            if (1 === $t1Matcher->getInvocationCount()) {
+        $t1 = $this->createStub(TransportInterface::class);
+        $t1->method('send')->willReturnCallback(static function () {
+            static $call = 0;
+
+            if (1 === ++$call) {
                 throw new TransportException();
             }
 
@@ -169,11 +172,12 @@ class FailoverTransportTest extends TestCase
         });
 
         $t2 = $this->createMock(TransportInterface::class);
-        $matcher = $this->exactly(3);
-        $t2->expects($matcher)
+        $t2->expects($this->exactly(3))
             ->method('send')
-            ->willReturnCallback(static function () use ($matcher) {
-                if (3 === $matcher->getInvocationCount()) {
+            ->willReturnCallback(static function () {
+                static $call = 0;
+
+                if (3 === ++$call) {
                     throw new TransportException();
                 }
 

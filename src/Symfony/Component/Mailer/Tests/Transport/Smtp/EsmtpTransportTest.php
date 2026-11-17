@@ -12,6 +12,7 @@
 namespace Symfony\Component\Mailer\Tests\Transport\Smtp;
 
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Mailer\Exception\InvalidArgumentException;
 use Symfony\Component\Mailer\Exception\TransportException;
 use Symfony\Component\Mailer\Transport\Smtp\Auth\CramMd5Authenticator;
 use Symfony\Component\Mailer\Transport\Smtp\Auth\LoginAuthenticator;
@@ -49,7 +50,7 @@ class EsmtpTransportTest extends TestCase
     public function testExtensibility()
     {
         $stream = new DummyStream();
-        $transport = new CustomEsmtpTransport(stream: $stream);
+        $transport = new CustomEsmtpTransport('localhost', 0, null, null, null, $stream);
 
         $message = new Email();
         $message->from('sender@example.org');
@@ -62,10 +63,57 @@ class EsmtpTransportTest extends TestCase
         $this->assertContains("RCPT TO:<recipient@example.org> NOTIFY=FAILURE\r\n", $stream->getCommands());
     }
 
+    public function testSmtpUtf8()
+    {
+        $stream = new DummyStream();
+        $transport = new SmtpUtf8EsmtpTransport('localhost', 0, null, null, null, $stream);
+
+        $message = new Email();
+        $message->from('info@dømi.fo');
+        $message->addTo('dømi@dømi.fo');
+        $message->text('.');
+
+        $transport->send($message);
+
+        $this->assertContains("MAIL FROM:<info@xn--dmi-0na.fo> SMTPUTF8\r\n", $stream->getCommands());
+        $this->assertContains("RCPT TO:<dømi@xn--dmi-0na.fo>\r\n", $stream->getCommands());
+    }
+
+    public function testMissingSmtpUtf8()
+    {
+        $stream = new DummyStream();
+        $transport = new EsmtpTransport('localhost', 0, null, null, null, $stream);
+
+        $message = new Email();
+        $message->from('info@dømi.fo');
+        $message->addTo('dømi@dømi.fo');
+        $message->text('.');
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('Invalid addresses: non-ASCII characters not supported in local-part of email.');
+        $transport->send($message);
+    }
+
+    public function testSmtpUtf8FallbackToIDN()
+    {
+        $stream = new DummyStream();
+        $transport = new EsmtpTransport('localhost', 0, null, null, null, $stream);
+
+        $message = new Email();
+        $message->from('info@dømi.fo'); // UTF8 only in the domain
+        $message->addTo('example@example.com');
+        $message->text('.');
+
+        $transport->send($message);
+
+        $this->assertContains("MAIL FROM:<info@xn--dmi-0na.fo>\r\n", $stream->getCommands());
+        $this->assertContains("RCPT TO:<example@example.com>\r\n", $stream->getCommands());
+    }
+
     public function testConstructorWithDefaultAuthenticators()
     {
         $stream = new DummyStream();
-        $transport = new EsmtpTransport(stream: $stream);
+        $transport = new EsmtpTransport('localhost', 0, null, null, null, $stream);
         $transport->setUsername('testuser');
         $transport->setPassword('p4ssw0rd');
 
@@ -162,7 +210,7 @@ class EsmtpTransportTest extends TestCase
     public function testSetAuthenticators()
     {
         $stream = new DummyStream();
-        $transport = new EsmtpTransport(stream: $stream);
+        $transport = new EsmtpTransport('localhost', 0, null, null, null, $stream);
         $transport->setUsername('testuser');
         $transport->setPassword('p4ssw0rd');
         $transport->setAuthenticators([new XOAuth2Authenticator()]);
@@ -196,7 +244,7 @@ class EsmtpTransportTest extends TestCase
     public function testConstructorWithEmptyAuthenticator()
     {
         $stream = new DummyStream();
-        $transport = new EsmtpTransport(stream: $stream);
+        $transport = new EsmtpTransport('localhost', 0, null, null, null, $stream);
         $transport->setUsername('testuser');
         $transport->setPassword('p4ssw0rd');
         $transport->setAuthenticators([]); // if no authenticators defined, then there needs to be a TransportException
@@ -218,7 +266,7 @@ class EsmtpTransportTest extends TestCase
     public function testSocketTimeout()
     {
         $stream = new DummyStream();
-        $transport = new EsmtpTransport(stream: $stream);
+        $transport = new EsmtpTransport('localhost', 0, null, null, null, $stream);
         $transport->setUsername('testuser');
         $transport->setPassword('timedout');
         $transport->setAuthenticators([new LoginAuthenticator()]);
@@ -249,6 +297,23 @@ class EsmtpTransportTest extends TestCase
             $stream->getCommands()
         );
     }
+
+    public function testRequireTls()
+    {
+        $stream = new DummyStream();
+        $transport = new EsmtpTransport('localhost', 0, null, null, null, $stream);
+        $transport->setRequireTls(true);
+
+        $message = new Email();
+        $message->from('sender@example.org');
+        $message->addTo('recipient@example.org');
+        $message->text('.');
+
+        $this->expectException(TransportException::class);
+        $this->expectExceptionMessage('TLS required but neither TLS or STARTTLS are in use.');
+
+        $transport->send($message);
+    }
 }
 
 class CustomEsmtpTransport extends EsmtpTransport
@@ -265,6 +330,20 @@ class CustomEsmtpTransport extends EsmtpTransport
 
         if (str_starts_with($command, 'EHLO ')) {
             $response .= "250 DSN\r\n";
+        }
+
+        return $response;
+    }
+}
+
+class SmtpUtf8EsmtpTransport extends EsmtpTransport
+{
+    public function executeCommand(string $command, array $codes): string
+    {
+        $response = parent::executeCommand($command, $codes);
+
+        if (str_starts_with($command, 'EHLO ')) {
+            $response .= "250 SMTPUTF8\r\n";
         }
 
         return $response;

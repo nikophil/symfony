@@ -14,7 +14,6 @@ namespace Symfony\Bridge\Monolog\Command;
 use Monolog\Formatter\FormatterInterface;
 use Monolog\Handler\HandlerInterface;
 use Monolog\Level;
-use Monolog\Logger;
 use Monolog\LogRecord;
 use Symfony\Bridge\Monolog\Formatter\ConsoleFormatter;
 use Symfony\Bridge\Monolog\Handler\ConsoleHandler;
@@ -54,10 +53,7 @@ class ServerLogCommand extends Command
         return parent::isEnabled();
     }
 
-    /**
-     * @return void
-     */
-    protected function configure()
+    protected function configure(): void
     {
         if (!class_exists(ConsoleFormatter::class)) {
             return;
@@ -74,7 +70,7 @@ class ServerLogCommand extends Command
 
                   <info>php %command.full_name%</info>
 
-                To filter the log messages using any ExpressionLanguage compatible expression, use the <comment>--filter</> option:
+                To filter the log messages using any ExpressionLanguage compatible expression, use the <info>--filter</> option:
 
                 <info>php %command.full_name% --filter="level > 200 or channel in ['app', 'doctrine']"</info>
                 EOF
@@ -93,7 +89,7 @@ class ServerLogCommand extends Command
         }
 
         $this->handler = new ConsoleHandler($output, true, [
-            OutputInterface::VERBOSITY_NORMAL => Logger::DEBUG,
+            OutputInterface::VERBOSITY_NORMAL => Level::Debug,
         ]);
 
         $this->handler->setFormatter(new ConsoleFormatter([
@@ -165,16 +161,17 @@ class ServerLogCommand extends Command
         $logBlock = \sprintf('<bg=%s> </>', self::BG_COLOR[$clientId % 8]);
         $output->write($logBlock);
 
-        if (Logger::API >= 3) {
-            $record = new LogRecord(
-                $record['datetime'],
-                $record['channel'],
-                Level::fromValue($record['level']),
-                $record['message'],
-                $record['context']->getValue(true),
-                $record['extra']->getValue(true),
-            );
-        }
+        $record = new LogRecord(
+            $record['datetime'],
+            $record['channel'],
+            Level::fromValue($record['level']),
+            $record['message'],
+            // We wrap context and extra, because they have been already dumped.
+            // So they are instance of Symfony\Component\VarDumper\Cloner\Data
+            // But LogRecord expects array
+            ['data' => $record['context']],
+            ['data' => $record['extra']],
+        );
 
         $this->handler->handle($record);
     }

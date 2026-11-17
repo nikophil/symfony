@@ -11,6 +11,9 @@
 
 namespace Symfony\Bridge\Twig\Tests\Command;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\IgnoreDeprecations;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bridge\Twig\Command\LintCommand;
 use Symfony\Component\Console\Application;
@@ -71,10 +74,9 @@ class LintCommandTest extends TestCase
     }
 
     /**
-     * When deprecations are not reported by the command, the testsuite reporter will catch them so we need to mark the test as legacy.
-     *
-     * @group legacy
+     * When deprecations are not reported by the command, the testsuite reporter will catch them so we need to mark the test as ignoring deprecations.
      */
+    #[IgnoreDeprecations]
     public function testLintFileWithNotReportedDeprecation()
     {
         $tester = $this->createCommandTester();
@@ -94,13 +96,24 @@ class LintCommandTest extends TestCase
         $ret = $tester->execute(['filename' => [$filename], '--show-deprecations' => true], ['verbosity' => OutputInterface::VERBOSITY_VERBOSE, 'decorated' => false]);
 
         $this->assertEquals(1, $ret, 'Returns 1 in case of error');
-        $this->assertMatchesRegularExpression('/ERROR  in \S+ \(line 1\)/', trim($tester->getDisplay()));
+        $this->assertMatchesRegularExpression('/DEPRECATION  in \S+ \(line 1\)/', trim($tester->getDisplay()));
         $this->assertStringContainsString('Filter "deprecated_filter" is deprecated', trim($tester->getDisplay()));
     }
 
-    /**
-     * @group tty
-     */
+    public function testLintFileWithMultipleReportedDeprecation()
+    {
+        $tester = $this->createCommandTester();
+        $filename = $this->createFile("{{ foo|deprecated_filter }}\n{{ bar|deprecated_filter }}");
+
+        $ret = $tester->execute(['filename' => [$filename], '--show-deprecations' => true], ['verbosity' => OutputInterface::VERBOSITY_VERBOSE, 'decorated' => false]);
+
+        $this->assertEquals(1, $ret, 'Returns 1 in case of error');
+        $this->assertMatchesRegularExpression('/DEPRECATION  in \S+ \(line 1\)/', trim($tester->getDisplay()));
+        $this->assertMatchesRegularExpression('/DEPRECATION  in \S+ \(line 2\)/', trim($tester->getDisplay()));
+        $this->assertStringContainsString('Filter "deprecated_filter" is deprecated', trim($tester->getDisplay()));
+    }
+
+    #[Group('tty')]
     public function testLintDefaultPaths()
     {
         $tester = $this->createCommandTester();
@@ -108,6 +121,67 @@ class LintCommandTest extends TestCase
 
         $this->assertEquals(0, $ret, 'Returns 0 in case of success');
         self::assertStringContainsString('OK in', trim($tester->getDisplay()));
+    }
+
+    public function testLintIncorrectFileWithMarkup()
+    {
+        $tester = $this->createCommandTester();
+        $filename = $this->createFile("{{ 'a' '</info>b' }}");
+
+        $ret = $tester->execute(['filename' => [$filename]], ['decorated' => false]);
+
+        $this->assertSame(1, $ret);
+        $this->assertStringContainsString(">>  1      {{ 'a' '</info>b' }}", $tester->getDisplay());
+        $this->assertStringContainsString('>> Unexpected token "string" of value "</info>b"', $tester->getDisplay());
+    }
+
+    public function testLintFilesWithMarkupInTheirName()
+    {
+        $cwd = getcwd();
+        chdir(sys_get_temp_dir());
+
+        try {
+            $this->files[] = $valid = getcwd().'/sf-a<comment>.twig';
+            $this->files[] = $invalid = getcwd().'/sf-b<comment>.twig';
+
+            if (!@file_put_contents($valid, '{{ foo|deprecated_filter }}') || !@file_put_contents($invalid, '{{ foo')) {
+                $this->markTestSkipped('The filesystem does not support "<" and ">" in file names.');
+            }
+
+            $tester = $this->createCommandTester();
+            $tester->execute(['filename' => ['sf-a<comment>.twig', 'sf-b<comment>.twig'], '--show-deprecations' => true], ['verbosity' => OutputInterface::VERBOSITY_VERBOSE, 'decorated' => false]);
+
+            $this->assertStringContainsString('DEPRECATION  in sf-a<comment>.twig (line 1)', $tester->getDisplay());
+            $this->assertStringContainsString('is deprecated in sf-a<comment>.twig at line 1.', $tester->getDisplay());
+            $this->assertStringContainsString('// OK in sf-a<comment>.twig', $tester->getDisplay());
+            $this->assertStringContainsString('ERROR  in sf-b<comment>.twig (line 1)', $tester->getDisplay());
+        } finally {
+            chdir($cwd);
+        }
+    }
+
+    public function testLintIncorrectFileWithJsonFormat()
+    {
+        $tester = $this->createCommandTester();
+        $filename = $this->createFile("{{ 'a' '<comment>b' }}");
+
+        $ret = $tester->execute(['filename' => [$filename], '--format' => 'json'], ['decorated' => true]);
+        $json = json_decode($tester->getDisplay(), true, 512, \JSON_THROW_ON_ERROR);
+
+        $this->assertSame(1, $ret);
+        $this->assertStringContainsString('Unexpected token "string" of value "<comment>b"', $json[0]['message']);
+    }
+
+    public function testLintIncorrectFileWithInvalidUtf8WithJsonFormat()
+    {
+        $tester = $this->createCommandTester();
+        $filename = $this->createFile("{{ 'a' 'b\xFF' }}");
+
+        $ret = $tester->execute(['filename' => [$filename], '--format' => 'json'], ['decorated' => false]);
+        $json = json_decode($tester->getDisplay(), true, 512, \JSON_THROW_ON_ERROR);
+
+        $this->assertSame(1, $ret);
+        $this->assertStringContainsString("Unexpected token \"string\" of value \"b\u{FFFD}\"", $json[0]['message']);
     }
 
     public function testLintIncorrectFileWithGithubFormat()
@@ -137,9 +211,7 @@ class LintCommandTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider provideCompletionSuggestions
-     */
+    #[DataProvider('provideCompletionSuggestions')]
     public function testComplete(array $input, array $expectedSuggestions)
     {
         $tester = new CommandCompletionTester($this->createCommand());
@@ -160,17 +232,17 @@ class LintCommandTest extends TestCase
     private function createCommand(): Command
     {
         $environment = new Environment(new FilesystemLoader(\dirname(__DIR__).'/Fixtures/templates/'));
-        if (class_exists(DeprecatedCallableInfo::class)) {
-            $options = ['deprecation_info' => new DeprecatedCallableInfo('foo/bar', '1.1')];
-        } else {
-            $options = ['deprecated' => true];
-        }
+        $options = ['deprecation_info' => new DeprecatedCallableInfo('foo/bar', '1.1')];
         $environment->addFilter(new TwigFilter('deprecated_filter', static fn ($v) => $v, $options));
 
         $command = new LintCommand($environment);
 
         $application = new Application();
-        $application->add($command);
+        if (method_exists($application, 'addCommand')) {
+            $application->addCommand($command);
+        } else {
+            $application->add($command);
+        }
 
         return $application->find('lint:twig');
     }

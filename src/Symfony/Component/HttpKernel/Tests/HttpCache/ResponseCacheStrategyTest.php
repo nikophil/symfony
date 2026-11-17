@@ -11,13 +11,13 @@
 
 namespace Symfony\Component\HttpKernel\Tests\HttpCache;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpCache\ResponseCacheStrategy;
 
-/**
- * @group time-sensitive
- */
+#[Group('time-sensitive')]
 class ResponseCacheStrategyTest extends TestCase
 {
     public function testMinimumSharedMaxAgeWins()
@@ -343,9 +343,7 @@ class ResponseCacheStrategyTest extends TestCase
         $this->assertFalse($mainResponse->isValidateable());
     }
 
-    /**
-     * @dataProvider cacheControlMergingProvider
-     */
+    #[DataProvider('cacheControlMergingProvider')]
     public function testCacheControlMerging(array $expects, array $main, array $surrogates)
     {
         $cacheStrategy = new ResponseCacheStrategy();

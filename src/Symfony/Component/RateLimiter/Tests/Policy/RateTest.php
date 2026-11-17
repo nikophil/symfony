@@ -11,15 +11,14 @@
 
 namespace Symfony\Component\RateLimiter\Tests\Policy;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\RateLimiter\Exception\InvalidIntervalException;
 use Symfony\Component\RateLimiter\Policy\Rate;
 
 class RateTest extends TestCase
 {
-    /**
-     * @dataProvider provideRate
-     */
+    #[DataProvider('provideRate')]
     public function testFromString(Rate $rate)
     {
         $this->assertEquals($rate, Rate::fromString((string) $rate));
@@ -36,9 +35,7 @@ class RateTest extends TestCase
         yield [Rate::perYear(10)];
     }
 
-    /**
-     * @dataProvider provideOverflowingRate
-     */
+    #[DataProvider('provideOverflowingRate')]
     public function testCalculateTimeForTokensIsCappedOnOverflow(Rate $rate, int $tokens)
     {
         self::assertSame(2147483647, $rate->calculateTimeForTokens($tokens));

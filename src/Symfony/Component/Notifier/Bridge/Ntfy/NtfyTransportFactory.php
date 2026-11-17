@@ -30,18 +30,18 @@ final class NtfyTransportFactory extends AbstractTransportFactory
         $host = 'default' === $dsn->getHost() ? null : $dsn->getHost();
         $topic = substr($dsn->getPath(), 1);
 
-        $secureHttp = filter_var($dsn->getOption('secureHttp', true), \FILTER_VALIDATE_BOOL);
+        $secureHttp = $dsn->getBooleanOption('secureHttp', true);
 
         $transport = (new NtfyTransport($topic, $secureHttp))->setHost($host);
-        if (!empty($port = $dsn->getPort())) {
+        if ($port = $dsn->getPort()) {
             $transport->setPort($port);
         }
 
-        if (!empty($user = $dsn->getUser())) {
+        if ($user = $dsn->getUser()) {
             $transport->setUser($user);
         }
 
-        if (!empty($password = $dsn->getPassword())) {
+        if ($password = $dsn->getPassword()) {
             $transport->setPassword($password);
         }
 

@@ -25,6 +25,7 @@ class UnaryNodeTest extends AbstractNodeTestCase
             [1.5, new UnaryNode('+', new ConstantNode('1.5'))],
             [false, new UnaryNode('!', new ConstantNode(true))],
             [false, new UnaryNode('not', new ConstantNode(true))],
+            [-6, new UnaryNode('~', new ConstantNode(5))],
         ];
     }
 
@@ -35,6 +36,7 @@ class UnaryNodeTest extends AbstractNodeTestCase
             ['(+3)', new UnaryNode('+', new ConstantNode(3))],
             ['(!true)', new UnaryNode('!', new ConstantNode(true))],
             ['(!true)', new UnaryNode('not', new ConstantNode(true))],
+            ['(~5)', new UnaryNode('~', new ConstantNode(5))],
         ];
     }
 
@@ -45,6 +47,7 @@ class UnaryNodeTest extends AbstractNodeTestCase
             ['(+ 3)', new UnaryNode('+', new ConstantNode(3))],
             ['(! true)', new UnaryNode('!', new ConstantNode(true))],
             ['(not true)', new UnaryNode('not', new ConstantNode(true))],
+            ['(~ 5)', new UnaryNode('~', new ConstantNode(5))],
         ];
     }
 }

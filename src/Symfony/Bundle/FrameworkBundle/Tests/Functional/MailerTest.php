@@ -100,6 +100,7 @@ class MailerTest extends AbstractWebTestCase
         $this->assertEmailHtmlBodyContains($email, 'Foo');
         $this->assertEmailHtmlBodyNotContains($email, 'Bar');
         $this->assertEmailAttachmentCount($email, 1);
+        $this->assertEmailAddressNotContains($email, 'To', 'thomas@symfony.com');
 
         $email = $this->getMailerMessage(1);
         $this->assertEmailSubjectContains($email, 'Foo');
@@ -107,5 +108,7 @@ class MailerTest extends AbstractWebTestCase
         $this->assertEmailAddressContains($email, 'To', 'fabien@symfony.com');
         $this->assertEmailAddressContains($email, 'To', 'thomas@symfony.com');
         $this->assertEmailAddressContains($email, 'Reply-To', 'me@symfony.com');
+        $this->assertEmailAddressNotContains($email, 'To', 'helene@symfony.com');
+        $this->assertEmailAddressNotContains($email, 'Reply-To', 'helene@symfony.com');
     }
 }

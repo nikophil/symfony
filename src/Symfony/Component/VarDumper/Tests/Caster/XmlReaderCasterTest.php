@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\VarDumper\Tests\Caster;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresPhp;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\VarDumper\Test\VarDumperTestTrait;
 
@@ -34,7 +36,8 @@ class XmlReaderCasterTest extends TestCase
         $this->reader->close();
     }
 
-    public function testParserProperty()
+    #[RequiresPhp('<8.4.0')]
+    public function testParserPropertyPriorToPhp84()
     {
         $this->reader->setParserProperty(\XMLReader::SUBST_ENTITIES, true);
 
@@ -52,9 +55,32 @@ class XmlReaderCasterTest extends TestCase
         $this->assertDumpMatchesFormat($expectedDump, $this->reader);
     }
 
+    #[RequiresPhp('>=8.4.0')]
+    public function testParserProperty()
+    {
+        $this->reader->setParserProperty(\XMLReader::SUBST_ENTITIES, true);
+
+        $expectedDump = <<<'EODUMP'
+            XMLReader {%A
+              +nodeType: ~ int
+            %A
+              parserProperties: {
+                SUBST_ENTITIES: true
+                 …3
+              }
+               …12
+            }
+            EODUMP;
+
+        $this->assertDumpMatchesFormat($expectedDump, $this->reader);
+    }
+
     /**
-     * @dataProvider provideNodes
+     * This test only work before PHP 8.4. In PHP 8.4, XMLReader properties are virtual
+     * and their values are not dumped.
      */
+    #[DataProvider('provideNodes')]
+    #[RequiresPhp('<8.4.0')]
     public function testNodes($seek, $expectedDump)
     {
         while ($seek--) {
@@ -245,13 +271,30 @@ class XmlReaderCasterTest extends TestCase
         ];
     }
 
-    public function testWithUninitializedXMLReader()
+    #[RequiresPhp('<8.4.0')]
+    public function testWithUninitializedXMLReaderPriorToPhp84()
     {
         $this->reader = new \XMLReader();
 
         $expectedDump = <<<'EODUMP'
             XMLReader {
               +nodeType: NONE
+               …13
+            }
+            EODUMP;
+
+        $this->assertDumpMatchesFormat($expectedDump, $this->reader);
+    }
+
+    #[RequiresPhp('>=8.4.0')]
+    public function testWithUninitializedXMLReader()
+    {
+        $this->reader = new \XMLReader();
+
+        $expectedDump = <<<'EODUMP'
+            XMLReader {%A
+              +nodeType: ~ int
+            %A
                …13
             }
             EODUMP;

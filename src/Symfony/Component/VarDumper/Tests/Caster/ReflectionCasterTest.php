@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\VarDumper\Tests\Caster;
 
+use PHPUnit\Framework\Attributes\RequiresPhp;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\VarDumper\Caster\Caster;
 use Symfony\Component\VarDumper\Test\VarDumperTestTrait;
@@ -86,7 +87,7 @@ class ReflectionCasterTest extends TestCase
     public function testClosureCaster()
     {
         $a = $b = 123;
-        $var = static function ($x) use ($a, &$b) { return $a; };
+        $var = static function ($x) use ($a, &$b) { var_dump($a, $b); };
 
         $this->assertDumpMatchesFormat(
             <<<'EOTXT'
@@ -320,9 +321,6 @@ class ReflectionCasterTest extends TestCase
         );
     }
 
-    /**
-     * @requires PHP 8.2
-     */
     public function testReflectionUnionTypeWithIntersection()
     {
         $var = (new \ReflectionProperty(ReflectionUnionTypeWithIntersectionFixture::class, 'a'))->getType();
@@ -405,9 +403,6 @@ class ReflectionCasterTest extends TestCase
         );
     }
 
-    /**
-     * @requires PHP 8.2
-     */
     public function testNullReturnType()
     {
         $className = Php82NullStandaloneReturnType::class;
@@ -459,9 +454,7 @@ class ReflectionCasterTest extends TestCase
         );
     }
 
-    /**
-     * @requires PHP < 8.4
-     */
+    #[RequiresPhp('<8.4.0')]
     public function testGeneratorPriorTo84()
     {
         if (\extension_loaded('xdebug')) {
@@ -534,9 +527,7 @@ class ReflectionCasterTest extends TestCase
         $this->assertDumpMatchesFormat($expectedDump, $generator);
     }
 
-    /**
-     * @requires PHP 8.4
-     */
+    #[RequiresPhp('>=8.4.0')]
     public function testGenerator()
     {
         if (\extension_loaded('xdebug')) {

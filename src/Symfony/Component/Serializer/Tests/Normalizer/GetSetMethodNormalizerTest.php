@@ -11,6 +11,8 @@
 
 namespace Symfony\Component\Serializer\Tests\Normalizer;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\PropertyInfo\Extractor\PhpDocExtractor;
 use Symfony\Component\PropertyInfo\Extractor\ReflectionExtractor;
@@ -41,6 +43,7 @@ use Symfony\Component\Serializer\Tests\Normalizer\Features\CacheableObjectAttrib
 use Symfony\Component\Serializer\Tests\Normalizer\Features\CallbacksTestTrait;
 use Symfony\Component\Serializer\Tests\Normalizer\Features\CircularReferenceTestTrait;
 use Symfony\Component\Serializer\Tests\Normalizer\Features\ConstructorArgumentsTestTrait;
+use Symfony\Component\Serializer\Tests\Normalizer\Features\FilterBoolTestTrait;
 use Symfony\Component\Serializer\Tests\Normalizer\Features\GroupsTestTrait;
 use Symfony\Component\Serializer\Tests\Normalizer\Features\IgnoredAttributesTestTrait;
 use Symfony\Component\Serializer\Tests\Normalizer\Features\MaxDepthTestTrait;
@@ -55,6 +58,7 @@ class GetSetMethodNormalizerTest extends TestCase
     use CallbacksTestTrait;
     use CircularReferenceTestTrait;
     use ConstructorArgumentsTestTrait;
+    use FilterBoolTestTrait;
     use GroupsTestTrait;
     use IgnoredAttributesTestTrait;
     use MaxDepthTestTrait;
@@ -297,6 +301,11 @@ class GetSetMethodNormalizerTest extends TestCase
         return new GetSetMethodNormalizer($classMetadataFactory);
     }
 
+    protected function getNormalizerForFilterBool(): GetSetMethodNormalizer
+    {
+        return new GetSetMethodNormalizer();
+    }
+
     public function testGroupsNormalizeWithNameConverter()
     {
         $classMetadataFactory = new ClassMetadataFactory(new AttributeLoader());
@@ -393,13 +402,14 @@ class GetSetMethodNormalizerTest extends TestCase
 
     public function testUnableToNormalizeObjectAttribute()
     {
-        $this->expectException(LogicException::class);
-        $this->expectExceptionMessage('Cannot normalize attribute "object" because the injected serializer is not a normalizer');
         $this->normalizer->setSerializer($this->createStub(SerializerInterface::class));
 
         $obj = new GetSetDummy();
         $object = new \stdClass();
         $obj->setObject($object);
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('Cannot normalize attribute "object" because the injected serializer is not a normalizer');
 
         $this->normalizer->normalize($obj, 'any');
     }
@@ -409,14 +419,12 @@ class GetSetMethodNormalizerTest extends TestCase
         $serializer = new Serializer([$this->normalizer]);
         $this->normalizer->setSerializer($serializer);
 
-        $siblingHolder = new SiblingHolder();
-
         $expected = [
             'sibling0' => ['coopTilleuls' => 'Les-Tilleuls.coop'],
             'sibling1' => ['coopTilleuls' => 'Les-Tilleuls.coop'],
             'sibling2' => ['coopTilleuls' => 'Les-Tilleuls.coop'],
         ];
-        $this->assertEquals($expected, $this->normalizer->normalize($siblingHolder));
+        $this->assertEquals($expected, $this->normalizer->normalize(new SiblingHolder()));
     }
 
     public function testDenormalizeNonExistingAttribute()
@@ -447,9 +455,8 @@ class GetSetMethodNormalizerTest extends TestCase
 
     /**
      * @param class-string $class
-     *
-     * @dataProvider provideNotIgnoredMethodSupport
      */
+    #[DataProvider('provideNotIgnoredMethodSupport')]
     public function testNotIgnoredMethodSupport(string $class)
     {
         $this->assertFalse($this->normalizer->supportsNormalization(new $class()));
@@ -637,10 +644,8 @@ class GetSetMethodNormalizerTest extends TestCase
         $this->assertSame('foo', $obj->getFoo());
     }
 
-    /**
-     * @testWith [{"foo":"foo"}, "getFoo", "foo"]
-     *           [{"bar":"bar"}, "getBar", "bar"]
-     */
+    #[TestWith([['foo' => 'foo'], 'getFoo', 'foo'])]
+    #[TestWith([['bar' => 'bar'], 'getBar', 'bar'])]
     public function testSupportsAndDenormalizeWithOptionalSetterArgument(array $data, string $method, string $expected)
     {
         $this->assertTrue($this->normalizer->supportsDenormalization($data, GetSetDummyWithOptionalAndMultipleSetterArgs::class));

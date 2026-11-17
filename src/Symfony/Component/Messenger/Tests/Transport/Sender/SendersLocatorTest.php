@@ -11,11 +11,17 @@
 
 namespace Symfony\Component\Messenger\Tests\Transport\Sender;
 
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
+use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\Messenger\Envelope;
 use Symfony\Component\Messenger\Stamp\TransportNamesStamp;
 use Symfony\Component\Messenger\Tests\Fixtures\DummyMessage;
+use Symfony\Component\Messenger\Tests\Fixtures\DummyMessageInterface;
+use Symfony\Component\Messenger\Tests\Fixtures\DummyMessageWithAttribute;
+use Symfony\Component\Messenger\Tests\Fixtures\DummyMessageWithInterfaceWithAttribute;
+use Symfony\Component\Messenger\Tests\Fixtures\DummyMessageWithParentWithAttribute;
 use Symfony\Component\Messenger\Tests\Fixtures\SecondMessage;
 use Symfony\Component\Messenger\Transport\Sender\SenderInterface;
 use Symfony\Component\Messenger\Transport\Sender\SendersLocator;
@@ -52,6 +58,61 @@ class SendersLocatorTest extends TestCase
         $this->assertSame([], iterator_to_array($locator->getSenders(new Envelope(new SecondMessage()))));
     }
 
+    #[TestWith([DummyMessageWithAttribute::class, ['first_sender', 'second_sender']])]
+    #[TestWith([DummyMessageWithParentWithAttribute::class, ['third_sender', 'first_sender', 'second_sender']])]
+    #[TestWith([DummyMessageWithInterfaceWithAttribute::class, ['first_sender', 'third_sender', 'second_sender']])]
+    public function testItReturnsTheSenderBasedOnAsMessageAttribute(string $messageClass, array $expectedSenders)
+    {
+        $firstSender = $this->createStub(SenderInterface::class);
+        $secondSender = $this->createStub(SenderInterface::class);
+        $thirdSender = $this->createStub(SenderInterface::class);
+        $otherSender = $this->createStub(SenderInterface::class);
+        $sendersLocator = $this->createContainer([
+            'first_sender' => $firstSender,
+            'second_sender' => $secondSender,
+            'third_sender' => $thirdSender,
+            'other_sender' => $otherSender,
+        ]);
+        $locator = new SendersLocator([], $sendersLocator);
+
+        $this->assertSame($expectedSenders, array_keys(iterator_to_array($locator->getSenders(new Envelope(new $messageClass('a'))))));
+        $this->assertSame([], iterator_to_array($locator->getSenders(new Envelope(new SecondMessage()))));
+    }
+
+    public function testAsMessageAttributeIsOverridenByTransportNamesStamp()
+    {
+        $firstSender = $this->createStub(SenderInterface::class);
+        $secondSender = $this->createStub(SenderInterface::class);
+        $otherSender = $this->createStub(SenderInterface::class);
+        $sendersLocator = $this->createContainer([
+            'first_sender' => $firstSender,
+            'second_sender' => $secondSender,
+            'other_sender' => $otherSender,
+        ]);
+        $locator = new SendersLocator([], $sendersLocator);
+
+        $this->assertSame(['other_sender' => $otherSender], iterator_to_array($locator->getSenders(new Envelope(new DummyMessageWithAttribute('a'), [new TransportNamesStamp(['other_sender'])]))));
+        $this->assertSame([], iterator_to_array($locator->getSenders(new Envelope(new SecondMessage()))));
+    }
+
+    public function testAsMessageAttributeIsOverridenByUserConfiguration()
+    {
+        $firstSender = $this->createStub(SenderInterface::class);
+        $secondSender = $this->createStub(SenderInterface::class);
+        $otherSender = $this->createStub(SenderInterface::class);
+        $sendersLocator = $this->createContainer([
+            'first_sender' => $firstSender,
+            'second_sender' => $secondSender,
+            'other_sender' => $otherSender,
+        ]);
+        $locator = new SendersLocator([
+            DummyMessageInterface::class => ['other_sender'],
+        ], $sendersLocator);
+
+        $this->assertSame(['other_sender' => $otherSender], iterator_to_array($locator->getSenders(new Envelope(new DummyMessageWithAttribute('a')))));
+        $this->assertSame([], iterator_to_array($locator->getSenders(new Envelope(new SecondMessage()))));
+    }
+
     public function testSendersMapWithFallback()
     {
         $firstSender = $this->createStub(SenderInterface::class);
@@ -73,13 +134,11 @@ class SendersLocatorTest extends TestCase
 
     private function createContainer(array $senders): ContainerInterface
     {
-        $container = $this->createMock(ContainerInterface::class);
-        $container->expects($this->any())
-            ->method('has')
-            ->willReturnCallback(static fn ($id) => isset($senders[$id]));
-        $container->expects($this->any())
-            ->method('get')
-            ->willReturnCallback(static fn ($id) => $senders[$id]);
+        $container = new Container();
+
+        foreach ($senders as $id => $sender) {
+            $container->set($id, $sender);
+        }
 
         return $container;
     }

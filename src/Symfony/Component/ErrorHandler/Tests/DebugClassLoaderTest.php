@@ -11,6 +11,9 @@
 
 namespace Symfony\Component\ErrorHandler\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\RequiresPhp;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Symfony\Bridge\ErrorHandler\Tests\Fixtures\ExtendsDeprecatedParent;
 use Symfony\Component\ErrorHandler\DebugClassLoader;
@@ -37,9 +40,7 @@ class DebugClassLoaderTest extends TestCase
         putenv('SYMFONY_PATCH_TYPE_DECLARATIONS'.(false !== $this->patchTypes ? '='.$this->patchTypes : ''));
     }
 
-    /**
-     * @runInSeparateProcess
-     */
+    #[RunInSeparateProcess]
     public function testIdempotence()
     {
         DebugClassLoader::enable();
@@ -87,7 +88,7 @@ class DebugClassLoaderTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('Case mismatch between class and real file names');
         if (!file_exists(__DIR__.'/Fixtures/CaseMismatch.php')) {
-            $this->markTestSkipped('Can only be run on case insensitive filesystems');
+            $this->markTestSkipped('Can only be run on case-insensitive filesystems');
         }
 
         class_exists(Fixtures\CaseMismatch::class, true);
@@ -115,9 +116,7 @@ class DebugClassLoaderTest extends TestCase
         $this->assertTrue(class_exists(Fixtures\ClassAlias::class, true));
     }
 
-    /**
-     * @dataProvider provideDeprecatedSuper
-     */
+    #[DataProvider('provideDeprecatedSuper')]
     public function testDeprecatedSuper(string $class, string $super, string $type)
     {
         set_error_handler(static fn () => false);
@@ -475,6 +474,8 @@ class DebugClassLoaderTest extends TestCase
             'Method "Symfony\Component\ErrorHandler\Tests\Fixtures\ReturnTypeParent::true()" might add "true" as a native return type declaration in the future. Do the same in child class "Test\Symfony\Component\ErrorHandler\Tests\ReturnType" now to avoid errors or add an explicit @return annotation to suppress this message.',
             'Method "Symfony\Component\ErrorHandler\Tests\Fixtures\ReturnTypeParent::never()" might add "never" as a native return type declaration in the future. Do the same in child class "Test\Symfony\Component\ErrorHandler\Tests\ReturnType" now to avoid errors or add an explicit @return annotation to suppress this message.',
             'Method "Symfony\Component\ErrorHandler\Tests\Fixtures\ReturnTypeParent::null()" might add "null" as a native return type declaration in the future. Do the same in child class "Test\Symfony\Component\ErrorHandler\Tests\ReturnType" now to avoid errors or add an explicit @return annotation to suppress this message.',
+            'Method "Symfony\Component\ErrorHandler\Tests\Fixtures\ReturnTypeParent::classConstant()" might add "string" as a native return type declaration in the future. Do the same in child class "Test\Symfony\Component\ErrorHandler\Tests\ReturnType" now to avoid errors or add an explicit @return annotation to suppress this message.',
+            'Method "Symfony\Component\ErrorHandler\Tests\Fixtures\ReturnTypeInterface::interfaceClassConstant()" might add "string" as a native return type declaration in the future. Do the same in implementation "Test\Symfony\Component\ErrorHandler\Tests\ReturnType" now to avoid errors or add an explicit @return annotation to suppress this message.',
         ], $deprecations);
     }
 
@@ -510,6 +511,29 @@ class DebugClassLoaderTest extends TestCase
         $this->assertSame([
             'Method "Test\Symfony\Component\ErrorHandler\Tests\TemplatedReturnTypeParent::current()" might add "mixed" as a native return type declaration in the future. Do the same in child class "Symfony\Component\ErrorHandler\Tests\ExtendsTemplatedReturnTypeParent" now to avoid errors or add an explicit @return annotation to suppress this message.',
         ], $deprecations);
+    }
+
+    #[RequiresPhp('>=8.3.0')]
+    public function testReturnTypePhp83()
+    {
+        $deprecations = [];
+        set_error_handler(static function ($type, $msg) use (&$deprecations) { $deprecations[] = $msg; });
+        $e = error_reporting(\E_USER_DEPRECATED);
+
+        class_exists('Test\\'.ReturnTypePhp83::class, true);
+
+        error_reporting($e);
+        restore_error_handler();
+
+        $this->assertSame([
+            'Method "Symfony\Component\ErrorHandler\Tests\Fixtures\ReturnTypeParentPhp83::classConstantWithType()" might add "string" as a native return type declaration in the future. Do the same in child class "Test\Symfony\Component\ErrorHandler\Tests\ReturnTypePhp83" now to avoid errors or add an explicit @return annotation to suppress this message.',
+        ], $deprecations);
+    }
+
+    public function testClassConstantReturnTypeDoesNotTriggerAutoloading()
+    {
+        $this->assertTrue(class_exists(Fixtures\ReturnTypeClassConstant::class, true));
+        $this->assertFalse(class_exists(Fixtures\ReturnTypeClassConstantHolder::class, false));
     }
 
     public function testOverrideFinalProperty()
@@ -657,6 +681,8 @@ class ClassLoader
             }');
         } elseif ('Test\\'.ReturnType::class === $class) {
             return $fixtureDir.\DIRECTORY_SEPARATOR.'ReturnType.php';
+        } elseif ('Test\\'.ReturnTypePhp83::class === $class) {
+            return $fixtureDir.\DIRECTORY_SEPARATOR.'ReturnTypePhp83.php';
         } elseif ('Test\\'.TemplatedReturnType::class === $class) {
             eval('namespace Test\\'.__NAMESPACE__.'; class TemplatedReturnType implements \\'.__NAMESPACE__.'\Fixtures\TemplatedReturnTypeInterface {
                 public function classTemplate() { }

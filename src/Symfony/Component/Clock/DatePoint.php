@@ -77,15 +77,7 @@ final class DatePoint extends \DateTimeImmutable
             $now = $now->setTimezone($timezone);
         }
 
-        if (\PHP_VERSION_ID < 80200) {
-            $copy = (array) $now;
-            $this->date = $copy['date'];
-            $this->timezone_type = $copy['timezone_type'];
-            $this->timezone = $copy['timezone'];
-            $this->__wakeup();
-        } else {
-            $this->__unserialize((array) $now);
-        }
+        $this->__unserialize((array) $now);
 
         // copying $now goes through its local time, which is ambiguous during the DST fall-back hour
         if ($this != $now) {
@@ -114,6 +106,27 @@ final class DatePoint extends \DateTimeImmutable
     public static function createFromMutable(\DateTime $object): static
     {
         return parent::createFromMutable($object);
+    }
+
+    public static function createFromTimestamp(int|float $timestamp): static
+    {
+        if (\PHP_VERSION_ID >= 80400) {
+            return parent::createFromTimestamp($timestamp);
+        }
+
+        if (\is_int($timestamp) || !$ms = (int) $timestamp - $timestamp) {
+            return static::createFromFormat('U', (string) $timestamp);
+        }
+
+        if (!is_finite($timestamp) || \PHP_INT_MAX + 1.0 <= $timestamp || \PHP_INT_MIN > $timestamp) {
+            throw new \DateRangeError(\sprintf('DateTimeImmutable::createFromTimestamp(): Argument #1 ($timestamp) must be a finite number between %s and %s.999999, %s given', \PHP_INT_MIN, \PHP_INT_MAX, $timestamp));
+        }
+
+        if ($timestamp < 0) {
+            $timestamp = (int) $timestamp - 2.0 + $ms;
+        }
+
+        return static::createFromFormat('U.u', \sprintf('%.6F', $timestamp));
     }
 
     public function add(\DateInterval $interval): static
@@ -166,5 +179,27 @@ final class DatePoint extends \DateTimeImmutable
     public function getTimezone(): \DateTimeZone
     {
         return parent::getTimezone() ?: throw new \DateInvalidTimeZoneException('The DatePoint object has no timezone.');
+    }
+
+    public function setMicrosecond(int $microsecond): static
+    {
+        if ($microsecond < 0 || $microsecond > 999999) {
+            throw new \DateRangeError('DatePoint::setMicrosecond(): Argument #1 ($microsecond) must be between 0 and 999999, '.$microsecond.' given');
+        }
+
+        if (\PHP_VERSION_ID < 80400) {
+            return $this->setTime(...explode('.', $this->format('H.i.s.'.$microsecond)));
+        }
+
+        return parent::setMicrosecond($microsecond);
+    }
+
+    public function getMicrosecond(): int
+    {
+        if (\PHP_VERSION_ID >= 80400) {
+            return parent::getMicrosecond();
+        }
+
+        return $this->format('u');
     }
 }

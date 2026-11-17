@@ -47,4 +47,16 @@ class InvalidDummy
     {
         return 'bar';
     }
+
+    /**
+     * @param $baz
+     */
+    public function setBaz($baz)
+    {
+    }
+
+    /**
+     * @var array<float, string>
+     */
+    public $invalidKeyType;
 }

@@ -11,6 +11,7 @@
 
 namespace Symfony\Component\HttpKernel\Tests\Profiler;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpKernel\Profiler\FileProfilerStorage;
 use Symfony\Component\HttpKernel\Profiler\Profile;
@@ -177,17 +178,13 @@ class FileProfilerStorageTest extends TestCase
         }
     }
 
-    /**
-     * @dataProvider provideInvalidTokens
-     */
+    #[DataProvider('provideInvalidTokens')]
     public function testReadInvalidToken(string $token)
     {
         $this->assertNull($this->storage->read($token));
     }
 
-    /**
-     * @dataProvider provideInvalidTokens
-     */
+    #[DataProvider('provideInvalidTokens')]
     public function testWriteInvalidToken(string $token)
     {
         $profile = new Profile($token);
@@ -374,7 +371,7 @@ class FileProfilerStorageTest extends TestCase
 
         $this->storage->purge();
 
-        $this->assertEmpty($this->storage->read('token'), '->purge() removes all data stored by profiler');
+        $this->assertNull($this->storage->read('token'), '->purge() removes all data stored by profiler');
         $this->assertCount(0, $this->storage->find('127.0.0.1', '', 10, 'GET'), '->purge() removes all items from index');
     }
 
@@ -433,9 +430,7 @@ class FileProfilerStorageTest extends TestCase
         $this->assertFalse(fgetcsv($handle, null, ',', '"', '\\'));
     }
 
-    /**
-     * @dataProvider provideExpiredProfiles
-     */
+    #[DataProvider('provideExpiredProfiles')]
     public function testRemoveExpiredProfiles(string $index, string $expectedOffset)
     {
         $file = $this->tmpDir.'/index.csv';

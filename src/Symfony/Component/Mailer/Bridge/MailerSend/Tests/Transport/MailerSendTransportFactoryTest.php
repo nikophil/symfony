@@ -16,12 +16,15 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\Mailer\Bridge\MailerSend\Transport\MailerSendApiTransport;
 use Symfony\Component\Mailer\Bridge\MailerSend\Transport\MailerSendSmtpTransport;
 use Symfony\Component\Mailer\Bridge\MailerSend\Transport\MailerSendTransportFactory;
-use Symfony\Component\Mailer\Test\TransportFactoryTestCase;
+use Symfony\Component\Mailer\Test\AbstractTransportFactoryTestCase;
+use Symfony\Component\Mailer\Test\IncompleteDsnTestTrait;
 use Symfony\Component\Mailer\Transport\Dsn;
 use Symfony\Component\Mailer\Transport\TransportFactoryInterface;
 
-class MailerSendTransportFactoryTest extends TransportFactoryTestCase
+class MailerSendTransportFactoryTest extends AbstractTransportFactoryTestCase
 {
+    use IncompleteDsnTestTrait;
+
     public function getFactory(): TransportFactoryInterface
     {
         return new MailerSendTransportFactory(null, new MockHttpClient(), new NullLogger());
@@ -88,5 +91,16 @@ class MailerSendTransportFactoryTest extends TransportFactoryTestCase
         yield [new Dsn('mailersend+smtp', 'default', null, self::PASSWORD)];
 
         yield [new Dsn('mailersend+api', 'default')];
+    }
+
+    public function testSmtpTransportRequiresTls()
+    {
+        $factory = $this->getFactory();
+
+        foreach (['mailersend', 'mailersend+smtp'] as $scheme) {
+            $this->assertTrue($factory->create(new Dsn($scheme, 'default', self::USER, self::PASSWORD))->isTlsRequired());
+        }
+
+        $this->assertFalse($factory->create(new Dsn('mailersend+smtp', 'default', self::USER, self::PASSWORD, null, ['require_tls' => 'false']))->isTlsRequired());
     }
 }
